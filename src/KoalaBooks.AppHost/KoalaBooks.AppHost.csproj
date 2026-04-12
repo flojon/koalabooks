@@ -1,0 +1,15 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.2.0">
+
+  <ItemGroup>
+    <ProjectReference Include="..\KoalaBooks.Web\KoalaBooks.Web.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>07433eab-c20b-4d7b-9434-d3f25377e198</UserSecretsId>
+  </PropertyGroup>
+
+</Project>
