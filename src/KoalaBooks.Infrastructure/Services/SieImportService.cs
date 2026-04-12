@@ -1,3 +1,4 @@
+using System.Text;
 using jsiSIE;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Infrastructure.Data;
@@ -42,34 +43,26 @@ public class SieImportService
     public SieDocument Parse(Stream stream)
     {
         var doc = new SieDocument();
-        var transcodedStream = TranscodeIfNeeded(stream);
-        doc.ReadDocument(transcodedStream);
+        doc.ReadDocument(TranscodeFromCP437(stream));
         return doc;
     }
 
     /// <summary>
-    /// SIE files with #FORMAT PC8 use CP437 encoding, but JsiSie reads with Latin-1.
-    /// We transcode CP437 → Unicode → Latin-1 so JsiSie can decode correctly.
+    /// SIE files use CP437 encoding (#FORMAT PC8). JsiSie may fall back to Latin-1
+    /// if CP437 isn't available at runtime. We transcode CP437 → Unicode → Latin-1
+    /// to ensure Swedish characters (ö, ä, é, etc.) are preserved regardless.
     /// </summary>
-    private static MemoryStream TranscodeIfNeeded(Stream stream)
+    private static MemoryStream TranscodeFromCP437(Stream stream)
     {
-        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
         using var ms = new MemoryStream();
         stream.CopyTo(ms);
         var rawBytes = ms.ToArray();
 
-        // Check for #FORMAT PC8 in the first ~500 bytes (ASCII-safe region)
-        var header = System.Text.Encoding.ASCII.GetString(rawBytes, 0, Math.Min(rawBytes.Length, 500));
-        if (header.Contains("#FORMAT PC8", StringComparison.OrdinalIgnoreCase))
-        {
-            var cp437 = System.Text.Encoding.GetEncoding(437);
-            var unicode = cp437.GetString(rawBytes);
-            var latin1Bytes = System.Text.Encoding.Latin1.GetBytes(unicode);
-            return new MemoryStream(latin1Bytes);
-        }
-
-        return new MemoryStream(rawBytes);
+        var cp437 = Encoding.GetEncoding(437);
+        var unicode = cp437.GetString(rawBytes);
+        return new MemoryStream(Encoding.Latin1.GetBytes(unicode));
     }
 
     public async Task<SieImportPreview> GetPreviewAsync(SieDocument doc)

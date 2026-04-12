@@ -3,6 +3,10 @@ using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using KoalaBooks.Web.Components;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
+
+// Register CP437 encoding provider early so JsiSie uses it for SIE file parsing
+Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 var builder = WebApplication.CreateBuilder(args);
 

@@ -27,8 +27,6 @@ public class SieImportServiceTests : IDisposable
 
     private static Stream MakeSieStream(string content)
     {
-        // Encode as CP437 to simulate real SIE files
-        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
         return new MemoryStream(System.Text.Encoding.GetEncoding(437).GetBytes(content));
     }
 
