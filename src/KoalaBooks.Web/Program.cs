@@ -12,6 +12,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=koalabooks.db"));
 
 builder.Services.AddScoped<CsvImportService>();
+builder.Services.AddScoped<SieImportService>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<FiscalYearService>();
 builder.Services.AddScoped<JournalEntryService>();

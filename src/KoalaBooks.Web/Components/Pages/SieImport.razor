@@ -1,0 +1,210 @@
+@page "/import/sie"
+@rendermode InteractiveServer
+@using KoalaBooks.Infrastructure.Services
+@using jsiSIE
+
+<PageTitle>Import SIE — KoalaBooks</PageTitle>
+
+<h1>📥 Import SIE-4 File</h1>
+
+<p style="color:#64748b;">Upload a SIE-4 file (.se / .si) to import fiscal year data including accounts and journal entries.</p>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+@if (_success is not null)
+{
+    <div class="alert alert-success">@_success</div>
+}
+
+@if (_preview is null)
+{
+    <div class="card">
+        <h3>Select File</h3>
+        <div class="toolbar">
+            <label class="btn btn-primary" style="margin:0;">
+                📁 Choose SIE File
+                <InputFile OnChange="HandleFileUpload" style="display:none" accept=".se,.si,.sie" />
+            </label>
+        </div>
+        @if (_parsing)
+        {
+            <p style="color:#64748b; margin-top:0.5rem;">Parsing file...</p>
+        }
+    </div>
+}
+else
+{
+    <div class="card">
+        <h3>File Preview</h3>
+        <table>
+            <tbody>
+                <tr><td style="font-weight:600; width:150px;">Company</td><td>@(_preview.CompanyName ?? "—")</td></tr>
+                <tr><td style="font-weight:600;">Org Number</td><td>@(_preview.OrgNumber ?? "—")</td></tr>
+                <tr><td style="font-weight:600;">SIE Type</td><td>@_preview.SieType</td></tr>
+                <tr><td style="font-weight:600;">Accounts</td><td>@_preview.AccountCount</td></tr>
+                <tr><td style="font-weight:600;">Total Vouchers</td><td>@_preview.VoucherCount</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2>Fiscal Years</h2>
+
+    @foreach (var fy in _preview.FiscalYears)
+    {
+        <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+            <div>
+                <strong>@fy.Label</strong>
+                <span style="color:#64748b;">(@fy.Start — @fy.End)</span>
+                <span style="color:#64748b; margin-left:0.5rem;">@fy.VoucherCount voucher(s)</span>
+                @if (fy.ExistsInDatabase)
+                {
+                    <span style="color:#f59e0b; margin-left:0.5rem;">⚠️ Already exists</span>
+                }
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+                @if (fy.ExistsInDatabase)
+                {
+                    @if (_confirmOverwrite == fy.RarId)
+                    {
+                        <span style="color:#dc2626; font-weight:600;">Overwrite existing data?</span>
+                        <button class="btn btn-danger btn-sm" @onclick="() => ImportYear(fy.RarId, true)" disabled="@_importing">
+                            Yes, Overwrite
+                        </button>
+                        <button class="btn btn-secondary btn-sm" @onclick="() => _confirmOverwrite = null">Cancel</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-danger btn-sm" @onclick="() => _confirmOverwrite = fy.RarId">
+                            Import (Overwrite)
+                        </button>
+                    }
+                }
+                else
+                {
+                    <button class="btn btn-success btn-sm" @onclick="() => ImportYear(fy.RarId, false)" disabled="@_importing">
+                        Import
+                    </button>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_importResult is not null)
+    {
+        <div class="card" style="margin-top:1rem;">
+            <h3>Import Result — @_importResult.FiscalYearName</h3>
+            <table>
+                <tbody>
+                    <tr><td style="font-weight:600; width:180px;">Accounts Created</td><td>@_importResult.AccountsCreated</td></tr>
+                    <tr><td style="font-weight:600;">Accounts Updated</td><td>@_importResult.AccountsUpdated</td></tr>
+                    <tr><td style="font-weight:600;">Entries Imported</td><td>@_importResult.EntriesImported</td></tr>
+                    <tr><td style="font-weight:600;">Lines Imported</td><td>@_importResult.LinesImported</td></tr>
+                </tbody>
+            </table>
+            @if (_importResult.Warnings.Any())
+            {
+                <div class="alert alert-info" style="margin-top:0.5rem;">
+                    <strong>Warnings:</strong>
+                    <ul style="margin:0.25rem 0 0; padding-left:1.25rem;">
+                        @foreach (var w in _importResult.Warnings.Take(20))
+                        {
+                            <li>@w</li>
+                        }
+                        @if (_importResult.Warnings.Count > 20)
+                        {
+                            <li>...and @(_importResult.Warnings.Count - 20) more</li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    }
+
+    <div style="margin-top:1rem;">
+        <button class="btn btn-secondary" @onclick="Reset">↩ Upload Another File</button>
+    </div>
+}
+
+@code {
+    [Inject] private SieImportService SieImportService { get; set; } = default!;
+
+    private SieDocument? _sieDocument;
+    private SieImportPreview? _preview;
+    private SieImportResult? _importResult;
+    private string? _error;
+    private string? _success;
+    private bool _parsing;
+    private bool _importing;
+    private int? _confirmOverwrite;
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        _success = null;
+        _parsing = true;
+        _importResult = null;
+
+        try
+        {
+            using var stream = new MemoryStream();
+            await e.File.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024).CopyToAsync(stream);
+            stream.Position = 0;
+
+            _sieDocument = SieImportService.Parse(stream);
+
+            if (_sieDocument.SIETYP != 4)
+            {
+                _error = $"Only SIE type 4 is supported. This file is type {_sieDocument.SIETYP}.";
+                _sieDocument = null;
+                return;
+            }
+
+            _preview = await SieImportService.GetPreviewAsync(_sieDocument);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to parse SIE file: {ex.Message}";
+        }
+        finally
+        {
+            _parsing = false;
+        }
+    }
+
+    private async Task ImportYear(int rarId, bool overwrite)
+    {
+        _error = null;
+        _success = null;
+        _importing = true;
+        _confirmOverwrite = null;
+
+        try
+        {
+            _importResult = await SieImportService.ImportFiscalYearAsync(_sieDocument!, rarId, overwrite);
+            _success = $"Successfully imported fiscal year {_importResult.FiscalYearName}: " +
+                $"{_importResult.EntriesImported} entries, {_importResult.LinesImported} lines.";
+            // Refresh preview to update "exists" status
+            _preview = await SieImportService.GetPreviewAsync(_sieDocument!);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    private void Reset()
+    {
+        _sieDocument = null;
+        _preview = null;
+        _importResult = null;
+        _error = null;
+        _success = null;
+        _confirmOverwrite = null;
+    }
+}

@@ -44,7 +44,7 @@ public class CsvImportService
                 continue;
             }
 
-            var accountClass = MapAccountClass(row.AccountNumber);
+            var accountClass = AccountClassMapper.FromAccountNumber(row.AccountNumber);
             if (accountClass is null)
             {
                 skipped++;
@@ -75,23 +75,6 @@ public class CsvImportService
 
         await _db.SaveChangesAsync();
         return new CsvImportResult(created, updated, skipped, errors);
-    }
-
-    /// Maps the first digit of the BAS account number to an AccountClass.
-    private static AccountClass? MapAccountClass(string accountNumber)
-    {
-        if (accountNumber.Length == 0 || !char.IsDigit(accountNumber[0]))
-            return null;
-
-        return accountNumber[0] switch
-        {
-            '1' => AccountClass.Asset,
-            '2' => AccountClass.Liability,
-            '3' => AccountClass.Revenue,
-            >= '4' and <= '7' => AccountClass.Expense,
-            '8' => AccountClass.Equity,
-            _ => null
-        };
     }
 
     private sealed class AccountCsvRow
