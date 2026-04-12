@@ -251,6 +251,7 @@ public class SieImportService
                 Description = BuildDescription(voucher),
                 FiscalYearId = fiscalYear.Id,
                 CreatedAt = DateTime.UtcNow,
+                IsPosted = true,
                 Lines = []
             };
 

@@ -7,6 +7,7 @@ public class JournalEntry
     public DateOnly Date { get; set; }
     public required string Description { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsPosted { get; set; }
 
     public int FiscalYearId { get; set; }
     public FiscalYear FiscalYear { get; set; } = null!;

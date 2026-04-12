@@ -1,0 +1,117 @@
+@page "/reports/general-ledger"
+@rendermode InteractiveServer
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+
+<PageTitle>General Ledger — KoalaBooks</PageTitle>
+
+<h1>📒 General Ledger</h1>
+
+@if (_fiscalYears.Any())
+{
+    <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
+        <label style="font-weight:600; color:#475569;">Fiscal Year:</label>
+        <select @bind="SelectedFiscalYearId" style="width:200px;">
+            @foreach (var fy in _fiscalYears)
+            {
+                <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+            }
+        </select>
+
+        <label style="font-weight:600; color:#475569;">From Account:</label>
+        <input type="text" @bind="FromAccount" placeholder="e.g. 1000" style="width:100px;" />
+
+        <label style="font-weight:600; color:#475569;">To Account:</label>
+        <input type="text" @bind="ToAccount" placeholder="e.g. 1999" style="width:100px;" />
+
+        <label style="font-weight:600; color:#475569;">From Date:</label>
+        <input type="date" @bind="FromDate" style="width:150px;" />
+
+        <label style="font-weight:600; color:#475569;">To Date:</label>
+        <input type="date" @bind="ToDate" style="width:150px;" />
+
+        <button class="btn" @onclick="LoadReport">Generate</button>
+    </div>
+
+    @if (_sections is not null)
+    {
+        @if (!_sections.Any())
+        {
+            <div class="alert alert-info" style="margin-top:1rem;">No accounts found for the selected criteria.</div>
+        }
+
+        @foreach (var acct in _sections)
+        {
+            <div class="card" style="margin-top:1.5rem;">
+                <h3 style="margin:0 0 0.75rem 0;">@acct.AccountNumber @acct.AccountName</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:110px;">Date</th>
+                            <th style="width:80px;">Entry#</th>
+                            <th>Description</th>
+                            <th style="width:130px; text-align:right;">Debit</th>
+                            <th style="width:130px; text-align:right;">Credit</th>
+                            <th style="width:140px; text-align:right;">Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="background:#f8fafc; font-weight:600;">
+                            <td colspan="5">Opening Balance</td>
+                            <td style="text-align:right;">@acct.IncomingBalance.ToString("N2")</td>
+                        </tr>
+                        @foreach (var row in acct.Rows)
+                        {
+                            <tr>
+                                <td>@row.Date.ToString("yyyy-MM-dd")</td>
+                                <td>@row.EntryNumber</td>
+                                <td>@row.Description</td>
+                                <td style="text-align:right;">@(row.DebitAmount != 0 ? row.DebitAmount.ToString("N2") : "—")</td>
+                                <td style="text-align:right;">@(row.CreditAmount != 0 ? row.CreditAmount.ToString("N2") : "—")</td>
+                                <td style="text-align:right;">@row.RunningBalance.ToString("N2")</td>
+                            </tr>
+                        }
+                        <tr style="background:#f1f5f9; font-weight:700;">
+                            <td colspan="5">Closing Balance</td>
+                            <td style="text-align:right;">@acct.ClosingBalance.ToString("N2")</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+else
+{
+    <div class="alert alert-info">No fiscal years found. <a href="/fiscal-years">Create one</a> first.</div>
+}
+
+@code {
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+
+    private List<FiscalYear> _fiscalYears = [];
+    private List<GeneralLedgerAccountSection>? _sections;
+    private int SelectedFiscalYearId { get; set; }
+    private string? FromAccount { get; set; }
+    private string? ToAccount { get; set; }
+    private DateOnly? FromDate { get; set; }
+    private DateOnly? ToDate { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _fiscalYears = await FiscalYearService.GetAllAsync();
+        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
+        if (active is not null)
+        {
+            SelectedFiscalYearId = active.Id;
+            await LoadReport();
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        _sections = await JournalEntryService.GetGeneralLedgerAsync(
+            SelectedFiscalYearId, FromAccount, ToAccount, FromDate, ToDate);
+    }
+}

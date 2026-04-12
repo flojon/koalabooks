@@ -72,6 +72,8 @@ public class JournalEntryService
 
         if (existing is null)
             return (null, "Journal entry not found.");
+        if (existing.IsPosted)
+            return (null, "Cannot modify a posted journal entry. Create a reversal instead.");
         if (existing.FiscalYear.IsClosed)
             return (null, "Cannot modify entries in a closed fiscal year.");
 
@@ -84,6 +86,55 @@ public class JournalEntryService
 
         await _db.SaveChangesAsync();
         return (existing, null);
+    }
+
+    public async Task<string?> PostAsync(int entryId)
+    {
+        var entry = await _db.JournalEntries.FindAsync(entryId);
+        if (entry is null)
+            return "Journal entry not found.";
+        if (entry.IsPosted)
+            return "Journal entry is already posted.";
+
+        entry.IsPosted = true;
+        await _db.SaveChangesAsync();
+        return null;
+    }
+
+    public async Task<(JournalEntry? Entry, string? Error)> CreateReversalAsync(int entryId, string reason)
+    {
+        var original = await _db.JournalEntries
+            .Include(j => j.Lines)
+            .FirstOrDefaultAsync(j => j.Id == entryId);
+
+        if (original is null)
+            return (null, "Journal entry not found.");
+        if (!original.IsPosted)
+            return (null, "Can only reverse posted entries.");
+
+        var maxNumber = await _db.JournalEntries
+            .Where(j => j.FiscalYearId == original.FiscalYearId)
+            .MaxAsync(j => (int?)j.EntryNumber) ?? 0;
+
+        var reversal = new JournalEntry
+        {
+            EntryNumber = maxNumber + 1,
+            FiscalYearId = original.FiscalYearId,
+            Date = DateOnly.FromDateTime(DateTime.Today),
+            Description = $"Reversal of #{original.EntryNumber}: {reason}",
+            CreatedAt = DateTime.UtcNow,
+            IsPosted = true,
+            Lines = original.Lines.Select(l => new JournalEntryLine
+            {
+                AccountId = l.AccountId,
+                DebitAmount = l.CreditAmount,
+                CreditAmount = l.DebitAmount
+            }).ToList()
+        };
+
+        _db.JournalEntries.Add(reversal);
+        await _db.SaveChangesAsync();
+        return (reversal, null);
     }
 
     public async Task<List<TrialBalanceRow>> GetTrialBalanceAsync(int fiscalYearId)
@@ -133,6 +184,70 @@ public class JournalEntryService
         }
 
         return rows.OrderBy(r => r.AccountNumber).ToList();
+    }
+
+    public async Task<List<GeneralLedgerAccountSection>> GetGeneralLedgerAsync(
+        int fiscalYearId, string? fromAccount = null, string? toAccount = null,
+        DateOnly? from = null, DateOnly? to = null)
+    {
+        var accountQuery = _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId);
+
+        if (!string.IsNullOrWhiteSpace(fromAccount))
+            accountQuery = accountQuery.Where(a => string.Compare(a.AccountNumber, fromAccount) >= 0);
+        if (!string.IsNullOrWhiteSpace(toAccount))
+            accountQuery = accountQuery.Where(a => string.Compare(a.AccountNumber, toAccount) <= 0);
+
+        var accounts = await accountQuery.OrderBy(a => a.AccountNumber).ToListAsync();
+
+        var lineQuery = _db.JournalEntryLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId);
+
+        if (from.HasValue)
+            lineQuery = lineQuery.Where(l => l.JournalEntry.Date >= from.Value);
+        if (to.HasValue)
+            lineQuery = lineQuery.Where(l => l.JournalEntry.Date <= to.Value);
+
+        var allLines = await lineQuery.ToListAsync();
+        var linesByAccount = allLines.GroupBy(l => l.AccountId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var sections = new List<GeneralLedgerAccountSection>();
+
+        foreach (var account in accounts)
+        {
+            var section = new GeneralLedgerAccountSection
+            {
+                AccountNumber = account.AccountNumber,
+                AccountName = account.Name,
+                IncomingBalance = account.IncomingBalance
+            };
+
+            var runningBalance = account.IncomingBalance;
+
+            if (linesByAccount.TryGetValue(account.Id, out var lines))
+            {
+                foreach (var line in lines.OrderBy(l => l.JournalEntry.Date).ThenBy(l => l.JournalEntry.EntryNumber))
+                {
+                    runningBalance += line.DebitAmount - line.CreditAmount;
+                    section.Rows.Add(new GeneralLedgerRow
+                    {
+                        Date = line.JournalEntry.Date,
+                        EntryNumber = line.JournalEntry.EntryNumber,
+                        Description = line.JournalEntry.Description,
+                        DebitAmount = line.DebitAmount,
+                        CreditAmount = line.CreditAmount,
+                        RunningBalance = runningBalance
+                    });
+                }
+            }
+
+            section.ClosingBalance = runningBalance;
+            sections.Add(section);
+        }
+
+        return sections;
     }
 
     public async Task<DashboardStats> GetDashboardStatsAsync(int fiscalYearId)
@@ -185,6 +300,25 @@ public class TrialBalanceRow
     public decimal TotalDebit { get; set; }
     public decimal TotalCredit { get; set; }
     public decimal Balance => IncomingBalance + TotalDebit - TotalCredit;
+}
+
+public class GeneralLedgerAccountSection
+{
+    public string AccountNumber { get; set; } = "";
+    public string AccountName { get; set; } = "";
+    public decimal IncomingBalance { get; set; }
+    public List<GeneralLedgerRow> Rows { get; set; } = [];
+    public decimal ClosingBalance { get; set; }
+}
+
+public class GeneralLedgerRow
+{
+    public DateOnly Date { get; set; }
+    public int EntryNumber { get; set; }
+    public string Description { get; set; } = "";
+    public decimal DebitAmount { get; set; }
+    public decimal CreditAmount { get; set; }
+    public decimal RunningBalance { get; set; }
 }
 
 public class DashboardStats

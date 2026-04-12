@@ -103,7 +103,8 @@
             <th>Description</th>
             <th style="width:120px;">Debit</th>
             <th style="width:120px;">Credit</th>
-            <th style="width:80px;">Actions</th>
+            <th style="width:90px;">Status</th>
+            <th style="width:180px;">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -115,7 +116,35 @@
                 <td>@entry.Description</td>
                 <td>@entry.Lines.Sum(l => l.DebitAmount).ToString("N2")</td>
                 <td>@entry.Lines.Sum(l => l.CreditAmount).ToString("N2")</td>
-                <td><button class="btn btn-sm btn-secondary" @onclick="() => EditEntry(entry)">Edit</button></td>
+                <td>
+                    @if (entry.IsPosted)
+                    {
+                        <span style="color:#16a34a;">✅ Posted</span>
+                    }
+                    else
+                    {
+                        <span style="color:#f59e0b;">📝 Draft</span>
+                    }
+                </td>
+                <td>
+                    @if (_reversingEntryId == entry.Id)
+                    {
+                        <div style="display:flex; gap:0.25rem; align-items:center;">
+                            <input type="text" @bind="_reversalReason" placeholder="Reason" style="width:120px;" />
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmReversal(entry.Id)">Confirm</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="CancelReversal">Cancel</button>
+                        </div>
+                    }
+                    else if (entry.IsPosted)
+                    {
+                        <button class="btn btn-sm btn-warning" @onclick="() => StartReversal(entry.Id)">Reverse</button>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm btn-secondary" @onclick="() => EditEntry(entry)">Edit</button>
+                        <button class="btn btn-sm btn-success" @onclick="() => PostEntry(entry.Id)">Post</button>
+                    }
+                </td>
             </tr>
         }
     </tbody>
@@ -144,6 +173,8 @@
     private List<LineModel> _formLines = [];
     private string? _error;
     private string? _success;
+    private int? _reversingEntryId;
+    private string _reversalReason = "";
 
     private decimal TotalDebit => _formLines.Sum(l => l.DebitAmount);
     private decimal TotalCredit => _formLines.Sum(l => l.CreditAmount);
@@ -235,5 +266,49 @@
         public int AccountId { get; set; }
         public decimal DebitAmount { get; set; }
         public decimal CreditAmount { get; set; }
+    }
+
+    private async Task PostEntry(int entryId)
+    {
+        _error = null;
+        _success = null;
+        var error = await JournalEntryService.PostAsync(entryId);
+        if (error is not null)
+        {
+            _error = error;
+            return;
+        }
+        _success = "Entry posted.";
+        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
+    }
+
+    private void StartReversal(int entryId)
+    {
+        _reversingEntryId = entryId;
+        _reversalReason = "";
+        _error = null;
+        _success = null;
+    }
+
+    private void CancelReversal()
+    {
+        _reversingEntryId = null;
+        _reversalReason = "";
+    }
+
+    private async Task ConfirmReversal(int entryId)
+    {
+        _error = null;
+        _success = null;
+        var (result, error) = await JournalEntryService.CreateReversalAsync(entryId, _reversalReason);
+        if (error is not null)
+        {
+            _error = error;
+            return;
+        }
+        _success = $"Reversal entry #{result!.EntryNumber} created.";
+        _reversingEntryId = null;
+        _reversalReason = "";
+        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
     }
 }
