@@ -25,6 +25,7 @@ public record SieImportFiscalYear(
     int? ExistingFiscalYearId);
 
 public record SieImportResult(
+    int FiscalYearId,
     int AccountsCreated,
     int AccountsUpdated,
     int EntriesImported,
@@ -241,6 +242,7 @@ public class SieImportService
         await _db.SaveChangesAsync();
 
         return new SieImportResult(
+            FiscalYearId: fiscalYear.Id,
             AccountsCreated: accountsCreated,
             AccountsUpdated: accountsUpdated,
             EntriesImported: entriesImported,
