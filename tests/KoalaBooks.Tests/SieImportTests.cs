@@ -27,7 +27,9 @@ public class SieImportServiceTests : IDisposable
 
     private static Stream MakeSieStream(string content)
     {
-        return new MemoryStream(System.Text.Encoding.Latin1.GetBytes(content));
+        // Encode as CP437 to simulate real SIE files
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        return new MemoryStream(System.Text.Encoding.GetEncoding(437).GetBytes(content));
     }
 
     private const string SampleSie4 = """
@@ -40,8 +42,8 @@ public class SieImportServiceTests : IDisposable
         #ORGNR 5591234567
         #RAR 0 20260101 20261231
         #KONTO 1910 "Kassa"
-        #KONTO 1930 "Foretagskonto"
-        #KONTO 3010 "Forsaljning"
+        #KONTO 1930 "Företagskonto"
+        #KONTO 3010 "Försäljning"
         #KONTO 5010 "Lokalhyra"
         #VER "A" 1 20260115 "Hyra januari"
         {
@@ -65,6 +67,16 @@ public class SieImportServiceTests : IDisposable
         Assert.Equal("Koala AB", doc.FNAMN?.Name);
         Assert.True(doc.KONTO.Count >= 4);
         Assert.Equal(2, doc.VER.Count);
+    }
+
+    [Fact]
+    public void Parse_CP437Encoding_HandlesSwedishCharacters()
+    {
+        using var stream = MakeSieStream(SampleSie4);
+        var doc = _service.Parse(stream);
+
+        Assert.Equal("Företagskonto", doc.KONTO["1930"].Name);
+        Assert.Equal("Försäljning", doc.KONTO["3010"].Name);
     }
 
     [Fact]

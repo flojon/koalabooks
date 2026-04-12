@@ -42,8 +42,34 @@ public class SieImportService
     public SieDocument Parse(Stream stream)
     {
         var doc = new SieDocument();
-        doc.ReadDocument(stream);
+        var transcodedStream = TranscodeIfNeeded(stream);
+        doc.ReadDocument(transcodedStream);
         return doc;
+    }
+
+    /// <summary>
+    /// SIE files with #FORMAT PC8 use CP437 encoding, but JsiSie reads with Latin-1.
+    /// We transcode CP437 → Unicode → Latin-1 so JsiSie can decode correctly.
+    /// </summary>
+    private static MemoryStream TranscodeIfNeeded(Stream stream)
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        var rawBytes = ms.ToArray();
+
+        // Check for #FORMAT PC8 in the first ~500 bytes (ASCII-safe region)
+        var header = System.Text.Encoding.ASCII.GetString(rawBytes, 0, Math.Min(rawBytes.Length, 500));
+        if (header.Contains("#FORMAT PC8", StringComparison.OrdinalIgnoreCase))
+        {
+            var cp437 = System.Text.Encoding.GetEncoding(437);
+            var unicode = cp437.GetString(rawBytes);
+            var latin1Bytes = System.Text.Encoding.Latin1.GetBytes(unicode);
+            return new MemoryStream(latin1Bytes);
+        }
+
+        return new MemoryStream(rawBytes);
     }
 
     public async Task<SieImportPreview> GetPreviewAsync(SieDocument doc)
