@@ -13,9 +13,10 @@ public class AccountService
         _db = db;
     }
 
-    public async Task<List<Account>> GetAllAsync()
+    public async Task<List<Account>> GetAllAsync(int fiscalYearId)
     {
         return await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
             .OrderBy(a => a.AccountNumber)
             .ToListAsync();
     }

@@ -101,21 +101,24 @@ public class SieImportService
         var fyEnd = DateOnly.FromDateTime(rar.End.Value);
         var fyName = $"{fyStart.Year}" + (fyStart.Year != fyEnd.Year ? $"/{fyEnd.Year}" : "");
 
-        // 1. Upsert accounts
-        var (accountsCreated, accountsUpdated) = await UpsertAccountsAsync(doc, warnings);
-
-        // 2. Find or create fiscal year
+        // 1. Find or create fiscal year (must happen before account upsert)
         var fiscalYear = await _db.FiscalYears
             .FirstOrDefaultAsync(f => f.StartDate == fyStart && f.EndDate == fyEnd);
 
         if (fiscalYear is not null && overwrite)
         {
-            // Delete existing journal entries for this fiscal year
+            // Delete existing journal entries and accounts for this fiscal year
             var existingEntries = await _db.JournalEntries
                 .Include(j => j.Lines)
                 .Where(j => j.FiscalYearId == fiscalYear.Id)
                 .ToListAsync();
             _db.JournalEntries.RemoveRange(existingEntries);
+
+            var existingAccounts = await _db.Accounts
+                .Where(a => a.FiscalYearId == fiscalYear.Id)
+                .ToListAsync();
+            _db.Accounts.RemoveRange(existingAccounts);
+
             await _db.SaveChangesAsync();
             fiscalYear.IsClosed = false;
         }
@@ -137,8 +140,13 @@ public class SieImportService
             await _db.SaveChangesAsync();
         }
 
+        // 2. Upsert accounts scoped to this fiscal year
+        var (accountsCreated, accountsUpdated) = await UpsertAccountsAsync(doc, fiscalYear.Id, warnings);
+
         // 3. Import vouchers for this fiscal year
-        var accountLookup = await _db.Accounts.ToDictionaryAsync(a => a.AccountNumber);
+        var accountLookup = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYear.Id)
+            .ToDictionaryAsync(a => a.AccountNumber);
         var vouchers = doc.VER.Where(v =>
         {
             var vDate = DateOnly.FromDateTime(v.VoucherDate);
@@ -209,9 +217,11 @@ public class SieImportService
     }
 
     private async Task<(int Created, int Updated)> UpsertAccountsAsync(
-        SieDocument doc, List<string> warnings)
+        SieDocument doc, int fiscalYearId, List<string> warnings)
     {
-        var existingAccounts = await _db.Accounts.ToDictionaryAsync(a => a.AccountNumber);
+        var existingAccounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .ToDictionaryAsync(a => a.AccountNumber);
         int created = 0, updated = 0;
 
         foreach (var kvp in doc.KONTO)
@@ -240,7 +250,8 @@ public class SieImportService
                     AccountNumber = sieAccount.Number,
                     Name = string.IsNullOrWhiteSpace(sieAccount.Name) ? sieAccount.Number : sieAccount.Name,
                     AccountClass = accountClass.Value,
-                    IsActive = true
+                    IsActive = true,
+                    FiscalYearId = fiscalYearId
                 };
                 _db.Accounts.Add(account);
                 existingAccounts[sieAccount.Number] = account;

@@ -16,9 +16,13 @@ public class AppDbContext : DbContext
     {
         modelBuilder.Entity<Account>(entity =>
         {
-            entity.HasIndex(a => a.AccountNumber).IsUnique();
+            entity.HasIndex(a => new { a.FiscalYearId, a.AccountNumber }).IsUnique();
             entity.Property(a => a.AccountNumber).HasMaxLength(10);
             entity.Property(a => a.Name).HasMaxLength(200);
+            entity.HasOne(a => a.FiscalYear)
+                  .WithMany(f => f.Accounts)
+                  .HasForeignKey(a => a.FiscalYearId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<FiscalYear>(entity =>

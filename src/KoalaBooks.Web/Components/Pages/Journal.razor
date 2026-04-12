@@ -152,7 +152,7 @@
     protected override async Task OnInitializedAsync()
     {
         _activeFiscalYear = await FiscalYearService.GetActiveAsync();
-        _accounts = (await AccountService.GetAllAsync()).Where(a => a.IsActive).ToList();
+        _accounts = (await AccountService.GetAllAsync(_activeFiscalYear!.Id)).Where(a => a.IsActive).ToList();
         if (_activeFiscalYear is not null)
         {
             _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);

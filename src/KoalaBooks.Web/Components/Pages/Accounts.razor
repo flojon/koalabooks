@@ -9,6 +9,14 @@
 
 <h1>📋 Chart of Accounts</h1>
 
+@if (_activeFiscalYear is null)
+{
+    <div class="alert alert-info">No active fiscal year found. <a href="/fiscal-years">Create one</a> to manage accounts.</div>
+    return;
+}
+
+<p style="color:#64748b; margin-bottom:1rem;">Fiscal Year: <strong>@_activeFiscalYear.Name</strong></p>
+
 <div class="toolbar">
     <button class="btn btn-primary" @onclick="() => _showForm = !_showForm">
         @(_showForm ? "Cancel" : "+ Add Account")
@@ -92,7 +100,9 @@
 @code {
     [Inject] private AccountService AccountService { get; set; } = default!;
     [Inject] private CsvImportService CsvImportService { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
 
+    private FiscalYear? _activeFiscalYear;
     private List<Account> _accounts = [];
     private bool _showForm;
     private Account? _editingAccount;
@@ -105,12 +115,14 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadAccounts();
+        _activeFiscalYear = await FiscalYearService.GetActiveAsync();
+        if (_activeFiscalYear is not null)
+            await LoadAccounts();
     }
 
     private async Task LoadAccounts()
     {
-        _accounts = await AccountService.GetAllAsync();
+        _accounts = await AccountService.GetAllAsync(_activeFiscalYear!.Id);
     }
 
     private void EditAccount(Account account)
@@ -144,7 +156,8 @@
             {
                 AccountNumber = _formNumber.Trim(),
                 Name = _formName.Trim(),
-                AccountClass = _formClass
+                AccountClass = _formClass,
+                FiscalYearId = _activeFiscalYear!.Id
             });
         }
 
@@ -167,7 +180,7 @@
         try
         {
             using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
-            var result = await CsvImportService.ImportAccountsAsync(stream);
+            var result = await CsvImportService.ImportAccountsAsync(stream, _activeFiscalYear!.Id);
             _importMessage = $"Import complete: {result.Created} created, {result.Updated} updated, {result.Skipped} skipped.";
             _importIsError = false;
             if (result.Errors.Any())

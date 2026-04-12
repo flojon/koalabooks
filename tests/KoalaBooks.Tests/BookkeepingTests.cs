@@ -11,6 +11,7 @@ public class CsvImportServiceTests : IDisposable
 {
     private readonly AppDbContext _db;
     private readonly CsvImportService _service;
+    private readonly FiscalYear _fiscalYear;
 
     public CsvImportServiceTests()
     {
@@ -21,6 +22,15 @@ public class CsvImportServiceTests : IDisposable
         _db.Database.OpenConnection();
         _db.Database.EnsureCreated();
         _service = new CsvImportService(_db);
+
+        _fiscalYear = new FiscalYear
+        {
+            Name = "2026",
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 12, 31)
+        };
+        _db.FiscalYears.Add(_fiscalYear);
+        _db.SaveChanges();
     }
 
     public void Dispose() => _db.Dispose();
@@ -31,7 +41,7 @@ public class CsvImportServiceTests : IDisposable
         var csv = "AccountNumber,Name\n1910,Kassa\n3010,Försäljning\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var result = await _service.ImportAccountsAsync(stream);
+        var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
 
         Assert.Equal(2, result.Created);
         Assert.Equal(0, result.Updated);
@@ -46,13 +56,13 @@ public class CsvImportServiceTests : IDisposable
     [Fact]
     public async Task ImportAccounts_UpdatesExistingAccount()
     {
-        _db.Accounts.Add(new Account { AccountNumber = "1910", Name = "Old Name", AccountClass = AccountClass.Asset });
+        _db.Accounts.Add(new Account { AccountNumber = "1910", Name = "Old Name", AccountClass = AccountClass.Asset, FiscalYearId = _fiscalYear.Id });
         await _db.SaveChangesAsync();
 
         var csv = "AccountNumber,Name\n1910,Kassa\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var result = await _service.ImportAccountsAsync(stream);
+        var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
 
         Assert.Equal(0, result.Created);
         Assert.Equal(1, result.Updated);
@@ -65,7 +75,7 @@ public class CsvImportServiceTests : IDisposable
         var csv = "AccountNumber,Name\n,\n1910,Kassa\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var result = await _service.ImportAccountsAsync(stream);
+        var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
 
         Assert.Equal(1, result.Created);
         Assert.Equal(1, result.Skipped);
@@ -78,7 +88,7 @@ public class CsvImportServiceTests : IDisposable
         var csv = "AccountNumber,Name\n1000,Tillgångar\n2000,Skulder\n3000,Intäkter\n4000,Kostnader\n5000,Övriga kostnader\n8000,Eget kapital\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var result = await _service.ImportAccountsAsync(stream);
+        var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
 
         Assert.Equal(6, result.Created);
         var accounts = await _db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
@@ -109,16 +119,18 @@ public class JournalEntryServiceTests : IDisposable
         _db.Database.EnsureCreated();
         _service = new JournalEntryService(_db);
 
-        _account1 = new Account { AccountNumber = "1910", Name = "Kassa", AccountClass = AccountClass.Asset };
-        _account2 = new Account { AccountNumber = "3010", Name = "Försäljning", AccountClass = AccountClass.Revenue };
         _fiscalYear = new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31)
         };
-        _db.Accounts.AddRange(_account1, _account2);
         _db.FiscalYears.Add(_fiscalYear);
+        _db.SaveChanges();
+
+        _account1 = new Account { AccountNumber = "1910", Name = "Kassa", AccountClass = AccountClass.Asset, FiscalYearId = _fiscalYear.Id };
+        _account2 = new Account { AccountNumber = "3010", Name = "Försäljning", AccountClass = AccountClass.Revenue, FiscalYearId = _fiscalYear.Id };
+        _db.Accounts.AddRange(_account1, _account2);
         _db.SaveChanges();
     }
 

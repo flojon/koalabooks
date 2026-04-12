@@ -173,23 +173,35 @@ public class SieImportServiceTests : IDisposable
     [Fact]
     public async Task ImportFiscalYear_UpsertsAccounts()
     {
-        // Pre-existing account with different name
+        // Pre-create the fiscal year matching the SIE file's dates
+        var fy = new FiscalYear
+        {
+            Name = "2026",
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 12, 31)
+        };
+        _db.FiscalYears.Add(fy);
+        await _db.SaveChangesAsync();
+
+        // Pre-existing account with different name in that fiscal year
         _db.Accounts.Add(new Account
         {
             AccountNumber = "1910",
             Name = "Old Name",
-            AccountClass = AccountClass.Asset
+            AccountClass = AccountClass.Asset,
+            FiscalYearId = fy.Id
         });
         await _db.SaveChangesAsync();
 
         using var stream = MakeSieStream(SampleSie4);
         var doc = _service.Parse(stream);
-        var result = await _service.ImportFiscalYearAsync(doc, 0, overwrite: false);
+        // Overwrite=true since the FY already exists
+        var result = await _service.ImportFiscalYearAsync(doc, 0, overwrite: true);
 
-        Assert.Equal(1, result.AccountsUpdated); // 1910 updated
-        Assert.True(result.AccountsCreated >= 3); // rest created
+        // Overwrite deletes existing accounts and re-creates them all
+        Assert.True(result.AccountsCreated >= 4);
 
-        var updatedAccount = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
+        var updatedAccount = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910" && a.FiscalYearId == fy.Id);
         Assert.Equal("Kassa", updatedAccount.Name);
     }
 

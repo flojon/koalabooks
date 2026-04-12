@@ -19,7 +19,7 @@ public class CsvImportService
         _db = db;
     }
 
-    public async Task<CsvImportResult> ImportAccountsAsync(Stream csvStream)
+    public async Task<CsvImportResult> ImportAccountsAsync(Stream csvStream, int fiscalYearId)
     {
         using var reader = new StreamReader(csvStream);
         using var csv = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
@@ -33,7 +33,9 @@ public class CsvImportService
 
         int created = 0, updated = 0, skipped = 0;
         var errors = new List<string>();
-        var existingAccounts = await _db.Accounts.ToDictionaryAsync(a => a.AccountNumber);
+        var existingAccounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .ToDictionaryAsync(a => a.AccountNumber);
 
         foreach (var row in records)
         {
@@ -65,7 +67,8 @@ public class CsvImportService
                     AccountNumber = row.AccountNumber,
                     Name = row.Name,
                     AccountClass = accountClass.Value,
-                    IsActive = true
+                    IsActive = true,
+                    FiscalYearId = fiscalYearId
                 };
                 _db.Accounts.Add(account);
                 existingAccounts[row.AccountNumber] = account;

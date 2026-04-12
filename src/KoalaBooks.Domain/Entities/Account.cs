@@ -7,4 +7,7 @@ public class Account
     public required string Name { get; set; }
     public Enums.AccountClass AccountClass { get; set; }
     public bool IsActive { get; set; } = true;
+
+    public int FiscalYearId { get; set; }
+    public FiscalYear FiscalYear { get; set; } = null!;
 }
