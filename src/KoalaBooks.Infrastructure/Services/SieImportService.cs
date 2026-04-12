@@ -99,6 +99,10 @@ public class SieImportService
                 ExistingFiscalYearId: existing?.Id));
         }
 
+        // Only show fiscal years that have vouchers (previous years with only
+        // IB/UB balance data and no transactions are not useful to import)
+        fiscalYears = fiscalYears.Where(f => f.VoucherCount > 0).ToList();
+
         return new SieImportPreview(
             CompanyName: doc.FNAMN?.Name,
             OrgNumber: doc.FNAMN?.OrgIdentifier,

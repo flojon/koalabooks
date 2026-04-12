@@ -47,7 +47,7 @@ namespace KoalaBooks.Infrastructure.Data.Migrations
                     b.HasIndex("FiscalYearId", "AccountNumber")
                         .IsUnique();
 
-                    b.ToTable("Accounts");
+                    b.ToTable("Accounts", (string)null);
                 });
 
             modelBuilder.Entity("KoalaBooks.Domain.Entities.FiscalYear", b =>
@@ -72,7 +72,7 @@ namespace KoalaBooks.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("FiscalYears");
+                    b.ToTable("FiscalYears", (string)null);
                 });
 
             modelBuilder.Entity("KoalaBooks.Domain.Entities.JournalEntry", b =>
@@ -103,7 +103,7 @@ namespace KoalaBooks.Infrastructure.Data.Migrations
                     b.HasIndex("FiscalYearId", "EntryNumber")
                         .IsUnique();
 
-                    b.ToTable("JournalEntries");
+                    b.ToTable("JournalEntries", (string)null);
                 });
 
             modelBuilder.Entity("KoalaBooks.Domain.Entities.JournalEntryLine", b =>
@@ -132,7 +132,7 @@ namespace KoalaBooks.Infrastructure.Data.Migrations
 
                     b.HasIndex("JournalEntryId");
 
-                    b.ToTable("JournalEntryLines");
+                    b.ToTable("JournalEntryLines", (string)null);
                 });
 
             modelBuilder.Entity("KoalaBooks.Domain.Entities.Account", b =>
