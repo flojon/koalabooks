@@ -88,18 +88,51 @@ public class JournalEntryService
 
     public async Task<List<TrialBalanceRow>> GetTrialBalanceAsync(int fiscalYearId)
     {
-        return await _db.JournalEntryLines
+        // Get all accounts for this fiscal year (includes IB)
+        var accounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .ToDictionaryAsync(a => a.Id);
+
+        // Get transaction totals per account
+        var transactionTotals = await _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
-            .GroupBy(l => new { l.AccountId, l.Account.AccountNumber, l.Account.Name })
-            .Select(g => new TrialBalanceRow
-            {
-                AccountNumber = g.Key.AccountNumber,
-                AccountName = g.Key.Name,
-                TotalDebit = g.Sum(l => l.DebitAmount),
-                TotalCredit = g.Sum(l => l.CreditAmount)
-            })
-            .OrderBy(r => r.AccountNumber)
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
             .ToListAsync();
+
+        var rows = new List<TrialBalanceRow>();
+        var accountsWithTransactions = new HashSet<int>();
+
+        foreach (var t in transactionTotals)
+        {
+            accountsWithTransactions.Add(t.AccountId);
+            if (accounts.TryGetValue(t.AccountId, out var account))
+            {
+                rows.Add(new TrialBalanceRow
+                {
+                    AccountNumber = account.AccountNumber,
+                    AccountName = account.Name,
+                    IncomingBalance = account.IncomingBalance,
+                    TotalDebit = t.Debit,
+                    TotalCredit = t.Credit
+                });
+            }
+        }
+
+        // Include accounts with IB but no transactions
+        foreach (var account in accounts.Values.Where(a => a.IncomingBalance != 0 && !accountsWithTransactions.Contains(a.Id)))
+        {
+            rows.Add(new TrialBalanceRow
+            {
+                AccountNumber = account.AccountNumber,
+                AccountName = account.Name,
+                IncomingBalance = account.IncomingBalance,
+                TotalDebit = 0,
+                TotalCredit = 0
+            });
+        }
+
+        return rows.OrderBy(r => r.AccountNumber).ToList();
     }
 
     public async Task<DashboardStats> GetDashboardStatsAsync(int fiscalYearId)
@@ -148,9 +181,10 @@ public class TrialBalanceRow
 {
     public string AccountNumber { get; set; } = "";
     public string AccountName { get; set; } = "";
+    public decimal IncomingBalance { get; set; }
     public decimal TotalDebit { get; set; }
     public decimal TotalCredit { get; set; }
-    public decimal Balance => TotalDebit - TotalCredit;
+    public decimal Balance => IncomingBalance + TotalDebit - TotalCredit;
 }
 
 public class DashboardStats

@@ -19,6 +19,8 @@ public class AppDbContext : DbContext
             entity.HasIndex(a => new { a.FiscalYearId, a.AccountNumber }).IsUnique();
             entity.Property(a => a.AccountNumber).HasMaxLength(10);
             entity.Property(a => a.Name).HasMaxLength(200);
+            entity.Property(a => a.IncomingBalance).HasPrecision(18, 2);
+            entity.Property(a => a.OutgoingBalance).HasPrecision(18, 2);
             entity.HasOne(a => a.FiscalYear)
                   .WithMany(f => f.Accounts)
                   .HasForeignKey(a => a.FiscalYearId)

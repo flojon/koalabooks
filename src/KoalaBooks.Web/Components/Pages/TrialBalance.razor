@@ -24,6 +24,7 @@
             <tr>
                 <th style="width:100px;">Account</th>
                 <th>Name</th>
+                <th style="width:140px; text-align:right;">IB</th>
                 <th style="width:140px; text-align:right;">Debit</th>
                 <th style="width:140px; text-align:right;">Credit</th>
                 <th style="width:140px; text-align:right;">Balance</th>
@@ -35,6 +36,7 @@
                 <tr>
                     <td>@row.AccountNumber</td>
                     <td>@row.AccountName</td>
+                    <td style="text-align:right;">@(row.IncomingBalance != 0 ? row.IncomingBalance.ToString("N2") : "—")</td>
                     <td style="text-align:right;">@row.TotalDebit.ToString("N2")</td>
                     <td style="text-align:right;">@row.TotalCredit.ToString("N2")</td>
                     <td style="text-align:right; font-weight:600; color:@(row.Balance >= 0 ? "#16a34a" : "#dc2626")">
@@ -46,6 +48,7 @@
         <tfoot>
             <tr style="font-weight:700; background:#f1f5f9;">
                 <td colspan="2">Total</td>
+                <td style="text-align:right;">@_rows.Sum(r => r.IncomingBalance).ToString("N2")</td>
                 <td style="text-align:right;">@_rows.Sum(r => r.TotalDebit).ToString("N2")</td>
                 <td style="text-align:right;">@_rows.Sum(r => r.TotalCredit).ToString("N2")</td>
                 <td style="text-align:right;">@_rows.Sum(r => r.Balance).ToString("N2")</td>

@@ -20,6 +20,7 @@ public record SieImportFiscalYear(
     DateOnly End,
     string Label,
     int VoucherCount,
+    int BalanceCount,
     bool ExistsInDatabase,
     int? ExistingFiscalYearId);
 
@@ -28,6 +29,7 @@ public record SieImportResult(
     int AccountsUpdated,
     int EntriesImported,
     int LinesImported,
+    int BalancesImported,
     string FiscalYearName,
     List<string> Warnings);
 
@@ -85,6 +87,11 @@ public class SieImportService
                 return vDate >= start && vDate <= end;
             });
 
+            // Count IB/UB balances for this fiscal year
+            var yearNr = kvp.Key;
+            var balanceCount = doc.IB.Count(b => b.YearNr == yearNr)
+                             + doc.UB.Count(b => b.YearNr == yearNr);
+
             // Check if fiscal year exists in DB
             var existing = await _db.FiscalYears
                 .FirstOrDefaultAsync(f => f.StartDate == start && f.EndDate == end);
@@ -95,13 +102,13 @@ public class SieImportService
                 End: end,
                 Label: label,
                 VoucherCount: voucherCount,
+                BalanceCount: balanceCount,
                 ExistsInDatabase: existing is not null,
                 ExistingFiscalYearId: existing?.Id));
         }
 
-        // Only show fiscal years that have vouchers (previous years with only
-        // IB/UB balance data and no transactions are not useful to import)
-        fiscalYears = fiscalYears.Where(f => f.VoucherCount > 0).ToList();
+        // Only show fiscal years that have vouchers or balances
+        fiscalYears = fiscalYears.Where(f => f.VoucherCount > 0 || f.BalanceCount > 0).ToList();
 
         return new SieImportPreview(
             CompanyName: doc.FNAMN?.Name,
@@ -166,7 +173,10 @@ public class SieImportService
         // 2. Upsert accounts scoped to this fiscal year
         var (accountsCreated, accountsUpdated) = await UpsertAccountsAsync(doc, fiscalYear.Id, warnings);
 
-        // 3. Import vouchers for this fiscal year
+        // 3. Import IB/UB balances for this fiscal year
+        var balancesImported = await ImportBalancesAsync(doc, rarId, fiscalYear.Id, warnings);
+
+        // 4. Import vouchers for this fiscal year
         var accountLookup = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYear.Id)
             .ToDictionaryAsync(a => a.AccountNumber);
@@ -235,6 +245,7 @@ public class SieImportService
             AccountsUpdated: accountsUpdated,
             EntriesImported: entriesImported,
             LinesImported: linesImported,
+            BalancesImported: balancesImported,
             FiscalYearName: fyName,
             Warnings: warnings);
     }
@@ -284,6 +295,47 @@ public class SieImportService
 
         await _db.SaveChangesAsync();
         return (created, updated);
+    }
+
+    private async Task<int> ImportBalancesAsync(
+        SieDocument doc, int yearNr, int fiscalYearId, List<string> warnings)
+    {
+        var accountLookup = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .ToDictionaryAsync(a => a.AccountNumber);
+
+        int count = 0;
+
+        foreach (var ib in doc.IB.Where(b => b.YearNr == yearNr))
+        {
+            if (ib.Account is null) continue;
+            if (accountLookup.TryGetValue(ib.Account.Number, out var account))
+            {
+                account.IncomingBalance = ib.Amount;
+                count++;
+            }
+            else
+            {
+                warnings.Add($"IB: account {ib.Account.Number} not found, skipped.");
+            }
+        }
+
+        foreach (var ub in doc.UB.Where(b => b.YearNr == yearNr))
+        {
+            if (ub.Account is null) continue;
+            if (accountLookup.TryGetValue(ub.Account.Number, out var account))
+            {
+                account.OutgoingBalance = ub.Amount;
+                count++;
+            }
+            else
+            {
+                warnings.Add($"UB: account {ub.Account.Number} not found, skipped.");
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return count;
     }
 
     private static string BuildDescription(SieVoucher voucher)

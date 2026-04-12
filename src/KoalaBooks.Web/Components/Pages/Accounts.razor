@@ -69,6 +69,8 @@
             <th style="width:100px;">Number</th>
             <th>Name</th>
             <th style="width:120px;">Class</th>
+            <th style="width:120px; text-align:right;">IB</th>
+            <th style="width:120px; text-align:right;">UB</th>
             <th style="width:80px;">Active</th>
             <th style="width:120px;">Actions</th>
         </tr>
@@ -80,6 +82,8 @@
                 <td>@account.AccountNumber</td>
                 <td>@account.Name</td>
                 <td>@account.AccountClass</td>
+                <td style="text-align:right;">@(account.IncomingBalance != 0 ? account.IncomingBalance.ToString("N2") : "—")</td>
+                <td style="text-align:right;">@(account.OutgoingBalance != 0 ? account.OutgoingBalance.ToString("N2") : "—")</td>
                 <td>@(account.IsActive ? "✅" : "❌")</td>
                 <td>
                     <button class="btn btn-sm btn-secondary" @onclick="() => EditAccount(account)">Edit</button>

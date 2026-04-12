@@ -58,6 +58,10 @@ else
                 <strong>@fy.Label</strong>
                 <span style="color:#64748b;">(@fy.Start — @fy.End)</span>
                 <span style="color:#64748b; margin-left:0.5rem;">@fy.VoucherCount voucher(s)</span>
+                @if (fy.BalanceCount > 0)
+                {
+                    <span style="color:#64748b; margin-left:0.5rem;">@fy.BalanceCount balance(s)</span>
+                }
                 @if (fy.ExistsInDatabase)
                 {
                     <span style="color:#f59e0b; margin-left:0.5rem;">⚠️ Already exists</span>
@@ -101,6 +105,7 @@ else
                     <tr><td style="font-weight:600;">Accounts Updated</td><td>@_importResult.AccountsUpdated</td></tr>
                     <tr><td style="font-weight:600;">Entries Imported</td><td>@_importResult.EntriesImported</td></tr>
                     <tr><td style="font-weight:600;">Lines Imported</td><td>@_importResult.LinesImported</td></tr>
+                    <tr><td style="font-weight:600;">Balances Imported</td><td>@_importResult.BalancesImported</td></tr>
                 </tbody>
             </table>
             @if (_importResult.Warnings.Any())

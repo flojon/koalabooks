@@ -235,4 +235,112 @@ public class SieImportServiceTests : IDisposable
         Assert.True(preview.FiscalYears[0].ExistsInDatabase);
         Assert.NotNull(preview.FiscalYears[0].ExistingFiscalYearId);
     }
+
+    private const string SampleSie4WithBalances = """
+        #FLAGGA 0
+        #FORMAT PC8
+        #SIETYP 4
+        #PROGRAM "TestApp" 1.0
+        #GEN 20260101
+        #FNAMN "Koala AB"
+        #ORGNR 5591234567
+        #RAR 0 20260101 20261231
+        #RAR -1 20250101 20251231
+        #KONTO 1910 "Kassa"
+        #KONTO 1930 "Företagskonto"
+        #KONTO 3010 "Försäljning"
+        #KONTO 5010 "Lokalhyra"
+        #IB 0 1910 50000.00
+        #IB 0 1930 120000.00
+        #UB 0 1910 75000.00
+        #UB 0 1930 135000.00
+        #IB -1 1910 30000.00
+        #UB -1 1910 50000.00
+        #VER "A" 1 20260115 "Hyra januari"
+        {
+            #TRANS 5010 {} 10000.00 20260115 "Hyra"
+            #TRANS 1930 {} -10000.00 20260115 "Hyra"
+        }
+        #VER "A" 2 20260201 "Kundbetalning"
+        {
+            #TRANS 1930 {} 25000.00 20260201 ""
+            #TRANS 3010 {} -25000.00 20260201 ""
+        }
+        """;
+
+    [Fact]
+    public async Task GetPreview_ShowsBalanceCount()
+    {
+        using var stream = MakeSieStream(SampleSie4WithBalances);
+        var doc = _service.Parse(stream);
+        var preview = await _service.GetPreviewAsync(doc);
+
+        // Year 0 has 2 vouchers + 4 balances (2 IB + 2 UB)
+        var fy0 = preview.FiscalYears.Single(f => f.RarId == 0);
+        Assert.Equal(2, fy0.VoucherCount);
+        Assert.Equal(4, fy0.BalanceCount);
+
+        // Year -1 has 0 vouchers but 2 balances (1 IB + 1 UB)
+        var fyPrev = preview.FiscalYears.Single(f => f.RarId == -1);
+        Assert.Equal(0, fyPrev.VoucherCount);
+        Assert.Equal(2, fyPrev.BalanceCount);
+    }
+
+    [Fact]
+    public async Task ImportFiscalYear_ImportsIBUBBalances()
+    {
+        using var stream = MakeSieStream(SampleSie4WithBalances);
+        var doc = _service.Parse(stream);
+        var result = await _service.ImportFiscalYearAsync(doc, 0, overwrite: false);
+
+        Assert.Equal(4, result.BalancesImported); // 2 IB + 2 UB
+
+        var accounts = await _db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
+        var kassa = accounts.Single(a => a.AccountNumber == "1910");
+        Assert.Equal(50000m, kassa.IncomingBalance);
+        Assert.Equal(75000m, kassa.OutgoingBalance);
+
+        var foretag = accounts.Single(a => a.AccountNumber == "1930");
+        Assert.Equal(120000m, foretag.IncomingBalance);
+        Assert.Equal(135000m, foretag.OutgoingBalance);
+    }
+
+    [Fact]
+    public async Task ImportFiscalYear_ImportsPreviousYearBalances()
+    {
+        using var stream = MakeSieStream(SampleSie4WithBalances);
+        var doc = _service.Parse(stream);
+
+        // Import previous year (RAR -1) — has only balances, no vouchers
+        var result = await _service.ImportFiscalYearAsync(doc, -1, overwrite: false);
+
+        Assert.Equal(0, result.EntriesImported);
+        Assert.Equal(2, result.BalancesImported); // 1 IB + 1 UB
+
+        var kassa = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
+        Assert.Equal(30000m, kassa.IncomingBalance);
+        Assert.Equal(50000m, kassa.OutgoingBalance);
+    }
+
+    [Fact]
+    public async Task ImportFiscalYear_OverwriteClearsBalances()
+    {
+        using var stream1 = MakeSieStream(SampleSie4WithBalances);
+        var doc1 = _service.Parse(stream1);
+        await _service.ImportFiscalYearAsync(doc1, 0, overwrite: false);
+
+        // Verify balances exist
+        var kassa = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
+        Assert.Equal(50000m, kassa.IncomingBalance);
+
+        // Overwrite with basic sample (no balances)
+        using var stream2 = MakeSieStream(SampleSie4);
+        var doc2 = _service.Parse(stream2);
+        await _service.ImportFiscalYearAsync(doc2, 0, overwrite: true);
+
+        // Balances should be 0 (reset)
+        kassa = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
+        Assert.Equal(0m, kassa.IncomingBalance);
+        Assert.Equal(0m, kassa.OutgoingBalance);
+    }
 }
