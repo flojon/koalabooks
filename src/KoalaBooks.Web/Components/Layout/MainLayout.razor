@@ -1,0 +1,25 @@
+﻿@inherits LayoutComponentBase
+
+<div class="app-container">
+    <nav class="sidebar">
+        <div class="sidebar-header">
+            <h2>🐨 KoalaBooks</h2>
+        </div>
+        <ul class="nav-menu">
+            <li><NavLink href="/" Match="NavLinkMatch.All">📊 Dashboard</NavLink></li>
+            <li><NavLink href="/accounts">📋 Accounts</NavLink></li>
+            <li><NavLink href="/journal">📝 Journal</NavLink></li>
+            <li><NavLink href="/fiscal-years">📅 Fiscal Years</NavLink></li>
+            <li><NavLink href="/reports/trial-balance">📈 Trial Balance</NavLink></li>
+        </ul>
+    </nav>
+    <main class="main-content">
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>

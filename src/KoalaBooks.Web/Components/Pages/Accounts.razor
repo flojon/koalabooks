@@ -1,0 +1,185 @@
+@page "/accounts"
+@rendermode InteractiveServer
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Enums
+@using KoalaBooks.Infrastructure.Services
+
+<PageTitle>Chart of Accounts — KoalaBooks</PageTitle>
+
+<h1>📋 Chart of Accounts</h1>
+
+<div class="toolbar">
+    <button class="btn btn-primary" @onclick="() => _showForm = !_showForm">
+        @(_showForm ? "Cancel" : "+ Add Account")
+    </button>
+    <label class="btn btn-secondary" style="margin:0;">
+        📁 Import CSV
+        <InputFile OnChange="HandleFileUpload" style="display:none" accept=".csv" />
+    </label>
+</div>
+
+@if (_importMessage is not null)
+{
+    <div class="alert @(_importIsError ? "alert-danger" : "alert-success")">@_importMessage</div>
+}
+
+@if (_showForm)
+{
+    <div class="card">
+        <h3>@(_editingAccount is null ? "Add Account" : "Edit Account")</h3>
+        <div style="display:grid; grid-template-columns:120px 1fr 200px auto; gap:0.5rem; align-items:end;">
+            <div class="form-group">
+                <label>Number</label>
+                <input type="text" @bind="_formNumber" placeholder="1910" />
+            </div>
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" @bind="_formName" placeholder="Kassa" />
+            </div>
+            <div class="form-group">
+                <label>Class</label>
+                <select @bind="_formClass">
+                    @foreach (var c in Enum.GetValues<AccountClass>())
+                    {
+                        <option value="@c">@c</option>
+                    }
+                </select>
+            </div>
+            <button class="btn btn-success" @onclick="SaveAccount">Save</button>
+        </div>
+        @if (_formError is not null)
+        {
+            <div class="alert alert-danger" style="margin-top:0.5rem;">@_formError</div>
+        }
+    </div>
+}
+
+<table>
+    <thead>
+        <tr>
+            <th style="width:100px;">Number</th>
+            <th>Name</th>
+            <th style="width:120px;">Class</th>
+            <th style="width:80px;">Active</th>
+            <th style="width:120px;">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var account in _accounts)
+        {
+            <tr style="@(account.IsActive ? "" : "opacity:0.5")">
+                <td>@account.AccountNumber</td>
+                <td>@account.Name</td>
+                <td>@account.AccountClass</td>
+                <td>@(account.IsActive ? "✅" : "❌")</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => EditAccount(account)">Edit</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => ToggleActive(account.Id)">
+                        @(account.IsActive ? "Disable" : "Enable")
+                    </button>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (!_accounts.Any())
+{
+    <div class="alert alert-info" style="margin-top:1rem;">No accounts yet. Import a CSV or add accounts manually.</div>
+}
+
+@code {
+    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private CsvImportService CsvImportService { get; set; } = default!;
+
+    private List<Account> _accounts = [];
+    private bool _showForm;
+    private Account? _editingAccount;
+    private string _formNumber = "";
+    private string _formName = "";
+    private AccountClass _formClass = AccountClass.Asset;
+    private string? _formError;
+    private string? _importMessage;
+    private bool _importIsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAccounts();
+    }
+
+    private async Task LoadAccounts()
+    {
+        _accounts = await AccountService.GetAllAsync();
+    }
+
+    private void EditAccount(Account account)
+    {
+        _editingAccount = account;
+        _formNumber = account.AccountNumber;
+        _formName = account.Name;
+        _formClass = account.AccountClass;
+        _showForm = true;
+    }
+
+    private async Task SaveAccount()
+    {
+        _formError = null;
+        if (string.IsNullOrWhiteSpace(_formNumber) || string.IsNullOrWhiteSpace(_formName))
+        {
+            _formError = "Number and Name are required.";
+            return;
+        }
+
+        if (_editingAccount is not null)
+        {
+            _editingAccount.AccountNumber = _formNumber.Trim();
+            _editingAccount.Name = _formName.Trim();
+            _editingAccount.AccountClass = _formClass;
+            await AccountService.UpdateAsync(_editingAccount);
+        }
+        else
+        {
+            await AccountService.CreateAsync(new Account
+            {
+                AccountNumber = _formNumber.Trim(),
+                Name = _formName.Trim(),
+                AccountClass = _formClass
+            });
+        }
+
+        _showForm = false;
+        _editingAccount = null;
+        _formNumber = "";
+        _formName = "";
+        await LoadAccounts();
+    }
+
+    private async Task ToggleActive(int id)
+    {
+        await AccountService.ToggleActiveAsync(id);
+        await LoadAccounts();
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        _importMessage = null;
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            var result = await CsvImportService.ImportAccountsAsync(stream);
+            _importMessage = $"Import complete: {result.Created} created, {result.Updated} updated, {result.Skipped} skipped.";
+            _importIsError = false;
+            if (result.Errors.Any())
+            {
+                _importMessage += " Errors: " + string.Join("; ", result.Errors.Take(5));
+            }
+            await LoadAccounts();
+        }
+        catch (Exception ex)
+        {
+            _importMessage = $"Import failed: {ex.Message}";
+            _importIsError = true;
+        }
+    }
+}

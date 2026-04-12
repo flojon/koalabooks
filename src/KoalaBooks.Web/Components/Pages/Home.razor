@@ -1,0 +1,63 @@
+@page "/"
+@rendermode InteractiveServer
+@using KoalaBooks.Application.Services
+
+<PageTitle>Dashboard — KoalaBooks</PageTitle>
+
+<h1>📊 Dashboard</h1>
+
+@if (_activeFiscalYear is null)
+{
+    <div class="alert alert-info">No active fiscal year found. <a href="/fiscal-years">Create one</a> to get started.</div>
+}
+else
+{
+    <p style="color:#64748b; margin-bottom:1rem;">Fiscal Year: <strong>@_activeFiscalYear.Name</strong> (@_activeFiscalYear.StartDate — @_activeFiscalYear.EndDate)</p>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">@_stats.EntryCount</div>
+            <div class="stat-label">Journal Entries</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_stats.TotalDebit.ToString("N2")</div>
+            <div class="stat-label">Total Debit</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_stats.TotalCredit.ToString("N2")</div>
+            <div class="stat-label">Total Credit</div>
+        </div>
+    </div>
+}
+
+<div class="stats-grid">
+    <a href="/accounts" class="card" style="text-decoration:none; color:inherit;">
+        <h3>📋 Chart of Accounts</h3>
+        <p style="color:#64748b; margin:0;">Manage accounts and import BAS-kontoplanen</p>
+    </a>
+    <a href="/journal" class="card" style="text-decoration:none; color:inherit;">
+        <h3>📝 Journal Entries</h3>
+        <p style="color:#64748b; margin:0;">Record debit and credit transactions</p>
+    </a>
+    <a href="/reports/trial-balance" class="card" style="text-decoration:none; color:inherit;">
+        <h3>📈 Trial Balance</h3>
+        <p style="color:#64748b; margin:0;">View account balances</p>
+    </a>
+</div>
+
+@code {
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+
+    private KoalaBooks.Domain.Entities.FiscalYear? _activeFiscalYear;
+    private DashboardStats _stats = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeFiscalYear = await FiscalYearService.GetActiveAsync();
+        if (_activeFiscalYear is not null)
+        {
+            _stats = await JournalEntryService.GetDashboardStatsAsync(_activeFiscalYear.Id);
+        }
+    }
+}

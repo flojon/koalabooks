@@ -1,0 +1,100 @@
+AccountNumber,Name
+1010,Utvecklingsutgifter
+1020,Koncessioner
+1030,Patent
+1040,Licenser
+1050,Goodwill
+1060,Hyresrätter
+1070,Övriga immateriella anläggningstillgångar
+1110,Byggnader
+1120,Förbättringsutgifter på annans fastighet
+1130,Mark
+1180,Pågående nyanläggningar
+1210,Maskiner och inventarier
+1220,Inventarier och verktyg
+1230,Datorer
+1240,Bilar och transportmedel
+1250,Kontorsinventarier
+1310,Andelar i koncernföretag
+1380,Andra långfristiga fordringar
+1510,Kundfordringar
+1580,Fordran anställda
+1610,Kortfristiga fordringar
+1710,Förutbetalda hyreskostnader
+1730,Förutbetalda försäkringspremier
+1790,Övriga förutbetalda kostnader
+1910,Kassa
+1920,PlusGiro
+1930,Företagskonto
+1940,Övriga bankkonton
+2010,Eget kapital
+2020,Ej registrerat aktiekapital
+2080,Bundet eget kapital
+2090,Fritt eget kapital
+2091,Balanserat resultat
+2099,Årets resultat
+2310,Banklån
+2390,Övriga långfristiga skulder
+2440,Leverantörsskulder
+2510,Skatteskulder
+2610,Personalskatter
+2620,Sociala avgifter
+2710,Moms utgående
+2720,Moms ingående
+2730,Moms redovisningskonto
+2910,Upplupna löner
+2920,Upplupna semesterlöner
+2990,Övriga upplupna kostnader
+3010,Försäljning varor
+3020,Försäljning tjänster
+3040,Försäljning inom Sverige
+3100,Rörelsens sidointäkter
+3900,Övriga rörelseintäkter
+4010,Inköp varor
+4020,Inköp material
+4990,Övriga rörelsekostnader
+5010,Lokalkostnader
+5020,Hyra lokal
+5090,Övriga lokalkostnader
+5110,El
+5120,Uppvärmning
+5210,Kontorsmaterial
+5220,Trycksaker
+5310,Telefon och internet
+5400,Förbrukningsinventarier
+5410,Förbrukningsmaterial
+5500,Reparation och underhåll
+5610,Frakt
+5710,Resekostnader
+5810,Bilkostnader
+5910,Annonsering
+5920,PR och information
+6010,Försäkringar
+6070,Revision
+6071,Redovisning
+6110,Kontorsmaterial
+6210,Telefon
+6250,Porto
+6310,Företagsförsäkringar
+6530,Redovisningstjänster
+6540,IT-tjänster
+6570,Bankkostnader
+6990,Övriga externa tjänster
+7010,Löner tjänstemän
+7090,Förändring semesterlöneskuld
+7210,Löner kollektivanställda
+7310,Sociala avgifter
+7410,Pensionskostnader
+7510,Utbildning
+7610,Sjuk- och hälsovård
+7690,Övriga personalkostnader
+7810,Avskrivningar materiella anläggningstillgångar
+7820,Avskrivningar immateriella anläggningstillgångar
+8010,Ränteintäkter
+8020,Utdelning
+8300,Ränteintäkter
+8400,Räntekostnader
+8410,Räntekostnader banklån
+8490,Övriga finansiella kostnader
+8910,Skatt på årets resultat
+8990,Resultat

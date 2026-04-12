@@ -1,0 +1,89 @@
+@page "/reports/trial-balance"
+@rendermode InteractiveServer
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+
+<PageTitle>Trial Balance — KoalaBooks</PageTitle>
+
+<h1>📈 Trial Balance</h1>
+
+@if (_fiscalYears.Any())
+{
+    <div class="toolbar">
+        <label style="font-weight:600; color:#475569;">Fiscal Year:</label>
+        <select @bind="SelectedFiscalYearId" @bind:after="LoadReport" style="width:200px;">
+            @foreach (var fy in _fiscalYears)
+            {
+                <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+            }
+        </select>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width:100px;">Account</th>
+                <th>Name</th>
+                <th style="width:140px; text-align:right;">Debit</th>
+                <th style="width:140px; text-align:right;">Credit</th>
+                <th style="width:140px; text-align:right;">Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in _rows)
+            {
+                <tr>
+                    <td>@row.AccountNumber</td>
+                    <td>@row.AccountName</td>
+                    <td style="text-align:right;">@row.TotalDebit.ToString("N2")</td>
+                    <td style="text-align:right;">@row.TotalCredit.ToString("N2")</td>
+                    <td style="text-align:right; font-weight:600; color:@(row.Balance >= 0 ? "#16a34a" : "#dc2626")">
+                        @row.Balance.ToString("N2")
+                    </td>
+                </tr>
+            }
+        </tbody>
+        <tfoot>
+            <tr style="font-weight:700; background:#f1f5f9;">
+                <td colspan="2">Total</td>
+                <td style="text-align:right;">@_rows.Sum(r => r.TotalDebit).ToString("N2")</td>
+                <td style="text-align:right;">@_rows.Sum(r => r.TotalCredit).ToString("N2")</td>
+                <td style="text-align:right;">@_rows.Sum(r => r.Balance).ToString("N2")</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    @if (!_rows.Any())
+    {
+        <div class="alert alert-info" style="margin-top:1rem;">No transactions found for this fiscal year.</div>
+    }
+}
+else
+{
+    <div class="alert alert-info">No fiscal years found. <a href="/fiscal-years">Create one</a> first.</div>
+}
+
+@code {
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+
+    private List<FiscalYear> _fiscalYears = [];
+    private List<TrialBalanceRow> _rows = [];
+    private int SelectedFiscalYearId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _fiscalYears = await FiscalYearService.GetAllAsync();
+        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
+        if (active is not null)
+        {
+            SelectedFiscalYearId = active.Id;
+            await LoadReport();
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        _rows = await JournalEntryService.GetTrialBalanceAsync(SelectedFiscalYearId);
+    }
+}

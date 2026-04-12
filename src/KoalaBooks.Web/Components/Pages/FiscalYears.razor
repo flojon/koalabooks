@@ -1,0 +1,136 @@
+@page "/fiscal-years"
+@rendermode InteractiveServer
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+
+<PageTitle>Fiscal Years — KoalaBooks</PageTitle>
+
+<h1>📅 Fiscal Years</h1>
+
+<div class="toolbar">
+    <button class="btn btn-primary" @onclick="() => _showForm = !_showForm">
+        @(_showForm ? "Cancel" : "+ New Fiscal Year")
+    </button>
+</div>
+
+@if (_showForm)
+{
+    <div class="card">
+        <h3>Create Fiscal Year</h3>
+        <div style="display:grid; grid-template-columns:1fr 150px 150px auto; gap:0.5rem; align-items:end;">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" @bind="_formName" placeholder="e.g. 2026" />
+            </div>
+            <div class="form-group">
+                <label>Start Date</label>
+                <input type="date" @bind="_formStart" />
+            </div>
+            <div class="form-group">
+                <label>End Date</label>
+                <input type="date" @bind="_formEnd" />
+            </div>
+            <button class="btn btn-success" @onclick="Create">Create</button>
+        </div>
+        @if (_formError is not null)
+        {
+            <div class="alert alert-danger" style="margin-top:0.5rem;">@_formError</div>
+        }
+    </div>
+}
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Start</th>
+            <th>End</th>
+            <th style="width:100px;">Status</th>
+            <th style="width:120px;">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var fy in _fiscalYears)
+        {
+            <tr>
+                <td>@fy.Name</td>
+                <td>@fy.StartDate</td>
+                <td>@fy.EndDate</td>
+                <td>
+                    @if (fy.IsClosed)
+                    {
+                        <span style="color:#dc2626;">🔒 Closed</span>
+                    }
+                    else
+                    {
+                        <span style="color:#16a34a;">✅ Open</span>
+                    }
+                </td>
+                <td>
+                    @if (!fy.IsClosed)
+                    {
+                        <button class="btn btn-sm btn-danger" @onclick="() => Close(fy.Id)">Close</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (!_fiscalYears.Any())
+{
+    <div class="alert alert-info" style="margin-top:1rem;">No fiscal years created yet.</div>
+}
+
+@code {
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+
+    private List<FiscalYear> _fiscalYears = [];
+    private bool _showForm;
+    private string _formName = "";
+    private DateTime _formStart = new(DateTime.Today.Year, 1, 1);
+    private DateTime _formEnd = new(DateTime.Today.Year, 12, 31);
+    private string? _formError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _fiscalYears = await FiscalYearService.GetAllAsync();
+    }
+
+    private async Task Create()
+    {
+        _formError = null;
+        if (string.IsNullOrWhiteSpace(_formName))
+        {
+            _formError = "Name is required.";
+            return;
+        }
+        if (_formStart >= _formEnd)
+        {
+            _formError = "Start date must be before end date.";
+            return;
+        }
+
+        await FiscalYearService.CreateAsync(new FiscalYear
+        {
+            Name = _formName.Trim(),
+            StartDate = DateOnly.FromDateTime(_formStart),
+            EndDate = DateOnly.FromDateTime(_formEnd)
+        });
+
+        _showForm = false;
+        _formName = "";
+        await Load();
+    }
+
+    private async Task Close(int id)
+    {
+        await FiscalYearService.CloseAsync(id);
+        await Load();
+    }
+}

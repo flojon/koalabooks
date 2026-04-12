@@ -1,0 +1,239 @@
+@page "/journal"
+@page "/journal/{EntryId:int}"
+@rendermode InteractiveServer
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+
+<PageTitle>Journal Entries — KoalaBooks</PageTitle>
+
+<h1>📝 Journal Entries</h1>
+
+@if (_activeFiscalYear is null)
+{
+    <div class="alert alert-info">No active fiscal year. <a href="/fiscal-years">Create one</a> first.</div>
+    return;
+}
+
+<div class="toolbar">
+    <button class="btn btn-primary" @onclick="NewEntry">+ New Entry</button>
+    <span style="color:#64748b;">Fiscal Year: <strong>@_activeFiscalYear.Name</strong></span>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+@if (_success is not null)
+{
+    <div class="alert alert-success">@_success</div>
+}
+
+@if (_showForm)
+{
+    <div class="card">
+        <h3>@(_isEditing ? "Edit" : "New") Journal Entry</h3>
+        <div style="display:grid; grid-template-columns:150px 1fr; gap:0.5rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" @bind="_formDate" />
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <input type="text" @bind="_formDescription" placeholder="Description of transaction" />
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Account</th>
+                    <th style="width:160px;">Debit</th>
+                    <th style="width:160px;">Credit</th>
+                    <th style="width:60px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (int i = 0; i < _formLines.Count; i++)
+                {
+                    var idx = i;
+                    <tr>
+                        <td>
+                            <select @bind="_formLines[idx].AccountId">
+                                <option value="0">— Select account —</option>
+                                @foreach (var a in _accounts)
+                                {
+                                    <option value="@a.Id">@a.AccountNumber — @a.Name</option>
+                                }
+                            </select>
+                        </td>
+                        <td><input type="number" step="0.01" min="0" @bind="_formLines[idx].DebitAmount" /></td>
+                        <td><input type="number" step="0.01" min="0" @bind="_formLines[idx].CreditAmount" /></td>
+                        <td>
+                            @if (_formLines.Count > 2)
+                            {
+                                <button class="btn btn-sm btn-danger" @onclick="() => _formLines.RemoveAt(idx)">✕</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <div class="toolbar" style="margin-top:0.5rem;">
+            <button class="btn btn-sm btn-secondary" @onclick="AddLine">+ Add Line</button>
+            <span>
+                Debit: <strong>@TotalDebit.ToString("N2")</strong> |
+                Credit: <strong>@TotalCredit.ToString("N2")</strong> |
+                Balance: <span class="@(IsBalanced ? "balance-ok" : "balance-err")">@((TotalDebit - TotalCredit).ToString("N2"))</span>
+            </span>
+        </div>
+
+        <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+            <button class="btn btn-success" @onclick="SaveEntry" disabled="@(!IsBalanced)">💾 Save</button>
+            <button class="btn btn-secondary" @onclick="CancelForm">Cancel</button>
+        </div>
+    </div>
+}
+
+<table>
+    <thead>
+        <tr>
+            <th style="width:60px;">#</th>
+            <th style="width:110px;">Date</th>
+            <th>Description</th>
+            <th style="width:120px;">Debit</th>
+            <th style="width:120px;">Credit</th>
+            <th style="width:80px;">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var entry in _entries)
+        {
+            <tr>
+                <td>@entry.EntryNumber</td>
+                <td>@entry.Date</td>
+                <td>@entry.Description</td>
+                <td>@entry.Lines.Sum(l => l.DebitAmount).ToString("N2")</td>
+                <td>@entry.Lines.Sum(l => l.CreditAmount).ToString("N2")</td>
+                <td><button class="btn btn-sm btn-secondary" @onclick="() => EditEntry(entry)">Edit</button></td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (!_entries.Any() && !_showForm)
+{
+    <div class="alert alert-info" style="margin-top:1rem;">No journal entries yet. Click "New Entry" to create one.</div>
+}
+
+@code {
+    [Parameter] public int? EntryId { get; set; }
+
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private AccountService AccountService { get; set; } = default!;
+
+    private FiscalYear? _activeFiscalYear;
+    private List<Account> _accounts = [];
+    private List<JournalEntry> _entries = [];
+    private bool _showForm;
+    private bool _isEditing;
+    private int? _editingId;
+    private DateTime _formDate = DateTime.Today;
+    private string _formDescription = "";
+    private List<LineModel> _formLines = [];
+    private string? _error;
+    private string? _success;
+
+    private decimal TotalDebit => _formLines.Sum(l => l.DebitAmount);
+    private decimal TotalCredit => _formLines.Sum(l => l.CreditAmount);
+    private bool IsBalanced => TotalDebit > 0 && TotalDebit == TotalCredit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _activeFiscalYear = await FiscalYearService.GetActiveAsync();
+        _accounts = (await AccountService.GetAllAsync()).Where(a => a.IsActive).ToList();
+        if (_activeFiscalYear is not null)
+        {
+            _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
+        }
+    }
+
+    private void NewEntry()
+    {
+        _isEditing = false;
+        _editingId = null;
+        _formDate = DateTime.Today;
+        _formDescription = "";
+        _formLines = [new(), new()];
+        _showForm = true;
+        _error = null;
+        _success = null;
+    }
+
+    private void EditEntry(JournalEntry entry)
+    {
+        _isEditing = true;
+        _editingId = entry.Id;
+        _formDate = entry.Date.ToDateTime(TimeOnly.MinValue);
+        _formDescription = entry.Description;
+        _formLines = entry.Lines.Select(l => new LineModel
+        {
+            AccountId = l.AccountId,
+            DebitAmount = l.DebitAmount,
+            CreditAmount = l.CreditAmount
+        }).ToList();
+        _showForm = true;
+        _error = null;
+        _success = null;
+    }
+
+    private void AddLine() => _formLines.Add(new());
+
+    private void CancelForm()
+    {
+        _showForm = false;
+        _error = null;
+    }
+
+    private async Task SaveEntry()
+    {
+        _error = null;
+        _success = null;
+
+        var entry = new JournalEntry
+        {
+            Id = _editingId ?? 0,
+            Date = DateOnly.FromDateTime(_formDate),
+            Description = _formDescription,
+            FiscalYearId = _activeFiscalYear!.Id,
+            Lines = _formLines.Select(l => new JournalEntryLine
+            {
+                AccountId = l.AccountId,
+                DebitAmount = l.DebitAmount,
+                CreditAmount = l.CreditAmount
+            }).ToList()
+        };
+
+        var (result, error) = _isEditing
+            ? await JournalEntryService.UpdateAsync(entry)
+            : await JournalEntryService.CreateAsync(entry);
+
+        if (error is not null)
+        {
+            _error = error;
+            return;
+        }
+
+        _success = _isEditing ? "Entry updated." : $"Entry #{result!.EntryNumber} created.";
+        _showForm = false;
+        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
+    }
+
+    private class LineModel
+    {
+        public int AccountId { get; set; }
+        public decimal DebitAmount { get; set; }
+        public decimal CreditAmount { get; set; }
+    }
+}
