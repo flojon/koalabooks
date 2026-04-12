@@ -343,4 +343,41 @@ public class SieImportServiceTests : IDisposable
         Assert.Equal(0m, kassa.IncomingBalance);
         Assert.Equal(0m, kassa.OutgoingBalance);
     }
+
+    [Fact]
+    public async Task ImportAll_ImportsAllFiscalYears()
+    {
+        using var stream = MakeSieStream(SampleSie4WithBalances);
+        var doc = _service.Parse(stream);
+        var result = await _service.ImportAllAsync(doc, overwrite: false);
+
+        // Should import 2 fiscal years (2025 with balances only, 2026 with vouchers + balances)
+        Assert.Equal(2, result.FiscalYears.Count);
+        Assert.Equal(2, result.TotalEntriesImported);
+        Assert.True(result.TotalBalancesImported > 0);
+        Assert.True(result.TotalAccountsCreated >= 4);
+
+        // Both FYs should exist in DB
+        Assert.Equal(2, await _db.FiscalYears.CountAsync());
+    }
+
+    [Fact]
+    public async Task ImportAll_OverwritesExistingYears()
+    {
+        // First import
+        using var stream1 = MakeSieStream(SampleSie4WithBalances);
+        var doc1 = _service.Parse(stream1);
+        await _service.ImportAllAsync(doc1, overwrite: false);
+
+        Assert.Equal(2, await _db.FiscalYears.CountAsync());
+
+        // Second import with overwrite
+        using var stream2 = MakeSieStream(SampleSie4WithBalances);
+        var doc2 = _service.Parse(stream2);
+        var result = await _service.ImportAllAsync(doc2, overwrite: true);
+
+        // Still 2 FYs, not duplicated
+        Assert.Equal(2, await _db.FiscalYears.CountAsync());
+        Assert.Equal(2, result.FiscalYears.Count);
+    }
 }

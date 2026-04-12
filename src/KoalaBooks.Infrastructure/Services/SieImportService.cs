@@ -34,6 +34,13 @@ public record SieImportResult(
     string FiscalYearName,
     List<string> Warnings);
 
+public record SieImportAllResult(
+    List<SieImportResult> FiscalYears,
+    int TotalAccountsCreated,
+    int TotalEntriesImported,
+    int TotalBalancesImported,
+    List<string> Warnings);
+
 public class SieImportService
 {
     private readonly AppDbContext _db;
@@ -118,6 +125,49 @@ public class SieImportService
             FiscalYears: fiscalYears,
             AccountCount: doc.KONTO.Count,
             VoucherCount: doc.VER.Count);
+    }
+
+    public async Task<SieImportAllResult> ImportAllAsync(SieDocument doc, bool overwrite)
+    {
+        var results = new List<SieImportResult>();
+        var allWarnings = new List<string>();
+
+        // Import fiscal years in chronological order (oldest first)
+        var rarKeys = doc.RAR
+            .Where(kvp => kvp.Value.Start is not null && kvp.Value.End is not null)
+            .OrderBy(kvp => kvp.Value.Start)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        // Filter to years with vouchers or balances (same logic as preview)
+        rarKeys = rarKeys.Where(key =>
+        {
+            var rar = doc.RAR[key];
+            var start = DateOnly.FromDateTime(rar.Start!.Value);
+            var end = DateOnly.FromDateTime(rar.End!.Value);
+            var voucherCount = doc.VER.Count(v =>
+            {
+                var vDate = DateOnly.FromDateTime(v.VoucherDate);
+                return vDate >= start && vDate <= end;
+            });
+            var balanceCount = doc.IB.Count(b => b.YearNr == key)
+                             + doc.UB.Count(b => b.YearNr == key);
+            return voucherCount > 0 || balanceCount > 0;
+        }).ToList();
+
+        foreach (var rarId in rarKeys)
+        {
+            var result = await ImportFiscalYearAsync(doc, rarId, overwrite);
+            results.Add(result);
+            allWarnings.AddRange(result.Warnings);
+        }
+
+        return new SieImportAllResult(
+            FiscalYears: results,
+            TotalAccountsCreated: results.Sum(r => r.AccountsCreated),
+            TotalEntriesImported: results.Sum(r => r.EntriesImported),
+            TotalBalancesImported: results.Sum(r => r.BalancesImported),
+            Warnings: allWarnings);
     }
 
     public async Task<SieImportResult> ImportFiscalYearAsync(

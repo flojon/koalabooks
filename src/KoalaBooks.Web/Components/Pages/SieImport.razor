@@ -8,7 +8,7 @@
 
 <h1>📥 Import SIE-4 File</h1>
 
-<p style="color:#64748b;">Upload a SIE-4 file (.se / .si) to import fiscal year data including accounts and journal entries.</p>
+<p style="color:#64748b;">Upload a SIE-4 file (.se / .si) to import fiscal year data including accounts, journal entries and balances.</p>
 
 @if (_error is not null)
 {
@@ -54,73 +54,78 @@ else
 
     @foreach (var fy in _preview.FiscalYears)
     {
-        <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
-            <div>
-                <strong>@fy.Label</strong>
-                <span style="color:#64748b;">(@fy.Start — @fy.End)</span>
-                <span style="color:#64748b; margin-left:0.5rem;">@fy.VoucherCount voucher(s)</span>
-                @if (fy.BalanceCount > 0)
-                {
-                    <span style="color:#64748b; margin-left:0.5rem;">@fy.BalanceCount balance(s)</span>
-                }
-                @if (fy.ExistsInDatabase)
-                {
-                    <span style="color:#f59e0b; margin-left:0.5rem;">⚠️ Already exists</span>
-                }
-            </div>
-            <div style="display:flex; gap:0.5rem; align-items:center;">
-                @if (fy.ExistsInDatabase)
-                {
-                    @if (_confirmOverwrite == fy.RarId)
-                    {
-                        <span style="color:#dc2626; font-weight:600;">Overwrite existing data?</span>
-                        <button class="btn btn-danger btn-sm" @onclick="() => ImportYear(fy.RarId, true)" disabled="@_importing">
-                            Yes, Overwrite
-                        </button>
-                        <button class="btn btn-secondary btn-sm" @onclick="() => _confirmOverwrite = null">Cancel</button>
-                    }
-                    else
-                    {
-                        <button class="btn btn-danger btn-sm" @onclick="() => _confirmOverwrite = fy.RarId">
-                            Import (Overwrite)
-                        </button>
-                    }
-                }
-                else
-                {
-                    <button class="btn btn-success btn-sm" @onclick="() => ImportYear(fy.RarId, false)" disabled="@_importing">
-                        Import
-                    </button>
-                }
-            </div>
+        <div class="card" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <strong>@fy.Label</strong>
+            <span style="color:#64748b;">(@fy.Start — @fy.End)</span>
+            <span style="color:#64748b;">@fy.VoucherCount voucher(s)</span>
+            @if (fy.BalanceCount > 0)
+            {
+                <span style="color:#64748b;">@fy.BalanceCount balance(s)</span>
+            }
+            @if (fy.ExistsInDatabase)
+            {
+                <span style="color:#f59e0b;">⚠️ Already exists</span>
+            }
         </div>
     }
 
-    @if (_importResult is not null)
+    @if (_importAllResult is null)
+    {
+        <div style="margin-top:1rem; display:flex; gap:0.5rem; align-items:center;">
+            @if (_hasExistingYears && !_confirmOverwrite)
+            {
+                <button class="btn btn-danger" @onclick="() => _confirmOverwrite = true" disabled="@_importing">
+                    Import (Overwrite Existing)
+                </button>
+            }
+            else if (_confirmOverwrite)
+            {
+                <span style="color:#dc2626; font-weight:600;">This will overwrite existing fiscal year data. Continue?</span>
+                <button class="btn btn-danger" @onclick="ImportAll" disabled="@_importing">Yes, Import All</button>
+                <button class="btn btn-secondary" @onclick="() => _confirmOverwrite = false">Cancel</button>
+            }
+            else
+            {
+                <button class="btn btn-success" @onclick="ImportAll" disabled="@_importing">Import All</button>
+            }
+            @if (_importing)
+            {
+                <span style="color:#64748b;">Importing...</span>
+            }
+        </div>
+    }
+
+    @if (_importAllResult is not null)
     {
         <div class="card" style="margin-top:1rem;">
-            <h3>Import Result — @_importResult.FiscalYearName</h3>
+            <h3>Import Result</h3>
             <table>
                 <tbody>
-                    <tr><td style="font-weight:600; width:180px;">Accounts Created</td><td>@_importResult.AccountsCreated</td></tr>
-                    <tr><td style="font-weight:600;">Accounts Updated</td><td>@_importResult.AccountsUpdated</td></tr>
-                    <tr><td style="font-weight:600;">Entries Imported</td><td>@_importResult.EntriesImported</td></tr>
-                    <tr><td style="font-weight:600;">Lines Imported</td><td>@_importResult.LinesImported</td></tr>
-                    <tr><td style="font-weight:600;">Balances Imported</td><td>@_importResult.BalancesImported</td></tr>
+                    @foreach (var fy in _importAllResult.FiscalYears)
+                    {
+                        <tr>
+                            <td style="font-weight:600;">@fy.FiscalYearName</td>
+                            <td>@fy.AccountsCreated account(s), @fy.EntriesImported entries, @fy.BalancesImported balance(s)</td>
+                        </tr>
+                    }
+                    <tr style="font-weight:700; border-top:2px solid #e2e8f0;">
+                        <td>Total</td>
+                        <td>@_importAllResult.TotalAccountsCreated account(s), @_importAllResult.TotalEntriesImported entries, @_importAllResult.TotalBalancesImported balance(s)</td>
+                    </tr>
                 </tbody>
             </table>
-            @if (_importResult.Warnings.Any())
+            @if (_importAllResult.Warnings.Any())
             {
                 <div class="alert alert-info" style="margin-top:0.5rem;">
                     <strong>Warnings:</strong>
                     <ul style="margin:0.25rem 0 0; padding-left:1.25rem;">
-                        @foreach (var w in _importResult.Warnings.Take(20))
+                        @foreach (var w in _importAllResult.Warnings.Take(20))
                         {
                             <li>@w</li>
                         }
-                        @if (_importResult.Warnings.Count > 20)
+                        @if (_importAllResult.Warnings.Count > 20)
                         {
-                            <li>...and @(_importResult.Warnings.Count - 20) more</li>
+                            <li>...and @(_importAllResult.Warnings.Count - 20) more</li>
                         }
                     </ul>
                 </div>
@@ -139,19 +144,21 @@ else
 
     private SieDocument? _sieDocument;
     private SieImportPreview? _preview;
-    private SieImportResult? _importResult;
+    private SieImportAllResult? _importAllResult;
     private string? _error;
     private string? _success;
     private bool _parsing;
     private bool _importing;
-    private int? _confirmOverwrite;
+    private bool _confirmOverwrite;
+
+    private bool _hasExistingYears => _preview?.FiscalYears.Any(f => f.ExistsInDatabase) ?? false;
 
     private async Task HandleFileUpload(InputFileChangeEventArgs e)
     {
         _error = null;
         _success = null;
         _parsing = true;
-        _importResult = null;
+        _importAllResult = null;
 
         try
         {
@@ -180,22 +187,24 @@ else
         }
     }
 
-    private async Task ImportYear(int rarId, bool overwrite)
+    private async Task ImportAll()
     {
         _error = null;
         _success = null;
         _importing = true;
-        _confirmOverwrite = null;
+        _confirmOverwrite = false;
 
         try
         {
-            _importResult = await SieImportService.ImportFiscalYearAsync(_sieDocument!, rarId, overwrite);
-            // Propagate outgoing balances to the next fiscal year's incoming balances
-            await FiscalYearService.PropagateBalancesToNextYearAsync(_importResult.FiscalYearId);
-            _success = $"Successfully imported fiscal year {_importResult.FiscalYearName}: " +
-                $"{_importResult.EntriesImported} entries, {_importResult.LinesImported} lines.";
-            // Refresh preview to update "exists" status
-            _preview = await SieImportService.GetPreviewAsync(_sieDocument!);
+            _importAllResult = await SieImportService.ImportAllAsync(_sieDocument!, overwrite: _hasExistingYears);
+
+            // Propagate balances for each imported fiscal year
+            foreach (var fy in _importAllResult.FiscalYears)
+                await FiscalYearService.PropagateBalancesToNextYearAsync(fy.FiscalYearId);
+
+            var totalEntries = _importAllResult.TotalEntriesImported;
+            var fyCount = _importAllResult.FiscalYears.Count;
+            _success = $"Successfully imported {fyCount} fiscal year(s) with {totalEntries} entries.";
         }
         catch (Exception ex)
         {
@@ -211,9 +220,9 @@ else
     {
         _sieDocument = null;
         _preview = null;
-        _importResult = null;
+        _importAllResult = null;
         _error = null;
         _success = null;
-        _confirmOverwrite = null;
+        _confirmOverwrite = false;
     }
 }
