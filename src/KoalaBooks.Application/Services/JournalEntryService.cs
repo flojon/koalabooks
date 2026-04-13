@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -250,6 +251,133 @@ public class JournalEntryService
         return sections;
     }
 
+    public async Task<List<BalanceSheetSection>> GetBalanceSheetAsync(int fiscalYearId)
+    {
+        var balanceClasses = new[] { AccountClass.Asset, AccountClass.Liability, AccountClass.Equity };
+
+        var accounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId && balanceClasses.Contains(a.AccountClass))
+            .ToListAsync();
+
+        var transactionTotals = await _db.JournalEntryLines
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
+            .ToDictionaryAsync(t => t.AccountId);
+
+        var sectionDefs = new (string Title, AccountClass Class)[]
+        {
+            ("Tillgångar", AccountClass.Asset),
+            ("Skulder", AccountClass.Liability),
+            ("Eget kapital", AccountClass.Equity)
+        };
+
+        var sections = new List<BalanceSheetSection>();
+
+        foreach (var (title, accountClass) in sectionDefs)
+        {
+            var rows = new List<BalanceSheetRow>();
+
+            foreach (var account in accounts.Where(a => a.AccountClass == accountClass).OrderBy(a => a.AccountNumber))
+            {
+                var debit = 0m;
+                var credit = 0m;
+
+                if (transactionTotals.TryGetValue(account.Id, out var totals))
+                {
+                    debit = totals.Debit;
+                    credit = totals.Credit;
+                }
+
+                if (account.IncomingBalance == 0 && debit == 0 && credit == 0)
+                    continue;
+
+                var closingBalance = account.IncomingBalance + debit - credit;
+
+                rows.Add(new BalanceSheetRow
+                {
+                    AccountNumber = account.AccountNumber,
+                    AccountName = account.Name,
+                    IncomingBalance = account.IncomingBalance,
+                    PeriodDebit = debit,
+                    PeriodCredit = credit,
+                    ClosingBalance = closingBalance
+                });
+            }
+
+            sections.Add(new BalanceSheetSection
+            {
+                Title = title,
+                Rows = rows,
+                Total = rows.Sum(r => r.ClosingBalance)
+            });
+        }
+
+        return sections;
+    }
+
+    public async Task<(List<IncomeStatementSection> Sections, decimal NetResult)> GetIncomeStatementAsync(
+        int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
+    {
+        var lineQuery = _db.JournalEntryLines
+            .Include(l => l.JournalEntry)
+            .Include(l => l.Account)
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId);
+
+        if (from.HasValue)
+            lineQuery = lineQuery.Where(l => l.JournalEntry.Date >= from.Value);
+        if (to.HasValue)
+            lineQuery = lineQuery.Where(l => l.JournalEntry.Date <= to.Value);
+
+        var accountTotals = await lineQuery
+            .GroupBy(l => new { l.AccountId, l.Account.AccountNumber, l.Account.Name, l.Account.AccountClass })
+            .Select(g => new
+            {
+                g.Key.AccountId,
+                g.Key.AccountNumber,
+                g.Key.Name,
+                g.Key.AccountClass,
+                Debit = g.Sum(l => l.DebitAmount),
+                Credit = g.Sum(l => l.CreditAmount)
+            })
+            .ToListAsync();
+
+        var revenueRows = accountTotals
+            .Where(t => t.AccountClass == AccountClass.Revenue)
+            .Select(t => new IncomeStatementRow
+            {
+                AccountNumber = t.AccountNumber,
+                AccountName = t.Name,
+                Amount = t.Credit - t.Debit
+            })
+            .Where(r => r.Amount != 0)
+            .OrderBy(r => r.AccountNumber)
+            .ToList();
+
+        var expenseRows = accountTotals
+            .Where(t => t.AccountClass == AccountClass.Expense)
+            .Select(t => new IncomeStatementRow
+            {
+                AccountNumber = t.AccountNumber,
+                AccountName = t.Name,
+                Amount = t.Debit - t.Credit
+            })
+            .Where(r => r.Amount != 0)
+            .OrderBy(r => r.AccountNumber)
+            .ToList();
+
+        var revenueTotal = revenueRows.Sum(r => r.Amount);
+        var expenseTotal = expenseRows.Sum(r => r.Amount);
+
+        var sections = new List<IncomeStatementSection>
+        {
+            new() { Title = "Intäkter", Rows = revenueRows, Total = revenueTotal },
+            new() { Title = "Kostnader", Rows = expenseRows, Total = expenseTotal }
+        };
+
+        return (sections, revenueTotal - expenseTotal);
+    }
+
     public async Task<DashboardStats> GetDashboardStatsAsync(int fiscalYearId)
     {
         var entryCount = await _db.JournalEntries
@@ -326,4 +454,35 @@ public class DashboardStats
     public int EntryCount { get; set; }
     public decimal TotalDebit { get; set; }
     public decimal TotalCredit { get; set; }
+}
+
+public class BalanceSheetSection
+{
+    public string Title { get; set; } = "";
+    public List<BalanceSheetRow> Rows { get; set; } = [];
+    public decimal Total { get; set; }
+}
+
+public class BalanceSheetRow
+{
+    public string AccountNumber { get; set; } = "";
+    public string AccountName { get; set; } = "";
+    public decimal IncomingBalance { get; set; }
+    public decimal PeriodDebit { get; set; }
+    public decimal PeriodCredit { get; set; }
+    public decimal ClosingBalance { get; set; }
+}
+
+public class IncomeStatementSection
+{
+    public string Title { get; set; } = "";
+    public List<IncomeStatementRow> Rows { get; set; } = [];
+    public decimal Total { get; set; }
+}
+
+public class IncomeStatementRow
+{
+    public string AccountNumber { get; set; } = "";
+    public string AccountName { get; set; } = "";
+    public decimal Amount { get; set; }
 }

@@ -1,0 +1,122 @@
+@page "/reports/balance-sheet"
+@rendermode InteractiveServer
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+
+<PageTitle>Balance Sheet — KoalaBooks</PageTitle>
+
+<h1>📊 Balance Sheet (Balansräkning)</h1>
+
+@if (_fiscalYears.Any())
+{
+    <div class="toolbar">
+        <label style="font-weight:600; color:#475569;">Fiscal Year:</label>
+        <select @bind="SelectedFiscalYearId" @bind:after="LoadReport" style="width:200px;">
+            @foreach (var fy in _fiscalYears)
+            {
+                <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+            }
+        </select>
+    </div>
+
+    @foreach (var section in _sections)
+    {
+        <div class="card" style="margin-bottom:1.5rem;">
+            <h3 style="margin-bottom:0.75rem;">@(section.Title)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:100px;">Account</th>
+                        <th>Name</th>
+                        <th style="width:140px; text-align:right;">IB</th>
+                        <th style="width:140px; text-align:right;">Debit</th>
+                        <th style="width:140px; text-align:right;">Credit</th>
+                        <th style="width:140px; text-align:right;">Closing Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in section.Rows)
+                    {
+                        <tr>
+                            <td>@row.AccountNumber</td>
+                            <td>@row.AccountName</td>
+                            <td style="text-align:right;">@(row.IncomingBalance != 0 ? row.IncomingBalance.ToString("N2") : "—")</td>
+                            <td style="text-align:right;">@row.PeriodDebit.ToString("N2")</td>
+                            <td style="text-align:right;">@row.PeriodCredit.ToString("N2")</td>
+                            <td style="text-align:right; font-weight:600; color:@(row.ClosingBalance >= 0 ? "#16a34a" : "#dc2626")">
+                                @row.ClosingBalance.ToString("N2")
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr style="font-weight:700; background:#f1f5f9;">
+                        <td colspan="5">Total @(section.Title)</td>
+                        <td style="text-align:right;">@(section.Total.ToString("N2"))</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    }
+
+    @if (_sections.Any())
+    {
+        <div class="card" style="margin-top:1rem; padding:1rem;">
+            <table>
+                <tbody>
+                    <tr style="font-weight:700;">
+                        <td>Total Assets (Tillgångar)</td>
+                        <td style="text-align:right; width:160px;">@TotalAssets.ToString("N2")</td>
+                    </tr>
+                    <tr style="font-weight:700;">
+                        <td>Total Liabilities + Equity (Skulder + Eget kapital)</td>
+                        <td style="text-align:right; width:160px;">@TotalLiabilitiesAndEquity.ToString("N2")</td>
+                    </tr>
+                    <tr style="font-weight:700; color:@(TotalAssets == TotalLiabilitiesAndEquity ? "#16a34a" : "#dc2626")">
+                        <td>Difference</td>
+                        <td style="text-align:right; width:160px;">@((TotalAssets - TotalLiabilitiesAndEquity).ToString("N2"))</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (!_sections.Any(s => s.Rows.Any()))
+    {
+        <div class="alert alert-info" style="margin-top:1rem;">No balance sheet accounts found for this fiscal year.</div>
+    }
+}
+else
+{
+    <div class="alert alert-info">No fiscal years found. <a href="/fiscal-years">Create one</a> first.</div>
+}
+
+@code {
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+
+    private List<FiscalYear> _fiscalYears = [];
+    private List<BalanceSheetSection> _sections = [];
+    private int SelectedFiscalYearId { get; set; }
+
+    private decimal TotalAssets => _sections.FirstOrDefault(s => s.Title == "Tillgångar")?.Total ?? 0;
+    private decimal TotalLiabilitiesAndEquity =>
+        (_sections.FirstOrDefault(s => s.Title == "Skulder")?.Total ?? 0) +
+        (_sections.FirstOrDefault(s => s.Title == "Eget kapital")?.Total ?? 0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _fiscalYears = await FiscalYearService.GetAllAsync();
+        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
+        if (active is not null)
+        {
+            SelectedFiscalYearId = active.Id;
+            await LoadReport();
+        }
+    }
+
+    private async Task LoadReport()
+    {
+        _sections = await JournalEntryService.GetBalanceSheetAsync(SelectedFiscalYearId);
+    }
+}

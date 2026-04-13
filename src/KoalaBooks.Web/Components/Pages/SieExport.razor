@@ -1,0 +1,94 @@
+@page "/export/sie"
+@rendermode InteractiveServer
+@using KoalaBooks.Infrastructure.Services
+@using KoalaBooks.Application.Services
+@inject SieExportService SieExportService
+@inject FiscalYearService FiscalYearService
+@inject IJSRuntime JS
+
+<PageTitle>Export SIE — KoalaBooks</PageTitle>
+
+<h1>📤 Export SIE-4 File</h1>
+
+@if (_fiscalYears is null)
+{
+    <p>Loading fiscal years…</p>
+}
+else if (_fiscalYears.Count == 0)
+{
+    <p>No fiscal years found. Create one first.</p>
+}
+else
+{
+    <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="fy-select"><strong>Fiscal Year</strong></label>
+        <select id="fy-select" @bind="_selectedFyId" class="form-control" style="max-width: 300px;">
+            @foreach (var fy in _fiscalYears)
+            {
+                <option value="@fy.Id">@fy.Name (@fy.StartDate – @fy.EndDate)</option>
+            }
+        </select>
+    </div>
+
+    <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="company-name"><strong>Company Name</strong> (optional)</label>
+        <input id="company-name" type="text" @bind="_companyName" class="form-control"
+               placeholder="Leave blank to use fiscal year name" style="max-width: 300px;" />
+    </div>
+
+    <button class="btn btn-primary" @onclick="ExportAsync" disabled="@_exporting">
+        @if (_exporting)
+        {
+            <span>Exporting…</span>
+        }
+        else
+        {
+            <span>Export SIE-4</span>
+        }
+    </button>
+
+    @if (_errorMessage is not null)
+    {
+        <div class="alert alert-danger" style="margin-top: 1rem;">@_errorMessage</div>
+    }
+}
+
+@code {
+    private List<KoalaBooks.Domain.Entities.FiscalYear>? _fiscalYears;
+    private int _selectedFyId;
+    private string? _companyName;
+    private bool _exporting;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _fiscalYears = await FiscalYearService.GetAllAsync();
+        if (_fiscalYears.Count > 0)
+        {
+            _selectedFyId = _fiscalYears[0].Id;
+        }
+    }
+
+    private async Task ExportAsync()
+    {
+        _exporting = true;
+        _errorMessage = null;
+
+        try
+        {
+            var bytes = await SieExportService.ExportAsync(_selectedFyId, string.IsNullOrWhiteSpace(_companyName) ? null : _companyName);
+            var base64 = Convert.ToBase64String(bytes);
+            var fy = _fiscalYears!.First(f => f.Id == _selectedFyId);
+            var fileName = $"koalabooks_{fy.Name}.se";
+            await JS.InvokeVoidAsync("eval", $"{{ var a=document.createElement('a'); a.href='data:application/octet-stream;base64,{base64}'; a.download='{fileName}'; a.click(); }}");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Export failed: {ex.Message}";
+        }
+        finally
+        {
+            _exporting = false;
+        }
+    }
+}
