@@ -1,0 +1,39 @@
+# Reuben — History
+
+> Session log of Reuben's work.
+
+## Sessions
+
+### 2025-07-15 — Roadmap Accounting Domain Review
+
+Reviewed Danny's feature priority roadmap against the actual codebase. Confirmed all 5 of his bugs and found 5 additional domain-critical issues.
+
+## Learnings
+
+### Architecture / Key Decisions
+- The codebase uses a single balance formula (IB + Debit - Credit) for ALL account classes. This is wrong for credit-normal accounts (liabilities, equity, revenue). Must fix before reports are trustworthy.
+- AccountClass enum maps class 8 → Equity, but BAS class 8 is financial items (mix of revenue/expense). Real equity is in class 2 (20xx accounts). This fundamental mapping error affects every report.
+- Account.OutgoingBalance is only populated by SIE import — no code computes UB from transactions. Year-end close (bokslut) must compute UB before propagating balances.
+- All report queries (trial balance, balance sheet, income statement, general ledger, dashboard) lack `WHERE IsPosted = true` filtering. Draft entries pollute official reports.
+
+### Key File Paths
+- **Domain entities:** `src/KoalaBooks.Domain/Entities/` — Account, FiscalYear, JournalEntry, JournalEntryLine
+- **AccountClass enum:** `src/KoalaBooks.Domain/Enums/AccountClass.cs` — needs expansion (only 5 values, missing FinancialIncome/Expense)
+- **AccountClassMapper:** `src/KoalaBooks.Infrastructure/Services/AccountClassMapper.cs` — the broken class-8→Equity and class-2→Liability mapping
+- **Report logic:** `src/KoalaBooks.Application/Services/JournalEntryService.cs` — all 5 reports live here
+- **Year-end close:** `src/KoalaBooks.Application/Services/FiscalYearService.cs` — CloseAsync() is just a boolean flip
+- **SIE export:** `src/KoalaBooks.Infrastructure/Services/SieExportService.cs` — not registered in DI, exports drafts
+- **SIE import:** `src/KoalaBooks.Infrastructure/Services/SieImportService.cs` — robust, handles multi-year, balances
+- **DI registration:** `src/KoalaBooks.Web/Program.cs` — missing SieExportService
+- **SIE download:** `src/KoalaBooks.Web/Components/Pages/SieExport.razor` line 83 — eval() XSS risk
+- **Sample kontoplan:** `sample-bas-kontoplan.csv` — 100 accounts covering classes 1-8
+
+### User Preferences
+- Jonas is building a Swedish bookkeeping application targeting BAS-kontoplan compliance
+- SIE-4 import/export is a core feature (import works well, export has issues)
+- Blazor Server with SQLite backend, .NET Aspire orchestration
+
+### Patterns Noticed
+- Tests are thorough for the happy path but miss sign-convention edge cases (credit-normal accounts)
+- The BalanceSheetTests.BalanceSheet_AssetsEqualLiabilitiesPlusEquity_WhenBalanced test passes only because test data has no credit transactions on liability accounts — it only checks IB values
+- SIE import correctly handles CP437→Latin-1 transcoding for Swedish characters_
