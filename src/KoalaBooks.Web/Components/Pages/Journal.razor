@@ -3,30 +3,28 @@
 @rendermode InteractiveServer
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
+@using MudBlazor
 
 <PageTitle>Journal Entries — KoalaBooks</PageTitle>
 
 <h1>📝 Journal Entries</h1>
 
-@if (_activeFiscalYear is null)
+@if (_activeFiscalYear is null && !_isLoading)
 {
-    <div class="alert alert-info">No active fiscal year. <a href="/fiscal-years">Create one</a> first.</div>
+    <MudAlert Severity="Severity.Info">No active fiscal year. <a href="/fiscal-years">Create one</a> first.</MudAlert>
     return;
 }
 
+@if (_isLoading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else
+{
 <div class="toolbar">
     <button class="btn btn-primary" @onclick="NewEntry">+ New Entry</button>
-    <span style="color:#64748b;">Fiscal Year: <strong>@_activeFiscalYear.Name</strong></span>
+    <span style="color:#64748b;">Fiscal Year: <strong>@_activeFiscalYear!.Name</strong></span>
 </div>
-
-@if (_error is not null)
-{
-    <div class="alert alert-danger">@_error</div>
-}
-@if (_success is not null)
-{
-    <div class="alert alert-success">@_success</div>
-}
 
 @if (_showForm)
 {
@@ -156,7 +154,8 @@
 
 @if (!_entries.Any() && !_showForm)
 {
-    <div class="alert alert-info" style="margin-top:1rem;">No journal entries yet. Click "New Entry" to create one.</div>
+    <MudAlert Severity="Severity.Info" Class="mt-4">No journal entries yet. Click "New Entry" to create one.</MudAlert>
+}
 }
 
 @code {
@@ -165,18 +164,18 @@
     [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
     private List<Account> _accounts = [];
     private List<JournalEntry> _entries = [];
     private bool _showForm;
     private bool _isEditing;
+    private bool _isLoading;
     private int? _editingId;
     private DateTime _formDate = DateTime.Today;
     private string _formDescription = "";
     private List<LineModel> _formLines = [];
-    private string? _error;
-    private string? _success;
     private int? _reversingEntryId;
     private string _reversalReason = "";
     private int? _deletingEntryId;
@@ -187,12 +186,17 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _isLoading = true;
         _activeFiscalYear = await FiscalYearService.GetActiveAsync();
-        _accounts = (await AccountService.GetAllAsync(_activeFiscalYear!.Id)).Where(a => a.IsActive).ToList();
-        if (_activeFiscalYear is not null)
+        if (_activeFiscalYear is null)
         {
-            _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
+            _isLoading = false;
+            return;
         }
+
+        _accounts = (await AccountService.GetAllAsync(_activeFiscalYear.Id)).Where(a => a.IsActive).ToList();
+        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
+        _isLoading = false;
     }
 
     private void NewEntry()
@@ -203,8 +207,6 @@
         _formDescription = "";
         _formLines = [new(), new()];
         _showForm = true;
-        _error = null;
-        _success = null;
     }
 
     private void EditEntry(JournalEntry entry)
@@ -220,23 +222,14 @@
             CreditAmount = l.CreditAmount
         }).ToList();
         _showForm = true;
-        _error = null;
-        _success = null;
     }
 
     private void AddLine() => _formLines.Add(new());
 
-    private void CancelForm()
-    {
-        _showForm = false;
-        _error = null;
-    }
+    private void CancelForm() => _showForm = false;
 
     private async Task SaveEntry()
     {
-        _error = null;
-        _success = null;
-
         var entry = new JournalEntry
         {
             Id = _editingId ?? 0,
@@ -257,11 +250,11 @@
 
         if (error is not null)
         {
-            _error = error;
+            Snackbar.Add(error, Severity.Error);
             return;
         }
 
-        _success = _isEditing ? "Entry updated." : $"Entry #{result!.EntryNumber} created.";
+        Snackbar.Add(_isEditing ? "Entry updated." : $"Entry #{result!.EntryNumber} created.", Severity.Success);
         _showForm = false;
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
     }
@@ -275,43 +268,30 @@
 
     private async Task PostEntry(int entryId)
     {
-        _error = null;
-        _success = null;
         var error = await JournalEntryService.PostAsync(entryId);
         if (error is not null)
         {
-            _error = error;
+            Snackbar.Add(error, Severity.Error);
             return;
         }
-        _success = "Entry posted.";
+        Snackbar.Add("Entry posted.", Severity.Success);
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
     }
 
-    private void StartDelete(int entryId)
-    {
-        _deletingEntryId = entryId;
-        _error = null;
-        _success = null;
-    }
+    private void StartDelete(int entryId) => _deletingEntryId = entryId;
 
-    private void CancelDelete()
-    {
-        _deletingEntryId = null;
-    }
+    private void CancelDelete() => _deletingEntryId = null;
 
     private async Task ConfirmDelete(int entryId)
     {
-        _error = null;
-        _success = null;
         var error = await JournalEntryService.DeleteDraftAsync(entryId);
+        _deletingEntryId = null;
         if (error is not null)
         {
-            _error = error;
-            _deletingEntryId = null;
+            Snackbar.Add(error, Severity.Error);
             return;
         }
-        _success = "Draft entry deleted.";
-        _deletingEntryId = null;
+        Snackbar.Add("Draft entry deleted.", Severity.Success);
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
     }
 
@@ -319,8 +299,6 @@
     {
         _reversingEntryId = entryId;
         _reversalReason = "";
-        _error = null;
-        _success = null;
     }
 
     private void CancelReversal()
@@ -331,15 +309,13 @@
 
     private async Task ConfirmReversal(int entryId)
     {
-        _error = null;
-        _success = null;
         var (result, error) = await JournalEntryService.CreateReversalAsync(entryId, _reversalReason);
         if (error is not null)
         {
-            _error = error;
+            Snackbar.Add(error, Severity.Error);
             return;
         }
-        _success = $"Reversal entry #{result!.EntryNumber} created.";
+        Snackbar.Add($"Reversal entry #{result!.EntryNumber} created.", Severity.Success);
         _reversingEntryId = null;
         _reversalReason = "";
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);

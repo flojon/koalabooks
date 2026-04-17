@@ -1,6 +1,7 @@
 @page "/"
 @rendermode InteractiveServer
 @using KoalaBooks.Application.Services
+@using MudBlazor
 
 <PageTitle>Dashboard — KoalaBooks</PageTitle>
 
@@ -8,7 +9,7 @@
 
 @if (_activeFiscalYear is null)
 {
-    <div class="alert alert-info">No active fiscal year found. <a href="/fiscal-years">Create one</a> to get started.</div>
+    <MudAlert Severity="Severity.Info">No active fiscal year found. <a href="/fiscal-years">Create one</a> to get started.</MudAlert>
 }
 else
 {

@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
+@using MudBlazor
 
 <PageTitle>Fiscal Years — KoalaBooks</PageTitle>
 
@@ -34,7 +35,7 @@
         </div>
         @if (_formError is not null)
         {
-            <div class="alert alert-danger" style="margin-top:0.5rem;">@_formError</div>
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_formError</MudAlert>
         }
     </div>
 }
@@ -46,7 +47,7 @@
             <th>Start</th>
             <th>End</th>
             <th style="width:100px;">Status</th>
-            <th style="width:120px;">Actions</th>
+            <th style="width:160px;">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -69,21 +70,88 @@
                 <td>
                     @if (!fy.IsClosed)
                     {
-                        <button class="btn btn-sm btn-danger" @onclick="() => Close(fy.Id)">Close</button>
+                        <button class="btn btn-sm btn-warning" @onclick="() => StartClosing(fy.Id)">Stäng bokslut</button>
                     }
                 </td>
             </tr>
+            @if (_closingFiscalYearId == fy.Id)
+            {
+                <tr>
+                    <td colspan="5">
+                        <div class="card" style="margin:0.5rem 0;">
+                            @if (_closingBusy)
+                            {
+                                <p>⏳ Laddar...</p>
+                            }
+                            else if (_closingPreview is not null)
+                            {
+                                @if (!_closingPreview.IsValid)
+                                {
+                                    <h4>⚠️ Kan inte stänga bokslut</h4>
+                                    <ul>
+                                        @foreach (var err in _closingPreview.Errors)
+                                        {
+                                            <li style="color:#dc2626;">@err</li>
+                                        }
+                                    </ul>
+                                    <button class="btn btn-sm btn-secondary" @onclick="CancelClosing">Avbryt</button>
+                                }
+                                else
+                                {
+                                    <h4>📋 Förhandsvisning — Bokslut @fy.Name</h4>
+                                    <div style="display:flex; gap:2rem; margin-bottom:1rem;">
+                                        <span>Intäkter: <strong>@_closingPreview.TotalRevenue.ToString("N2")</strong></span>
+                                        <span>Kostnader: <strong>@_closingPreview.TotalExpenses.ToString("N2")</strong></span>
+                                        <span>Resultat: <strong>@_closingPreview.NetResult.ToString("N2")</strong></span>
+                                    </div>
+                                    @foreach (var entry in _closingPreview.Entries)
+                                    {
+                                        <p><strong>@entry.Description</strong></p>
+                                        <table style="margin-bottom:0.5rem;">
+                                            <thead>
+                                                <tr>
+                                                    <th>Konto</th>
+                                                    <th>Namn</th>
+                                                    <th style="width:120px;">Debet</th>
+                                                    <th style="width:120px;">Kredit</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var line in entry.Lines)
+                                                {
+                                                    <tr>
+                                                        <td>@line.AccountNumber</td>
+                                                        <td>@line.AccountName</td>
+                                                        <td>@(line.Debit != 0 ? line.Debit.ToString("N2") : "")</td>
+                                                        <td>@(line.Credit != 0 ? line.Credit.ToString("N2") : "")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                    <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+                                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmClosing(fy.Id)">✅ Bekräfta och stäng</button>
+                                        <button class="btn btn-sm btn-secondary" @onclick="CancelClosing">Avbryt</button>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </td>
+                </tr>
+            }
         }
     </tbody>
 </table>
 
 @if (!_fiscalYears.Any())
 {
-    <div class="alert alert-info" style="margin-top:1rem;">No fiscal years created yet.</div>
+    <MudAlert Severity="Severity.Info" Class="mt-4">No fiscal years created yet.</MudAlert>
 }
 
 @code {
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private YearEndClosingService YearEndClosingService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
     private bool _showForm;
@@ -91,6 +159,11 @@
     private DateTime _formStart = new(DateTime.Today.Year, 1, 1);
     private DateTime _formEnd = new(DateTime.Today.Year, 12, 31);
     private string? _formError;
+
+    // Closing flow state
+    private int? _closingFiscalYearId;
+    private ClosingPreview? _closingPreview;
+    private bool _closingBusy;
 
     protected override async Task OnInitializedAsync()
     {
@@ -129,9 +202,41 @@
         await Load();
     }
 
-    private async Task Close(int id)
+    private async Task StartClosing(int fiscalYearId)
     {
-        await FiscalYearService.CloseAsync(id);
+        _closingFiscalYearId = fiscalYearId;
+        _closingBusy = true;
+        _closingPreview = await YearEndClosingService.PreviewClosingAsync(fiscalYearId);
+        _closingBusy = false;
+    }
+
+    private void CancelClosing()
+    {
+        _closingFiscalYearId = null;
+        _closingPreview = null;
+    }
+
+    private async Task ConfirmClosing(int fiscalYearId)
+    {
+        _closingBusy = true;
+        var result = await YearEndClosingService.ExecuteClosingAsync(fiscalYearId);
+        _closingBusy = false;
+
+        if (!result.Success)
+        {
+            Snackbar.Add(result.Error ?? "Closing failed.", Severity.Error);
+            _closingFiscalYearId = null;
+            _closingPreview = null;
+            return;
+        }
+
+        var entries = new List<string>();
+        if (result.ClosingEntry1Number is not null) entries.Add($"#{result.ClosingEntry1Number}");
+        if (result.ClosingEntry2Number is not null) entries.Add($"#{result.ClosingEntry2Number}");
+        Snackbar.Add($"Bokslutet är klart! Bokslutsverifikationer: {string.Join(", ", entries)}", Severity.Success);
+
+        _closingFiscalYearId = null;
+        _closingPreview = null;
         await Load();
     }
 }

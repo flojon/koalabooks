@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -84,13 +85,15 @@ public class FiscalYearService
         {
             if (existingNumbers.Contains(prev.AccountNumber)) continue;
 
+            var isPnL = prev.AccountClass is AccountClass.Revenue or AccountClass.Expense;
+
             _db.Accounts.Add(new Account
             {
                 AccountNumber = prev.AccountNumber,
                 Name = prev.Name,
                 AccountClass = prev.AccountClass,
                 IsActive = prev.IsActive,
-                IncomingBalance = prev.OutgoingBalance,
+                IncomingBalance = isPnL ? 0 : prev.OutgoingBalance,
                 OutgoingBalance = 0,
                 FiscalYearId = targetYear.Id
             });
@@ -125,9 +128,12 @@ public class FiscalYearService
 
         foreach (var src in sourceAccounts)
         {
+            var isPnL = src.AccountClass is AccountClass.Revenue or AccountClass.Expense;
+            var incomingBalance = isPnL ? 0 : src.OutgoingBalance;
+
             if (nextAccounts.TryGetValue(src.AccountNumber, out var nextAccount))
             {
-                nextAccount.IncomingBalance = src.OutgoingBalance;
+                nextAccount.IncomingBalance = incomingBalance;
             }
             else if (src.OutgoingBalance != 0)
             {
@@ -137,7 +143,7 @@ public class FiscalYearService
                     Name = src.Name,
                     AccountClass = src.AccountClass,
                     IsActive = src.IsActive,
-                    IncomingBalance = src.OutgoingBalance,
+                    IncomingBalance = incomingBalance,
                     OutgoingBalance = 0,
                     FiscalYearId = nextYear.Id
                 });

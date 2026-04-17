@@ -56,7 +56,7 @@ public class SieExportService
             }
         }
 
-        foreach (var entry in fiscalYear.JournalEntries.OrderBy(e => e.EntryNumber))
+        foreach (var entry in fiscalYear.JournalEntries.Where(e => e.IsPosted).OrderBy(e => e.EntryNumber))
         {
             var dateStr = entry.Date.ToString("yyyyMMdd");
             sb.AppendLine($"#VER \"\" {entry.EntryNumber} {dateStr} \"{entry.Description}\"");

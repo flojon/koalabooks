@@ -119,11 +119,15 @@ public class JournalEntryService
 
     public async Task<string?> PostAsync(int entryId)
     {
-        var entry = await _db.JournalEntries.FindAsync(entryId);
+        var entry = await _db.JournalEntries
+            .Include(j => j.FiscalYear)
+            .FirstOrDefaultAsync(j => j.Id == entryId);
         if (entry is null)
             return "Journal entry not found.";
         if (entry.IsPosted)
             return "Journal entry is already posted.";
+        if (entry.FiscalYear.IsClosed)
+            return "Cannot post entries in a closed fiscal year.";
 
         entry.IsPosted = true;
         await _db.SaveChangesAsync();
@@ -166,11 +170,16 @@ public class JournalEntryService
             .Where(j => j.FiscalYearId == original.FiscalYearId)
             .MaxAsync(j => (int?)j.EntryNumber) ?? 0;
 
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var reversalDate = today <= original.FiscalYear.EndDate && today >= original.FiscalYear.StartDate
+            ? today
+            : original.FiscalYear.EndDate;
+
         var reversal = new JournalEntry
         {
             EntryNumber = maxNumber + 1,
             FiscalYearId = original.FiscalYearId,
-            Date = DateOnly.FromDateTime(DateTime.Today),
+            Date = reversalDate,
             Description = $"Reversal of #{original.EntryNumber}: {reason}",
             CreatedAt = DateTime.UtcNow,
             IsPosted = true,
@@ -187,7 +196,7 @@ public class JournalEntryService
         return (reversal, null);
     }
 
-    public async Task<List<TrialBalanceRow>> GetTrialBalanceAsync(int fiscalYearId)
+    public async Task<List<TrialBalanceRow>> GetTrialBalanceAsync(int fiscalYearId, bool excludeClosingEntries = true)
     {
         // Get all accounts for this fiscal year (includes IB)
         var accounts = await _db.Accounts
@@ -195,9 +204,13 @@ public class JournalEntryService
             .ToDictionaryAsync(a => a.Id);
 
         // Get transaction totals per account (only posted entries)
-        var transactionTotals = await _db.JournalEntryLines
+        var lineQuery = _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
-            .Where(l => l.JournalEntry.IsPosted)
+            .Where(l => l.JournalEntry.IsPosted);
+        if (excludeClosingEntries)
+            lineQuery = lineQuery.Where(l => !l.JournalEntry.IsClosingEntry);
+
+        var transactionTotals = await lineQuery
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
             .ToListAsync();
@@ -307,7 +320,7 @@ public class JournalEntryService
         return sections;
     }
 
-    public async Task<List<BalanceSheetSection>> GetBalanceSheetAsync(int fiscalYearId)
+    public async Task<List<BalanceSheetSection>> GetBalanceSheetAsync(int fiscalYearId, bool excludeClosingEntries = false)
     {
         var balanceClasses = new[] { AccountClass.Asset, AccountClass.Liability, AccountClass.Equity };
 
@@ -315,9 +328,13 @@ public class JournalEntryService
             .Where(a => a.FiscalYearId == fiscalYearId && balanceClasses.Contains(a.AccountClass))
             .ToListAsync();
 
-        var transactionTotals = await _db.JournalEntryLines
+        var lineQuery = _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
-            .Where(l => l.JournalEntry.IsPosted)
+            .Where(l => l.JournalEntry.IsPosted);
+        if (excludeClosingEntries)
+            lineQuery = lineQuery.Where(l => !l.JournalEntry.IsClosingEntry);
+
+        var transactionTotals = await lineQuery
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
             .ToDictionaryAsync(t => t.AccountId);
@@ -377,13 +394,16 @@ public class JournalEntryService
     }
 
     public async Task<(List<IncomeStatementSection> Sections, decimal NetResult)> GetIncomeStatementAsync(
-        int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
+        int fiscalYearId, DateOnly? from = null, DateOnly? to = null, bool excludeClosingEntries = true)
     {
         var lineQuery = _db.JournalEntryLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
             .Where(l => l.JournalEntry.IsPosted);
+
+        if (excludeClosingEntries)
+            lineQuery = lineQuery.Where(l => !l.JournalEntry.IsClosingEntry);
 
         if (from.HasValue)
             lineQuery = lineQuery.Where(l => l.JournalEntry.Date >= from.Value);
