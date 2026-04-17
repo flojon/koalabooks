@@ -23,6 +23,14 @@
 
 <!-- Append learnings below -->
 
+### 2026-04-18: CSV Import Removal — Replaced by BAS XLS Import
+- Deleted `CsvImportService.cs` from Infrastructure/Services and removed CsvHelper NuGet package from Infrastructure.csproj.
+- Removed CSV DI registration from Program.cs.
+- Removed CSV upload button, `HandleFileUpload` method, and `CsvImportService` injection from `Accounts.razor`. Replaced with MudButton linking to `/import/bas`.
+- Removed `CsvImportServiceTests` class (4 tests) from BookkeepingTests.cs. Test count went from 163 to 159.
+- Empty-state alert in Accounts.razor now points users to BAS kontoplan import instead of CSV.
+- **Build**: 0 errors, 0 warnings. **Tests**: 159 passed, 0 failed.
+
 ### 2026-04-15: P0 Accounting Bug Fixes
 - **AccountClass enum** lives at `src/KoalaBooks.Domain/Enums/AccountClass.cs` — values: Asset=1, Liability=2, Revenue=3, Expense=4, Equity=8. Added `IsCreditNormal()` extension method.
 - **AccountClassMapper** at `src/KoalaBooks.Infrastructure/Services/AccountClassMapper.cs` — maps BAS account numbers. Class 2 and 8 require sub-range inspection (second digit).

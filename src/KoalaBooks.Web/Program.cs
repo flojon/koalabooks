@@ -16,7 +16,6 @@ builder.AddServiceDefaults();
 
 builder.AddNpgsqlDbContext<AppDbContext>("koalabooks");
 
-builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<SieImportService>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<FiscalYearService>();
