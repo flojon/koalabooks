@@ -399,9 +399,15 @@ public class JournalEntryService
     public async Task<(List<IncomeStatementSection> Sections, decimal NetResult)> GetIncomeStatementAsync(
         int fiscalYearId, DateOnly? from = null, DateOnly? to = null, bool excludeClosingEntries = true)
     {
+        // Load all P&L accounts so we can include IncomingBalance in the totals.
+        // This makes the income statement consistent with YearEndClosingService,
+        // which computes P&L balances as IB + transactions.
+        var plAccounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .Where(a => a.AccountClass == AccountClass.Revenue || a.AccountClass == AccountClass.Expense)
+            .ToListAsync();
+
         var lineQuery = _db.JournalEntryLines
-            .Include(l => l.JournalEntry)
-            .Include(l => l.Account)
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
             .Where(l => l.JournalEntry.IsPosted);
 
@@ -413,42 +419,47 @@ public class JournalEntryService
         if (to.HasValue)
             lineQuery = lineQuery.Where(l => l.JournalEntry.Date <= to.Value);
 
-        var accountTotals = await lineQuery
-            .GroupBy(l => new { l.AccountId, l.Account.AccountNumber, l.Account.Name, l.Account.AccountClass })
-            .Select(g => new
-            {
-                g.Key.AccountId,
-                g.Key.AccountNumber,
-                g.Key.Name,
-                g.Key.AccountClass,
-                Debit = g.Sum(l => l.DebitAmount),
-                Credit = g.Sum(l => l.CreditAmount)
-            })
-            .ToListAsync();
+        var transactionTotals = await lineQuery
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
+            .ToDictionaryAsync(t => t.AccountId);
 
-        var revenueRows = accountTotals
-            .Where(t => t.AccountClass == AccountClass.Revenue)
-            .Select(t => new IncomeStatementRow
-            {
-                AccountNumber = t.AccountNumber,
-                AccountName = t.Name,
-                Amount = t.Credit - t.Debit
-            })
-            .Where(r => r.Amount != 0)
-            .OrderBy(r => r.AccountNumber)
-            .ToList();
+        // Include IB only for the full fiscal year view (no date filters).
+        // Sub-period reports show only that period's transaction activity.
+        bool includeIB = !from.HasValue && !to.HasValue;
 
-        var expenseRows = accountTotals
-            .Where(t => t.AccountClass == AccountClass.Expense)
-            .Select(t => new IncomeStatementRow
+        var revenueRows = new List<IncomeStatementRow>();
+        var expenseRows = new List<IncomeStatementRow>();
+
+        foreach (var account in plAccounts)
+        {
+            transactionTotals.TryGetValue(account.Id, out var totals);
+            decimal debit = totals?.Debit ?? 0;
+            decimal credit = totals?.Credit ?? 0;
+            decimal ib = includeIB ? account.IncomingBalance : 0;
+
+            decimal amount = account.AccountClass.IsCreditNormal()
+                ? ib + credit - debit
+                : ib + debit - credit;
+
+            if (amount == 0)
+                continue;
+
+            var row = new IncomeStatementRow
             {
-                AccountNumber = t.AccountNumber,
-                AccountName = t.Name,
-                Amount = t.Debit - t.Credit
-            })
-            .Where(r => r.Amount != 0)
-            .OrderBy(r => r.AccountNumber)
-            .ToList();
+                AccountNumber = account.AccountNumber,
+                AccountName = account.Name,
+                Amount = amount
+            };
+
+            if (account.AccountClass == AccountClass.Revenue)
+                revenueRows.Add(row);
+            else
+                expenseRows.Add(row);
+        }
+
+        revenueRows = revenueRows.OrderBy(r => r.AccountNumber).ToList();
+        expenseRows = expenseRows.OrderBy(r => r.AccountNumber).ToList();
 
         var revenueTotal = revenueRows.Sum(r => r.Amount);
         var expenseTotal = expenseRows.Sum(r => r.Amount);

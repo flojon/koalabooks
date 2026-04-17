@@ -129,6 +129,66 @@ public class IncomeStatementTests : IDisposable
         Assert.Equal(0m, netResult);
     }
 
+    [Fact]
+    public async Task FullYear_IncludesIncomingBalance_InTotals()
+    {
+        // Revenue account with IB (e.g. from SIE import mid-year)
+        var revenueWithIB = _f.CreateAccount(_fiscalYear.Id, "3050", "Import revenue",
+            AccountClass.Revenue, incomingBalance: 5000m);
+        // Expense account with IB
+        var expenseWithIB = _f.CreateAccount(_fiscalYear.Id, "5050", "Import expense",
+            AccountClass.Expense, incomingBalance: 2000m);
+
+        // Add some transactions on top of IB
+        await CreateEntry(new DateOnly(2026, 3, 1), "Sale", _cashAccount.Id, revenueWithIB.Id, 3000m);
+        await CreateEntry(new DateOnly(2026, 4, 1), "Cost", expenseWithIB.Id, _cashAccount.Id, 1000m);
+
+        var (sections, netResult) = await _f.JournalEntryService.GetIncomeStatementAsync(_fiscalYear.Id);
+
+        var revenue = sections.Single(s => s.Title == "Intäkter");
+        // IB 5000 + Credit 3000 = 8000
+        Assert.Equal(8000m, revenue.Rows.Single(r => r.AccountNumber == "3050").Amount);
+
+        var expenses = sections.Single(s => s.Title == "Kostnader");
+        // IB 2000 + Debit 1000 = 3000
+        Assert.Equal(3000m, expenses.Rows.Single(r => r.AccountNumber == "5050").Amount);
+
+        // Net = 8000 - 3000 = 5000
+        Assert.Equal(5000m, netResult);
+    }
+
+    [Fact]
+    public async Task DateFilter_ExcludesIncomingBalance()
+    {
+        var revenueWithIB = _f.CreateAccount(_fiscalYear.Id, "3050", "Import revenue",
+            AccountClass.Revenue, incomingBalance: 5000m);
+
+        await CreateEntry(new DateOnly(2026, 3, 1), "Sale", _cashAccount.Id, revenueWithIB.Id, 3000m);
+
+        // With date filter, IB should NOT be included
+        var (sections, _) = await _f.JournalEntryService.GetIncomeStatementAsync(
+            _fiscalYear.Id, from: new DateOnly(2026, 2, 1), to: new DateOnly(2026, 4, 30));
+
+        var revenue = sections.Single(s => s.Title == "Intäkter");
+        // Only transactions in range: Credit 3000 (IB excluded)
+        Assert.Equal(3000m, revenue.Rows.Single(r => r.AccountNumber == "3050").Amount);
+    }
+
+    [Fact]
+    public async Task AccountWithOnlyIB_AppearsInFullYearReport()
+    {
+        // Account with IB but no transactions should still appear
+        _f.CreateAccount(_fiscalYear.Id, "3050", "Imported revenue",
+            AccountClass.Revenue, incomingBalance: 7500m);
+
+        var (sections, netResult) = await _f.JournalEntryService.GetIncomeStatementAsync(_fiscalYear.Id);
+
+        var revenue = sections.Single(s => s.Title == "Intäkter");
+        Assert.Single(revenue.Rows);
+        Assert.Equal(7500m, revenue.Rows[0].Amount);
+        Assert.Equal(7500m, netResult);
+    }
+
     private async Task CreateEntry(DateOnly date, string description, int debitAccountId, int creditAccountId, decimal amount)
     {
         var entry = new JournalEntry

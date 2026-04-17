@@ -77,3 +77,19 @@
 - **Fix 4**: Deleted unused `NotificationService` (ISnackbar wrapper). All pages inject `ISnackbar` directly. Removed DI registration, the class file, and the `KoalaBooks.Web.Services` using from Program.cs. Deleted empty Services directory.
 - **Fix 5**: Added sign convention TODO comments to top of `SieImportService.cs` and `SieExportService.cs` documenting the conflict between SIE-4 negative IB for credit-normal accounts vs. positive-magnitude manual entry storage.
 - **Build**: 0 errors, 0 warnings. **Tests**: 163 passed, 0 failed.
+
+### 2026-04-18: SIE Sign Convention Fix (Critical)
+- **Problem**: SIE-4 import stored credit-normal account balances (IB/UB) as negative numbers, while manual entry stored them as positive. This broke the balance sheet for SIE-imported data.
+- **Fix in `SieImportService.ImportBalancesAsync`**: Applied `Math.Abs()` to both `ib.Amount` and `ub.Amount` before storing. All balances now stored as positive magnitudes regardless of source.
+- **Fix in `SieExportService.ExportAsync`**: Added `using KoalaBooks.Domain.Enums` and negates credit-normal account IB/UB on export (`account.AccountClass.IsCreditNormal() ? -amount : amount`) to comply with SIE-4 spec.
+- **Test fix**: Updated `Export_ContainsBalances` test to store `outgoingBalance: 15000m` (positive) instead of `-15000m`. The export still produces `#UB 0 2440 -15000.00` because the export service now handles the negation.
+- **Removed TODO comments** from top of both `SieImportService.cs` and `SieExportService.cs` (added in previous review fix round).
+- **Report services unchanged**: `JournalEntryService` balance/report methods already compute signs from `AccountClass.IsCreditNormal()`, so they work correctly with positive IB values. No Razor page changes needed.
+- **Build**: 0 errors, 0 warnings. **Tests**: 159 passed, 0 failed.
+
+### 2026-04-18: Income Statement IB Inconsistency Fix
+- **Problem**: `GetIncomeStatementAsync` only used transaction data (Credit - Debit), completely ignoring `IncomingBalance`. The `YearEndClosingService` computed P&L balances as `IB + transactions`. When P&L accounts had non-zero IB (e.g., from SIE import), the income statement showed different amounts than what gets closed. Also, accounts with only IB and no transactions were entirely missing from the report.
+- **Fix in `JournalEntryService.GetIncomeStatementAsync`**: Rewrote to load all P&L accounts for the fiscal year, then merge with transaction totals. For full-year view (no date filter), includes `IncomingBalance` in amounts: Revenue = IB + Credit - Debit, Expense = IB + Debit - Credit. Uses `IsCreditNormal()` for sign convention consistency with closing service. For sub-period reports (date filters present), IB is excluded — only that period's transaction activity is shown.
+- **Key insight**: After year-end closing, P&L IB is zeroed by `PropagateBalancesToNextYearAsync`, so including IB has zero impact on the next year. But for the current year (especially first year with SIE import), IB is part of the total P&L and must be included.
+- **3 new tests added** to `IncomeStatementTests.cs`: `FullYear_IncludesIncomingBalance_InTotals`, `DateFilter_ExcludesIncomingBalance`, `AccountWithOnlyIB_AppearsInFullYearReport`.
+- **Build**: 0 errors, 0 warnings. **Tests**: 172 passed, 0 failed.
