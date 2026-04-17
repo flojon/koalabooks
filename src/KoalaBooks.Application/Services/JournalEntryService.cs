@@ -176,9 +176,10 @@ public class JournalEntryService
             .Where(a => a.FiscalYearId == fiscalYearId)
             .ToDictionaryAsync(a => a.Id);
 
-        // Get transaction totals per account
+        // Get transaction totals per account (only posted entries)
         var transactionTotals = await _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .Where(l => l.JournalEntry.IsPosted)
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
             .ToListAsync();
@@ -195,6 +196,7 @@ public class JournalEntryService
                 {
                     AccountNumber = account.AccountNumber,
                     AccountName = account.Name,
+                    AccountClass = account.AccountClass,
                     IncomingBalance = account.IncomingBalance,
                     TotalDebit = t.Debit,
                     TotalCredit = t.Credit
@@ -209,6 +211,7 @@ public class JournalEntryService
             {
                 AccountNumber = account.AccountNumber,
                 AccountName = account.Name,
+                AccountClass = account.AccountClass,
                 IncomingBalance = account.IncomingBalance,
                 TotalDebit = 0,
                 TotalCredit = 0
@@ -234,7 +237,8 @@ public class JournalEntryService
 
         var lineQuery = _db.JournalEntryLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId);
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .Where(l => l.JournalEntry.IsPosted);
 
         if (from.HasValue)
             lineQuery = lineQuery.Where(l => l.JournalEntry.Date >= from.Value);
@@ -256,13 +260,16 @@ public class JournalEntryService
                 IncomingBalance = account.IncomingBalance
             };
 
+            var isCreditNormal = account.AccountClass.IsCreditNormal();
             var runningBalance = account.IncomingBalance;
 
             if (linesByAccount.TryGetValue(account.Id, out var lines))
             {
                 foreach (var line in lines.OrderBy(l => l.JournalEntry.Date).ThenBy(l => l.JournalEntry.EntryNumber))
                 {
-                    runningBalance += line.DebitAmount - line.CreditAmount;
+                    runningBalance += isCreditNormal
+                        ? line.CreditAmount - line.DebitAmount
+                        : line.DebitAmount - line.CreditAmount;
                     section.Rows.Add(new GeneralLedgerRow
                     {
                         Date = line.JournalEntry.Date,
@@ -292,6 +299,7 @@ public class JournalEntryService
 
         var transactionTotals = await _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .Where(l => l.JournalEntry.IsPosted)
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
             .ToDictionaryAsync(t => t.AccountId);
@@ -307,6 +315,7 @@ public class JournalEntryService
 
         foreach (var (title, accountClass) in sectionDefs)
         {
+            var isCreditNormal = accountClass.IsCreditNormal();
             var rows = new List<BalanceSheetRow>();
 
             foreach (var account in accounts.Where(a => a.AccountClass == accountClass).OrderBy(a => a.AccountNumber))
@@ -323,7 +332,9 @@ public class JournalEntryService
                 if (account.IncomingBalance == 0 && debit == 0 && credit == 0)
                     continue;
 
-                var closingBalance = account.IncomingBalance + debit - credit;
+                var closingBalance = isCreditNormal
+                    ? account.IncomingBalance + credit - debit
+                    : account.IncomingBalance + debit - credit;
 
                 rows.Add(new BalanceSheetRow
                 {
@@ -353,7 +364,8 @@ public class JournalEntryService
         var lineQuery = _db.JournalEntryLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
-            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId);
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .Where(l => l.JournalEntry.IsPosted);
 
         if (from.HasValue)
             lineQuery = lineQuery.Where(l => l.JournalEntry.Date >= from.Value);
@@ -415,6 +427,7 @@ public class JournalEntryService
             .CountAsync(j => j.FiscalYearId == fiscalYearId);
         var totals = await _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .Where(l => l.JournalEntry.IsPosted)
             .GroupBy(_ => 1)
             .Select(g => new { Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
             .FirstOrDefaultAsync();
@@ -455,10 +468,13 @@ public class TrialBalanceRow
 {
     public string AccountNumber { get; set; } = "";
     public string AccountName { get; set; } = "";
+    public AccountClass AccountClass { get; set; }
     public decimal IncomingBalance { get; set; }
     public decimal TotalDebit { get; set; }
     public decimal TotalCredit { get; set; }
-    public decimal Balance => IncomingBalance + TotalDebit - TotalCredit;
+    public decimal Balance => AccountClass.IsCreditNormal()
+        ? IncomingBalance + TotalCredit - TotalDebit
+        : IncomingBalance + TotalDebit - TotalCredit;
 }
 
 public class GeneralLedgerAccountSection

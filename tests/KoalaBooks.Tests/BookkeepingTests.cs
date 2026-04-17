@@ -85,19 +85,21 @@ public class CsvImportServiceTests : IDisposable
     [Fact]
     public async Task ImportAccounts_MapsAccountClassesCorrectly()
     {
-        var csv = "AccountNumber,Name\n1000,Tillgångar\n2000,Skulder\n3000,Intäkter\n4000,Kostnader\n5000,Övriga kostnader\n8000,Eget kapital\n";
+        var csv = "AccountNumber,Name\n1000,Tillgångar\n2010,Eget kapital\n2100,Skulder\n3000,Intäkter\n4000,Kostnader\n5000,Övriga kostnader\n8010,Ränteintäkter\n8400,Räntekostnader\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
         var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
 
-        Assert.Equal(6, result.Created);
+        Assert.Equal(8, result.Created);
         var accounts = await _db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
-        Assert.Equal(AccountClass.Asset, accounts[0].AccountClass);
-        Assert.Equal(AccountClass.Liability, accounts[1].AccountClass);
-        Assert.Equal(AccountClass.Revenue, accounts[2].AccountClass);
-        Assert.Equal(AccountClass.Expense, accounts[3].AccountClass);
-        Assert.Equal(AccountClass.Expense, accounts[4].AccountClass);
-        Assert.Equal(AccountClass.Equity, accounts[5].AccountClass);
+        Assert.Equal(AccountClass.Asset, accounts[0].AccountClass);     // 1000
+        Assert.Equal(AccountClass.Equity, accounts[1].AccountClass);    // 2010
+        Assert.Equal(AccountClass.Liability, accounts[2].AccountClass); // 2100
+        Assert.Equal(AccountClass.Revenue, accounts[3].AccountClass);   // 3000
+        Assert.Equal(AccountClass.Expense, accounts[4].AccountClass);   // 4000
+        Assert.Equal(AccountClass.Expense, accounts[5].AccountClass);   // 5000
+        Assert.Equal(AccountClass.Revenue, accounts[6].AccountClass);   // 8010
+        Assert.Equal(AccountClass.Expense, accounts[7].AccountClass);   // 8400
     }
 }
 
@@ -262,6 +264,7 @@ public class JournalEntryServiceTests : IDisposable
         Date = new DateOnly(2026, 3, 1),
         Description = $"Test entry {amount}",
         FiscalYearId = _fiscalYear.Id,
+        IsPosted = true,
         Lines =
         [
             new() { AccountId = _account1.Id, DebitAmount = amount, CreditAmount = 0 },

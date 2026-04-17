@@ -84,9 +84,9 @@ public class GeneralLedgerTests : IDisposable
         var revenue = sections.Single(s => s.AccountNumber == "3010");
         Assert.Equal(0m, revenue.IncomingBalance);
         Assert.Equal(2, revenue.Rows.Count);
-        Assert.Equal(-1000m, revenue.Rows[0].RunningBalance); // 0 - 1000
-        Assert.Equal(-3000m, revenue.Rows[1].RunningBalance); // -1000 - 2000
-        Assert.Equal(-3000m, revenue.ClosingBalance);
+        Assert.Equal(1000m, revenue.Rows[0].RunningBalance); // 0 + 1000 credit
+        Assert.Equal(3000m, revenue.Rows[1].RunningBalance); // 1000 + 2000 credit
+        Assert.Equal(3000m, revenue.ClosingBalance);
     }
 
     [Fact]
@@ -159,6 +159,7 @@ public class GeneralLedgerTests : IDisposable
             Date = date,
             Description = description,
             FiscalYearId = _fiscalYear.Id,
+            IsPosted = true,
             Lines =
             [
                 new() { AccountId = debitAccountId, DebitAmount = amount, CreditAmount = 0 },

@@ -223,6 +223,7 @@ public class BalanceSheetTests : IDisposable
             Date = date,
             Description = description,
             FiscalYearId = _fiscalYear.Id,
+            IsPosted = true,
             Lines =
             [
                 new() { AccountId = debitAccountId, DebitAmount = amount, CreditAmount = 0 },
