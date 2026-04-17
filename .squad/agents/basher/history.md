@@ -17,3 +17,8 @@
 - **FiscalYear entity** has `StartDate`, `EndDate` (DateOnly), and `IsClosed` flag.
 - **Accounts are scoped per fiscal year** — each account has a `FiscalYearId`. Validation must check accounts belong to the entry's fiscal year, not just that they exist globally.
 - **AppHost project** has a pre-existing build issue (missing apphost binary) — unrelated to application code. Tests run via `dotnet test tests/KoalaBooks.Tests/`.
+- **Database provider is SQL Server** (migrated from SQLite). AppHost orchestrates via `Aspire.Hosting.SqlServer`, Web uses `Aspire.Microsoft.EntityFrameworkCore.SqlServer`, Infrastructure uses `Microsoft.EntityFrameworkCore.SqlServer`.
+- **Aspire wiring:** AppHost creates `AddSqlServer("sql").AddDatabase("koalabooks")`, Web project references it via `builder.AddSqlServerDbContext<AppDbContext>("koalabooks")`.
+- **DesignTimeDbContextFactory** (`src/KoalaBooks.Infrastructure/Data/DesignTimeDbContextFactory.cs`) uses `UseSqlServer` with localdb connection for EF tooling outside Aspire.
+- **Migrations live in** `src/KoalaBooks.Infrastructure/Data/Migrations/` with namespace `KoalaBooks.Infrastructure.Data.Migrations`.
+- **Tests stay on SQLite** — `tests/KoalaBooks.Tests/` has its own `Microsoft.EntityFrameworkCore.Sqlite` reference, completely independent of the SQL Server provider.

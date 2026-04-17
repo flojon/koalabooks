@@ -1,5 +1,10 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-builder.AddProject<Projects.KoalaBooks_Web>("koalabooks-web");
+var sql = builder.AddSqlServer("sql")
+    .AddDatabase("koalabooks");
+
+builder.AddProject<Projects.KoalaBooks_Web>("koalabooks-web")
+    .WithReference(sql)
+    .WaitFor(sql);
 
 builder.Build().Run();

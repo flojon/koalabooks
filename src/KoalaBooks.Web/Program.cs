@@ -12,8 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("Default") ?? "Data Source=koalabooks.db"));
+builder.AddSqlServerDbContext<AppDbContext>("koalabooks");
 
 builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<SieImportService>();
