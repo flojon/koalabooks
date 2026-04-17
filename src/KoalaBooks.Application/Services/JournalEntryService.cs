@@ -130,6 +130,24 @@ public class JournalEntryService
         return null;
     }
 
+    public async Task<string?> DeleteDraftAsync(int entryId)
+    {
+        var entry = await _db.JournalEntries
+            .Include(j => j.FiscalYear)
+            .FirstOrDefaultAsync(j => j.Id == entryId);
+
+        if (entry is null)
+            return "Journal entry not found.";
+        if (entry.IsPosted)
+            return "Cannot delete a posted journal entry.";
+        if (entry.FiscalYear.IsClosed)
+            return "Cannot delete entries in a closed fiscal year.";
+
+        _db.JournalEntries.Remove(entry);
+        await _db.SaveChangesAsync();
+        return null;
+    }
+
     public async Task<(JournalEntry? Entry, string? Error)> CreateReversalAsync(int entryId, string reason)
     {
         var original = await _db.JournalEntries

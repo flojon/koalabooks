@@ -1,0 +1,77 @@
+.account-search-dropdown {
+    position: relative;
+}
+
+.account-search-dropdown input[type="text"] {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+
+.account-search-dropdown input[type="text"]:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.account-dropdown-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    max-height: 240px;
+    overflow-y: auto;
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.account-dropdown-list li {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.account-dropdown-list li:last-child {
+    border-bottom: none;
+}
+
+.account-dropdown-list li:hover,
+.account-dropdown-list li.highlighted {
+    background: #eff6ff;
+}
+
+.account-dropdown-list li .account-number {
+    font-weight: 600;
+    color: #1e293b;
+    white-space: nowrap;
+}
+
+.account-dropdown-list li .account-name {
+    color: #475569;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.account-dropdown-list li.no-results {
+    color: #94a3b8;
+    cursor: default;
+    font-style: italic;
+}
+
+.account-dropdown-list li.no-results:hover {
+    background: transparent;
+}

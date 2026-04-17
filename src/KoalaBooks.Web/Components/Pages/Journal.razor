@@ -58,13 +58,8 @@
                     var idx = i;
                     <tr>
                         <td>
-                            <select @bind="_formLines[idx].AccountId">
-                                <option value="0">— Select account —</option>
-                                @foreach (var a in _accounts)
-                                {
-                                    <option value="@a.Id">@a.AccountNumber — @a.Name</option>
-                                }
-                            </select>
+                            <AccountSearchDropdown Accounts="_accounts"
+                                                   @bind-SelectedAccountId="_formLines[idx].AccountId" />
                         </td>
                         <td><input type="number" step="0.01" min="0" @bind="_formLines[idx].DebitAmount" /></td>
                         <td><input type="number" step="0.01" min="0" @bind="_formLines[idx].CreditAmount" /></td>

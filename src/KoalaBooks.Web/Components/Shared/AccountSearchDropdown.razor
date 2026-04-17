@@ -1,0 +1,157 @@
+@using KoalaBooks.Domain.Entities
+
+<div class="account-search-dropdown" @onfocusout="HandleFocusOut">
+    <input type="text"
+           @bind:get="_searchText"
+           @bind:set="OnSearchChanged"
+           @onfocusin="HandleFocusIn"
+           @onkeydown="HandleKeyDown"
+           placeholder="Search by number or name…"
+           autocomplete="off" />
+
+    @if (_isOpen && _filtered.Count > 0)
+    {
+        <ul class="account-dropdown-list">
+            @for (int i = 0; i < _filtered.Count; i++)
+            {
+                var account = _filtered[i];
+                var index = i;
+                <li class="@(index == _highlightedIndex ? "highlighted" : "")"
+                    @onmousedown="() => SelectAccount(account)"
+                    @onmousedown:preventDefault>
+                    <span class="account-number">@account.AccountNumber</span>
+                    <span class="account-name">@account.Name</span>
+                </li>
+            }
+        </ul>
+    }
+    else if (_isOpen && _searchText.Length > 0 && _filtered.Count == 0)
+    {
+        <ul class="account-dropdown-list">
+            <li class="no-results">No matching accounts</li>
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public List<Account> Accounts { get; set; } = [];
+
+    [Parameter]
+    public int SelectedAccountId { get; set; }
+
+    [Parameter]
+    public EventCallback<int> SelectedAccountIdChanged { get; set; }
+
+    private string _searchText = "";
+    private bool _isOpen;
+    private int _highlightedIndex = -1;
+    private List<Account> _filtered = [];
+
+    protected override void OnParametersSet()
+    {
+        // Sync display text when the bound value changes externally
+        if (SelectedAccountId > 0)
+        {
+            var acct = Accounts.FirstOrDefault(a => a.Id == SelectedAccountId);
+            if (acct is not null)
+            {
+                _searchText = $"{acct.AccountNumber} — {acct.Name}";
+            }
+        }
+        else
+        {
+            if (!_isOpen) _searchText = "";
+        }
+    }
+
+    private async Task OnSearchChanged(string value)
+    {
+        _searchText = value;
+        _isOpen = true;
+        _highlightedIndex = -1;
+        ApplyFilter();
+
+        // Clear the bound value while the user is searching
+        if (SelectedAccountId != 0)
+        {
+            SelectedAccountId = 0;
+            await SelectedAccountIdChanged.InvokeAsync(0);
+        }
+    }
+
+    private void HandleFocusIn()
+    {
+        _isOpen = true;
+        if (SelectedAccountId > 0)
+        {
+            // Clear text so the user can search freely
+            _searchText = "";
+        }
+        ApplyFilter();
+    }
+
+    private void HandleFocusOut()
+    {
+        // Delay close so click on list item registers first
+        _isOpen = false;
+
+        // Restore display text if an account is still selected
+        if (SelectedAccountId > 0)
+        {
+            var acct = Accounts.FirstOrDefault(a => a.Id == SelectedAccountId);
+            if (acct is not null)
+                _searchText = $"{acct.AccountNumber} — {acct.Name}";
+        }
+        else
+        {
+            _searchText = "";
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                if (_filtered.Count > 0)
+                    _highlightedIndex = Math.Min(_highlightedIndex + 1, _filtered.Count - 1);
+                break;
+            case "ArrowUp":
+                if (_highlightedIndex > 0)
+                    _highlightedIndex--;
+                break;
+            case "Enter":
+                if (_highlightedIndex >= 0 && _highlightedIndex < _filtered.Count)
+                    await SelectAccount(_filtered[_highlightedIndex]);
+                break;
+            case "Escape":
+                _isOpen = false;
+                break;
+        }
+    }
+
+    private async Task SelectAccount(Account account)
+    {
+        SelectedAccountId = account.Id;
+        _searchText = $"{account.AccountNumber} — {account.Name}";
+        _isOpen = false;
+        _highlightedIndex = -1;
+        await SelectedAccountIdChanged.InvokeAsync(account.Id);
+    }
+
+    private void ApplyFilter()
+    {
+        var term = _searchText.Trim();
+        if (term.Length == 0)
+        {
+            _filtered = Accounts;
+            return;
+        }
+
+        _filtered = Accounts
+            .Where(a => a.AccountNumber.Contains(term, StringComparison.OrdinalIgnoreCase)
+                     || a.Name.Contains(term, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+}
