@@ -18,3 +18,10 @@
 - **JournalEntry.IsPosted** (bool) controls whether entries appear in reports. No enum — just a flag. Default is false (draft).
 - **Test pattern**: report tests must set `IsPosted = true` on entries, otherwise they won't appear in report queries.
 - **BAS class 8**: Financial P&L items — 80xx-83xx are revenue (ränteintäkter), 84xx-89xx are expense (räntekostnader, skatt). They go on income statement, not balance sheet.
+
+### 2026-04-17: P1 Delete Draft Journal Entry
+- Added `DeleteDraftAsync(int entryId)` to `JournalEntryService` — returns `Task<string?>` (null = success, string = error).
+- Follows same pattern as `PostAsync`: lookup entry, validate preconditions, mutate, save.
+- Must `.Include(j => j.FiscalYear)` to check `IsClosed` — `FindAsync` alone won't load the nav property.
+- EF cascade (`DeleteBehavior.Cascade`) handles `JournalEntryLine` removal automatically — no need to manually remove lines.
+- Three guard checks: entry exists, not posted, fiscal year not closed.

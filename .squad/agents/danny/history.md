@@ -29,6 +29,28 @@
 - DI registration: `src/KoalaBooks.Web/Program.cs`
 - Tests: `tests/KoalaBooks.Tests/` — 66 tests, 8 files
 
+### 2026-04-17 — Year-End Closing (Bokslut) Design
+
+**Key design decisions made:**
+- Two-phase closing entries per BAS standard: P&L accounts → 8999, then 8999 → 2099
+- New `YearEndClosingService` (separate from `FiscalYearService`) with Validate/Preview/Execute pattern
+- Closing entries auto-posted (not drafts) because amounts are deterministic; preview step provides the safety net
+- Auto-create accounts 8999/2099 if missing, to avoid blocking users
+- Block closing if unposted drafts exist — user must consciously handle each one
+- Data model: `FiscalYear.ClosedAt` (DateTime?) + `JournalEntry.IsClosingEntry` (bool) — minimal additions
+- OutgoingBalance computed and persisted at closing time, fixing the current SIE-import-only gap
+- 4-phase implementation plan: (1) data model migration, (2) closing service + tests, (3) UI, (4) integration polish
+
+**Critical dependency:** P0 AccountClass fixes must land before implementation — closing logic depends on correct account classification.
+
+**Trade-offs documented:**
+- Two entries vs one: chose standard BAS pattern over simplicity for auditability and SIE compatibility
+- Auto-post vs draft: chose auto-post with preview for UX cleanliness, mitigated by future reopen feature
+- Bool vs enum for entry type: chose YAGNI bool, can migrate to enum when more types emerge
+- No `PreviousFiscalYearId` FK: temporal ordering suffices, avoids maintenance burden
+
+**ADR location:** `.squad/decisions/inbox/danny-yearend-closing-design.md`
+
 **Bugs Found:**
 - `SieExportService` is NOT registered in `Program.cs` but is `@inject`-ed in `SieExport.razor` → runtime DI exception
 - `SieExport.razor` uses `JS.InvokeVoidAsync("eval", ...)` for file download — XSS risk
