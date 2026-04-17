@@ -11,29 +11,28 @@
     <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Breakpoint="Breakpoint.Md"
                Variant="DrawerVariant.Responsive" Elevation="1">
         <MudNavMenu>
-            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Översikt</MudNavLink>
 
             <MudDivider Class="my-1" />
-            <MudText Typo="Typo.caption" Class="px-4 py-1" Style="color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">Transactions</MudText>
+            <MudText Typo="Typo.caption" Class="px-4 py-1" Style="color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">Transaktioner</MudText>
 
             <MudNavLink Href="/journal" Icon="@Icons.Material.Outlined.MenuBook">Journal</MudNavLink>
-            <MudNavLink Href="/accounts" Icon="@Icons.Material.Outlined.AccountTree">Accounts</MudNavLink>
-            <MudNavLink Href="/fiscal-years" Icon="@Icons.Material.Outlined.CalendarMonth">Fiscal Years</MudNavLink>
+            <MudNavLink Href="/accounts" Icon="@Icons.Material.Outlined.AccountTree">Konton</MudNavLink>
+            <MudNavLink Href="/fiscal-years" Icon="@Icons.Material.Outlined.CalendarMonth">Räkenskapsår</MudNavLink>
 
             <MudDivider Class="my-1" />
-            <MudText Typo="Typo.caption" Class="px-4 py-1" Style="color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">Reports</MudText>
+            <MudText Typo="Typo.caption" Class="px-4 py-1" Style="color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">Rapporter</MudText>
 
-            <MudNavLink Href="/reports/trial-balance" Icon="@Icons.Material.Outlined.BarChart">Trial Balance</MudNavLink>
-            <MudNavLink Href="/reports/general-ledger" Icon="@Icons.Material.Outlined.Book">General Ledger</MudNavLink>
-            <MudNavLink Href="/reports/income-statement" Icon="@Icons.Material.Outlined.TrendingUp">Income Statement</MudNavLink>
-            <MudNavLink Href="/reports/balance-sheet" Icon="@Icons.Material.Outlined.AccountBalance">Balance Sheet</MudNavLink>
+            <MudNavLink Href="/reports/trial-balance" Icon="@Icons.Material.Outlined.BarChart">Råbalans</MudNavLink>
+            <MudNavLink Href="/reports/general-ledger" Icon="@Icons.Material.Outlined.Book">Huvudbok</MudNavLink>
+            <MudNavLink Href="/reports/income-statement" Icon="@Icons.Material.Outlined.TrendingUp">Resultaträkning</MudNavLink>
+            <MudNavLink Href="/reports/balance-sheet" Icon="@Icons.Material.Outlined.AccountBalance">Balansräkning</MudNavLink>
 
             <MudDivider Class="my-1" />
             <MudText Typo="Typo.caption" Class="px-4 py-1" Style="color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">Data</MudText>
 
-            <MudNavLink Href="/import/sie" Icon="@Icons.Material.Outlined.FileUpload">Import SIE</MudNavLink>
-            <MudNavLink Href="/export/sie" Icon="@Icons.Material.Outlined.FileDownload">Export SIE</MudNavLink>
-            <MudNavLink Href="/import/bas" Icon="@Icons.Material.Outlined.TableChart">Import BAS</MudNavLink>
+            <MudNavLink Href="/import/sie" Icon="@Icons.Material.Outlined.FileUpload">Importera SIE</MudNavLink>
+            <MudNavLink Href="/export/sie" Icon="@Icons.Material.Outlined.FileDownload">Exportera SIE</MudNavLink>
         </MudNavMenu>
     </MudDrawer>
 
@@ -45,9 +44,9 @@
                 </ChildContent>
                 <ErrorContent>
                     <div class="alert alert-danger" style="margin:2rem;">
-                        <h3>😵 Something went wrong</h3>
-                        <p>An unexpected error occurred. Please try again.</p>
-                        <button class="btn btn-primary" @onclick="Recover">🔄 Try again</button>
+                        <h3>😵 Något gick fel</h3>
+                        <p>Ett oväntat fel inträffade. Försök igen.</p>
+                        <button class="btn btn-primary" @onclick="Recover">🔄 Försök igen</button>
                     </div>
                 </ErrorContent>
             </ErrorBoundary>
@@ -56,8 +55,8 @@
 </MudLayout>
 
 <div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
+    Ett ohanterat fel har inträffat.
+    <a href="." class="reload">Ladda om</a>
     <span class="dismiss">🗙</span>
 </div>
 
