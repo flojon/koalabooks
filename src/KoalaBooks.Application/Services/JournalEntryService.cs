@@ -48,6 +48,20 @@ public class JournalEntryService
         if (fiscalYear.IsClosed)
             return (null, "Cannot add entries to a closed fiscal year.");
 
+        if (entry.Date < fiscalYear.StartDate || entry.Date > fiscalYear.EndDate)
+            return (null, $"Entry date {entry.Date} is outside the fiscal year ({fiscalYear.StartDate} – {fiscalYear.EndDate}).");
+
+        var fiscalYearAccountIds = await _db.Accounts
+            .Where(a => a.FiscalYearId == entry.FiscalYearId)
+            .Select(a => a.Id)
+            .ToHashSetAsync();
+        var invalidAccountIds = entry.Lines
+            .Where(l => !fiscalYearAccountIds.Contains(l.AccountId))
+            .Select(l => l.AccountId)
+            .ToList();
+        if (invalidAccountIds.Count > 0)
+            return (null, "One or more line items reference accounts that do not exist in this fiscal year.");
+
         // Assign next entry number
         var maxNumber = await _db.JournalEntries
             .Where(j => j.FiscalYearId == entry.FiscalYearId)
@@ -78,6 +92,20 @@ public class JournalEntryService
         if (existing.FiscalYear.IsClosed)
             return (null, "Cannot modify entries in a closed fiscal year.");
 
+        if (entry.Date < existing.FiscalYear.StartDate || entry.Date > existing.FiscalYear.EndDate)
+            return (null, $"Entry date {entry.Date} is outside the fiscal year ({existing.FiscalYear.StartDate} – {existing.FiscalYear.EndDate}).");
+
+        var fiscalYearAccountIds = await _db.Accounts
+            .Where(a => a.FiscalYearId == existing.FiscalYearId)
+            .Select(a => a.Id)
+            .ToHashSetAsync();
+        var invalidAccountIds = entry.Lines
+            .Where(l => !fiscalYearAccountIds.Contains(l.AccountId))
+            .Select(l => l.AccountId)
+            .ToList();
+        if (invalidAccountIds.Count > 0)
+            return (null, "One or more line items reference accounts that do not exist in this fiscal year.");
+
         existing.Date = entry.Date;
         existing.Description = entry.Description;
 
@@ -106,12 +134,15 @@ public class JournalEntryService
     {
         var original = await _db.JournalEntries
             .Include(j => j.Lines)
+            .Include(j => j.FiscalYear)
             .FirstOrDefaultAsync(j => j.Id == entryId);
 
         if (original is null)
             return (null, "Journal entry not found.");
         if (!original.IsPosted)
             return (null, "Can only reverse posted entries.");
+        if (original.FiscalYear.IsClosed)
+            return (null, "Cannot create reversals in a closed fiscal year.");
 
         var maxNumber = await _db.JournalEntries
             .Where(j => j.FiscalYearId == original.FiscalYearId)

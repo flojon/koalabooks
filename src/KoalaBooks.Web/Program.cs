@@ -20,6 +20,7 @@ builder.Services.AddScoped<SieImportService>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<FiscalYearService>();
 builder.Services.AddScoped<JournalEntryService>();
+builder.Services.AddScoped<SieExportService>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
