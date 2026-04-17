@@ -2,15 +2,14 @@
 
 <MudLayout>
     <MudAppBar Elevation="0" Color="Color.Secondary">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
+        </MudHidden>
         <MudText Typo="Typo.h6" Class="ml-2">🐨 KoalaBooks</MudText>
     </MudAppBar>
 
     <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Breakpoint="Breakpoint.Md"
                Variant="DrawerVariant.Responsive" Elevation="1">
-        <MudDrawerHeader>
-            <MudText Typo="Typo.h6" Style="color: #f8fafc;">🐨 KoalaBooks</MudText>
-        </MudDrawerHeader>
         <MudNavMenu>
             <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Dashboard</MudNavLink>
 
