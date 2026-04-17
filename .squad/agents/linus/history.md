@@ -8,6 +8,19 @@
 
 ## Learnings
 
+### 2026-04-18: BAS Chart of Accounts Import
+
+- **`BasImportService`** in `src/KoalaBooks.Application/Services/BasImportService.cs` — method `ImportFromExcelAsync(Stream, int fiscalYearId)` returns `BasImportResult(ImportedCount, SkippedCount, Errors)`.
+- **ExcelDataReader** (`ExcelDataReader` + `ExcelDataReader.DataSet`, v3.8.0) added to the Application project. Works for both .xls (BIFF) and .xlsx.
+- **Key parsing detail**: ExcelDataReader returns numeric cells as `double` in .xls. Cast `(int)d` then `.ToString()` to get "1000", "1110", etc.
+- **Two accounts per row**: BAS XLS has main account (cols B/C) and sub-account (cols E/F) in the same row. Both are processed in one pass.
+- **Group header detection**: Non-numeric strings in col B (e.g. "10 Immateriella anläggningstillgångar") are silently skipped; only cells that parse as `double` in range 1000–9999 are accepted.
+- **Duplicate guard**: Loads all existing `AccountNumber` values for the fiscal year into a `HashSet<string>` before iterating. Also adds to the set within the loop to catch in-file duplicates.
+- **AccountClassMapper** (already in Infrastructure) reused for class assignment.
+- **`Encoding.RegisterProvider`** is called both in `Program.cs` (for SIE) and defensively inside the service (idempotent).
+- **UI**: `BasImport.razor` at `/import/bas`, MudBlazor components, fiscal year selector pre-selects active year, import triggers on file selection. Nav link added to Data section of `MainLayout.razor`.
+- **Build**: 0 warnings, 0 errors.
+
 <!-- Append learnings below -->
 
 ### 2026-04-15: P0 Accounting Bug Fixes
@@ -41,3 +54,10 @@
 - **Propagation**: Calls `FiscalYearService.PropagateBalancesToNextYearAsync` (public) via DI injection. Its internal SaveChangesAsync participates in the outer transaction.
 - Closing entries are `IsPosted = true`, `IsClosingEntry = true`, date = `FiscalYear.EndDate`, sequential entry numbers via `MaxAsync + 1` pattern.
 - Fixed pre-existing test mismatches: constructor signature, property names (`Success` not `IsSuccess`, `AccountNumber` not `AccountId`, `Error` not `Errors`).
+
+### 2026-04-17: P0 Batch 2 — Code Review Bug Fixes
+- **Closing entry filtering**: Report methods (`GetTrialBalanceAsync`, `GetBalanceSheetAsync`, `GetIncomeStatementAsync`) now accept `bool excludeClosingEntries` parameter. Income statement defaults to `true` (exclude), balance sheet defaults to `false` (include). Trial balance defaults to `true`. This prevents year-end closing entries from zeroing out the income statement.
+- **Reversal date clamping**: `CreateReversalAsync` now clamps the reversal date to the fiscal year's date range. If today is after the fiscal year end, uses `FiscalYear.EndDate` instead of `DateTime.Today`.
+- **P&L IB zeroing**: `CopyAccountsFromPreviousYearAsync` and `PropagateBalancesToNextYearAsync` now set `IncomingBalance = 0` for Revenue/Expense accounts. Only balance sheet accounts (Asset, Liability, Equity) carry forward their outgoing balance as incoming balance.
+- **PostAsync closed-year guard**: `PostAsync` now loads the FiscalYear (via `.Include`) and rejects posting if `IsClosed == true`. Follows same pattern as `DeleteDraftAsync`.
+- **Pattern**: All optional parameters use defaults that match existing caller behavior — no breaking changes to call sites or tests.

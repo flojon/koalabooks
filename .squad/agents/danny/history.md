@@ -73,3 +73,35 @@
 - .NET 10, Blazor Interactive Server, SQLite via EF Core 10, .NET Aspire 13.2.2
 - CsvHelper 33.1.0, jsisie 2.7.0 (SIE format), xUnit 2.9.3
 - OpenTelemetry, health checks, HTTP resilience via Aspire ServiceDefaults
+
+### 2026-04-17 — Comprehensive Architecture Review
+
+**Review output:** `.squad/decisions/inbox/danny-app-review.md`
+
+**Current state:** Build clean (0 warnings), 139 tests passing, SQL Server migration complete.
+
+**Key findings since last audit:**
+- P0 bugs from April 15 audit are FIXED: AccountClass mapping, balance formulas, draft filtering, SIE DI registration, reversal closed-year guard, eval() XSS, date/account validation.
+- Test count grew from 66 → 139 (110% increase). Year-end closing has 14 tests. SIE round-trip tested.
+- `YearEndClosingService` is fully implemented and tested — validate/preview/execute with transaction safety.
+- SQL Server migration completed (was SQLite). Tests remain on SQLite in-memory.
+
+**Two critical items found:**
+1. `FiscalYears.razor:134` calls `FiscalYearService.CloseAsync` — the old simple-close that skips closing entries, UB computation, and balance propagation. Must wire to `YearEndClosingService.ExecuteClosingAsync` or remove the button.
+2. `Journal.razor:191` — `_activeFiscalYear!.Id` crashes with NullReferenceException when no active fiscal year exists. The null guard on line 11 only covers the render, not `OnInitializedAsync`.
+
+**Architecture debt confirmed (known, accepted):**
+- Application→Infrastructure dependency (all services use `AppDbContext` directly)
+- No service interfaces
+- JournalEntryService is a 553-line God class (CRUD + 5 report methods)
+- DTOs inline in service files
+- No ErrorBoundary components
+- No pagination on any list
+- Massive test constructor duplication (16 test classes)
+
+**Roadmap gaps for next milestone:**
+- Year-end closing UI page (service exists, UI doesn't)
+- Verification number (BFL compliance)
+- PostAsync fiscal-year-open guard
+- AccountService validation
+- Reopen fiscal year feature

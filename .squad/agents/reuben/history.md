@@ -37,3 +37,17 @@ Reviewed Danny's feature priority roadmap against the actual codebase. Confirmed
 - Tests are thorough for the happy path but miss sign-convention edge cases (credit-normal accounts)
 - The BalanceSheetTests.BalanceSheet_AssetsEqualLiabilitiesPlusEquity_WhenBalanced test passes only because test data has no credit transactions on liability accounts — it only checks IB values
 - SIE import correctly handles CP437→Latin-1 transcoding for Swedish characters_
+
+### 2026-04-17 — Comprehensive Accounting Correctness Review
+- Performed full review of all accounting logic. Findings delivered to `.squad/decisions/inbox/reuben-app-review.md`.
+- **P0 fixes from prior session confirmed correct:** AccountClass mapping (2xxx split, 8xxx P&L), credit-normal balance formulas, draft filtering in reports all verified working.
+- **New 🔴 bugs found:**
+  1. Income statement zeroed after year-end closing — closing entries (IsClosingEntry=true, IsPosted=true) are included in P&L queries, netting all accounts to zero. Must filter out IsClosingEntry from report queries.
+  2. SIE export includes draft entries — no IsPosted filter in SieExportService.ExportAsync. Violates BFL.
+  3. Reversal date can land outside fiscal year — CreateReversalAsync uses DateTime.Today, bypasses date validation.
+  4. P&L accounts propagated as IB when creating new FY before closing previous year — CopyAccountsFromPreviousYearAsync doesn't distinguish balance sheet from P&L.
+  5. SIE export missing #ORGNR, #KSUMMA, empty verification series.
+- **Year-end closing logic confirmed correct:** Two-phase P&L→8999→2099 is textbook Swedish. Auto-creation of result accounts, UB computation, and balance propagation all mathematically sound.
+- **Missing BFL requirements:** Verification numbers (BFL 5 kap. 6§), verification series, mandatory entry text (BFL 5 kap. 7§), VAT/moms, SRU codes, accounting periods.
+- **Test gaps:** No loss scenario in closing, no post-closing income statement test, no compound entries (3+ lines), no brutet räkenskapsår, no accounting equation verification after closing.
+- **Key file paths reviewed:** YearEndClosingService.cs (new, correct), AccountClassMapper.cs (fixed, correct), SieExportService.cs (needs draft filter + ORGNR), all entity files, all 15 test files.

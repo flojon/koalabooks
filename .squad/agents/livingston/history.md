@@ -59,3 +59,28 @@
 - `AddResultAccounts()` helper adds 8999 + 2099 when needed
 - `SetupNormalYear()` helper: revenue 10,000 + expense 6,000 → profit 4,000
 - Tests verify database state directly (robust to return type changes)
+
+### 2026-04-18: Test Infrastructure Refactor + Regression Tests Batch 2
+
+**TestFixture shared helper (TestFixture.cs):**
+- Eliminated duplicated SQLite in-memory DB setup across 13 test files
+- Provides: `Db`, `JournalEntryService`, `FiscalYearService`, `YearEndClosingService`, `SieExportService`
+- Seed helpers: `CreateFiscalYear()`, `CreateAccount()`, `MakeEntry()`, `CreateAndPostEntryAsync()`, `CreateStandardAccounts()`
+- All 13 existing test classes refactored to use `_f = new TestFixture()` pattern
+- Files NOT using TestFixture: `AccountClassMapperTests.cs` (static methods, no DB), `SieExportDiTests.cs` (tests DI container directly)
+
+**New regression test files (10 tests total):**
+- `ClosingEntryFilterTests.cs` — 3 tests: income statement excludes closing entries, balance sheet includes them, trial balance supports excludeClosingEntries parameter
+- `SieExportDraftFilterTests.cs` — 2 tests: SIE export excludes draft entries, includes posted entries
+- `ReversalDateClampingTests.cs` — 2 tests: reversal date clamped to FY end when today is after, uses today when within FY
+- `PLBalancePropagationTests.cs` — 2 tests: P&L accounts get zero IB in new year, B/S accounts keep UB as IB
+- `PostFiscalYearGuardTests.cs` — 1 test: PostAsync fails in closed fiscal year
+
+**Key discovery:**
+- All bugs being fixed by team were already landed — all 10 regression tests pass
+- Closing entry filter already implemented via `excludeClosingEntries` parameter (default true for trial balance + income statement, false for balance sheet)
+- PostAsync already checks closed FY
+- Reversal date clamping already works (CreateReversalAsync uses FY EndDate as upper bound)
+- P&L balance propagation already zeros out revenue/expense IB on copy
+
+**Total test count: 149 (139 original + 10 new)**
