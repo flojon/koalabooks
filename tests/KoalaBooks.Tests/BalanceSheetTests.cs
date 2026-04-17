@@ -1,15 +1,11 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
-using KoalaBooks.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
 
 public class BalanceSheetTests : IDisposable
 {
-    private readonly AppDbContext _db;
-    private readonly JournalEntryService _service;
+    private readonly TestFixture _f;
     private readonly FiscalYear _fiscalYear;
     private readonly Account _cashAccount;
     private readonly Account _bankAccount;
@@ -19,84 +15,24 @@ public class BalanceSheetTests : IDisposable
 
     public BalanceSheetTests()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-        _db = new AppDbContext(options);
-        _db.Database.OpenConnection();
-        _db.Database.EnsureCreated();
-        _service = new JournalEntryService(_db);
-
-        _fiscalYear = new FiscalYear
-        {
-            Name = "2026",
-            StartDate = new DateOnly(2026, 1, 1),
-            EndDate = new DateOnly(2026, 12, 31)
-        };
-        _db.FiscalYears.Add(_fiscalYear);
-        _db.SaveChanges();
-
-        _cashAccount = new Account
-        {
-            AccountNumber = "1910",
-            Name = "Kassa",
-            AccountClass = AccountClass.Asset,
-            IncomingBalance = 10000m,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _bankAccount = new Account
-        {
-            AccountNumber = "1920",
-            Name = "Bank",
-            AccountClass = AccountClass.Asset,
-            IncomingBalance = 5000m,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _liabilityAccount = new Account
-        {
-            AccountNumber = "2440",
-            Name = "Leverantörsskulder",
-            AccountClass = AccountClass.Liability,
-            IncomingBalance = 3000m,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _equityAccount = new Account
-        {
-            AccountNumber = "2081",
-            Name = "Aktiekapital",
-            AccountClass = AccountClass.Equity,
-            IncomingBalance = 12000m,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _zeroAccount = new Account
-        {
-            AccountNumber = "1510",
-            Name = "Kundfordringar",
-            AccountClass = AccountClass.Asset,
-            IncomingBalance = 0m,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _db.Accounts.AddRange(_cashAccount, _bankAccount, _liabilityAccount, _equityAccount, _zeroAccount);
+        _f = new TestFixture();
+        _fiscalYear = _f.CreateFiscalYear();
+        _cashAccount = _f.CreateAccount(_fiscalYear.Id, "1910", "Kassa", incomingBalance: 10000m);
+        _bankAccount = _f.CreateAccount(_fiscalYear.Id, "1920", "Bank", incomingBalance: 5000m);
+        _liabilityAccount = _f.CreateAccount(_fiscalYear.Id, "2440", "Leverantörsskulder", AccountClass.Liability, incomingBalance: 3000m);
+        _equityAccount = _f.CreateAccount(_fiscalYear.Id, "2081", "Aktiekapital", AccountClass.Equity, incomingBalance: 12000m);
+        _zeroAccount = _f.CreateAccount(_fiscalYear.Id, "1510", "Kundfordringar");
 
         // Also add revenue/expense accounts for balanced entries
-        var revenueAccount = new Account
-        {
-            AccountNumber = "3010",
-            Name = "Försäljning",
-            AccountClass = AccountClass.Revenue,
-            IncomingBalance = 0m,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _db.Accounts.Add(revenueAccount);
-        _db.SaveChanges();
+        _f.CreateAccount(_fiscalYear.Id, "3010", "Försäljning", AccountClass.Revenue);
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _f.Dispose();
 
     [Fact]
     public async Task BalanceSheet_GroupsIntoThreeSections()
     {
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         Assert.Equal(3, sections.Count);
         Assert.Equal("Tillgångar", sections[0].Title);
@@ -111,7 +47,7 @@ public class BalanceSheetTests : IDisposable
         await CreateEntry(new DateOnly(2026, 2, 1), "Sale",
             _cashAccount.Id, GetRevenueAccountId(), 2000m);
 
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         var assets = sections.Single(s => s.Title == "Tillgångar");
         var cash = assets.Rows.Single(r => r.AccountNumber == "1910");
@@ -127,7 +63,7 @@ public class BalanceSheetTests : IDisposable
     public async Task BalanceSheet_ExcludesAccountsWithZeroIBAndZeroTransactions()
     {
         // _zeroAccount (1510) has IB=0 and no transactions
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         var assets = sections.Single(s => s.Title == "Tillgångar");
         Assert.DoesNotContain(assets.Rows, r => r.AccountNumber == "1510");
@@ -137,7 +73,7 @@ public class BalanceSheetTests : IDisposable
     public async Task BalanceSheet_IncludesAccountsWithNonZeroIBButNoTransactions()
     {
         // _bankAccount has IB=5000, no transactions
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         var assets = sections.Single(s => s.Title == "Tillgångar");
         var bank = assets.Rows.Single(r => r.AccountNumber == "1920");
@@ -152,7 +88,7 @@ public class BalanceSheetTests : IDisposable
         await CreateEntry(new DateOnly(2026, 3, 1), "Customer invoice",
             _zeroAccount.Id, GetRevenueAccountId(), 1500m);
 
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         var assets = sections.Single(s => s.Title == "Tillgångar");
         var receivable = assets.Rows.Single(r => r.AccountNumber == "1510");
@@ -164,7 +100,7 @@ public class BalanceSheetTests : IDisposable
     [Fact]
     public async Task BalanceSheet_SectionsSortedByAccountNumber()
     {
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         var assets = sections.Single(s => s.Title == "Tillgångar");
         var accountNumbers = assets.Rows.Select(r => r.AccountNumber).ToList();
@@ -177,7 +113,7 @@ public class BalanceSheetTests : IDisposable
         await CreateEntry(new DateOnly(2026, 1, 15), "Sale",
             _cashAccount.Id, GetRevenueAccountId(), 3000m);
 
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         var assets = sections.Single(s => s.Title == "Tillgångar");
         var expectedTotal = assets.Rows.Sum(r => r.ClosingBalance);
@@ -191,7 +127,7 @@ public class BalanceSheetTests : IDisposable
         await CreateEntry(new DateOnly(2026, 1, 15), "Sale",
             _cashAccount.Id, GetRevenueAccountId(), 1000m);
 
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         var allAccountNumbers = sections.SelectMany(s => s.Rows).Select(r => r.AccountNumber).ToList();
         Assert.DoesNotContain("3010", allAccountNumbers);
@@ -202,7 +138,7 @@ public class BalanceSheetTests : IDisposable
     {
         // IB: Assets (10000+5000) = 15000, Liabilities (3000) + Equity (12000) = 15000 ✓
         // No transactions that would unbalance the sheet
-        var sections = await _service.GetBalanceSheetAsync(_fiscalYear.Id);
+        var sections = await _f.JournalEntryService.GetBalanceSheetAsync(_fiscalYear.Id);
 
         var totalAssets = sections.Single(s => s.Title == "Tillgångar").Total;
         var totalLiabilities = sections.Single(s => s.Title == "Skulder").Total;
@@ -213,7 +149,7 @@ public class BalanceSheetTests : IDisposable
 
     private int GetRevenueAccountId()
     {
-        return _db.Accounts.Single(a => a.AccountNumber == "3010" && a.FiscalYearId == _fiscalYear.Id).Id;
+        return _f.Db.Accounts.Single(a => a.AccountNumber == "3010" && a.FiscalYearId == _fiscalYear.Id).Id;
     }
 
     private async Task CreateEntry(DateOnly date, string description, int debitAccountId, int creditAccountId, decimal amount)
@@ -230,6 +166,6 @@ public class BalanceSheetTests : IDisposable
                 new() { AccountId = creditAccountId, DebitAmount = 0, CreditAmount = amount }
             ]
         };
-        await _service.CreateAsync(entry);
+        await _f.JournalEntryService.CreateAsync(entry);
     }
 }

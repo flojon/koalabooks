@@ -1,29 +1,20 @@
 using System.Text;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
-using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
-using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
 
 public class SieExportServiceTests : IDisposable
 {
-    private readonly AppDbContext _db;
-    private readonly SieExportService _service;
+    private readonly TestFixture _f;
 
     public SieExportServiceTests()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-        _db = new AppDbContext(options);
-        _db.Database.OpenConnection();
-        _db.Database.EnsureCreated();
-        _service = new SieExportService(_db);
+        _f = new TestFixture();
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _f.Dispose();
 
     private async Task<FiscalYear> CreateFiscalYearAsync(
         string name = "2026",
@@ -36,8 +27,8 @@ public class SieExportServiceTests : IDisposable
             StartDate = start ?? new DateOnly(2026, 1, 1),
             EndDate = end ?? new DateOnly(2026, 12, 31),
         };
-        _db.FiscalYears.Add(fy);
-        await _db.SaveChangesAsync();
+        _f.Db.FiscalYears.Add(fy);
+        await _f.Db.SaveChangesAsync();
         return fy;
     }
 
@@ -58,8 +49,8 @@ public class SieExportServiceTests : IDisposable
             IncomingBalance = incomingBalance,
             OutgoingBalance = outgoingBalance,
         };
-        _db.Accounts.Add(account);
-        await _db.SaveChangesAsync();
+        _f.Db.Accounts.Add(account);
+        await _f.Db.SaveChangesAsync();
         return account;
     }
 
@@ -78,12 +69,12 @@ public class SieExportServiceTests : IDisposable
             FiscalYearId = fiscalYearId,
             IsPosted = true,
         };
-        _db.JournalEntries.Add(entry);
-        await _db.SaveChangesAsync();
+        _f.Db.JournalEntries.Add(entry);
+        await _f.Db.SaveChangesAsync();
 
         foreach (var (accountId, debit, credit) in lines)
         {
-            _db.JournalEntryLines.Add(new JournalEntryLine
+            _f.Db.JournalEntryLines.Add(new JournalEntryLine
             {
                 JournalEntryId = entry.Id,
                 AccountId = accountId,
@@ -91,7 +82,7 @@ public class SieExportServiceTests : IDisposable
                 CreditAmount = credit,
             });
         }
-        await _db.SaveChangesAsync();
+        await _f.Db.SaveChangesAsync();
         return entry;
     }
 
@@ -107,7 +98,7 @@ public class SieExportServiceTests : IDisposable
         var fy = await CreateFiscalYearAsync();
         await CreateAccountAsync(fy.Id, "1910", "Kassa");
 
-        var bytes = await _service.ExportAsync(fy.Id);
+        var bytes = await _f.SieExportService.ExportAsync(fy.Id);
         var text = DecodeExport(bytes);
 
         Assert.Contains("#FLAGGA 0", text);
@@ -125,7 +116,7 @@ public class SieExportServiceTests : IDisposable
         var fy = await CreateFiscalYearAsync();
         await CreateAccountAsync(fy.Id, "1910", "Kassa");
 
-        var bytes = await _service.ExportAsync(fy.Id, "Koala AB");
+        var bytes = await _f.SieExportService.ExportAsync(fy.Id, "Koala AB");
         var text = DecodeExport(bytes);
 
         Assert.Contains("#FNAMN \"Koala AB\"", text);
@@ -139,7 +130,7 @@ public class SieExportServiceTests : IDisposable
         await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
         await CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
 
-        var bytes = await _service.ExportAsync(fy.Id);
+        var bytes = await _f.SieExportService.ExportAsync(fy.Id);
         var text = DecodeExport(bytes);
 
         Assert.Contains("#KONTO 1910 \"Kassa\"", text);
@@ -155,7 +146,7 @@ public class SieExportServiceTests : IDisposable
         await CreateAccountAsync(fy.Id, "2440", "Leverantörsskuld", AccountClass.Liability, outgoingBalance: -15000m);
         await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
 
-        var bytes = await _service.ExportAsync(fy.Id);
+        var bytes = await _f.SieExportService.ExportAsync(fy.Id);
         var text = DecodeExport(bytes);
 
         Assert.Contains("#IB 0 1910 50000.00", text);
@@ -175,7 +166,7 @@ public class SieExportServiceTests : IDisposable
             (hyra.Id, 10000m, 0m),
             (kassa.Id, 0m, 10000m));
 
-        var bytes = await _service.ExportAsync(fy.Id);
+        var bytes = await _f.SieExportService.ExportAsync(fy.Id);
         var text = DecodeExport(bytes);
 
         Assert.Contains("#VER \"\" 1 20260115 \"Hyra januari\"", text);
@@ -194,7 +185,7 @@ public class SieExportServiceTests : IDisposable
             (bank.Id, 5000m, 0m),
             (revenue.Id, 0m, 5000m));
 
-        var bytes = await _service.ExportAsync(fy.Id);
+        var bytes = await _f.SieExportService.ExportAsync(fy.Id);
         var text = DecodeExport(bytes);
 
         // Debit should be positive
@@ -221,10 +212,10 @@ public class SieExportServiceTests : IDisposable
             (hyra.Id, 10000m, 0m),
             (bank.Id, 0m, 10000m));
 
-        var exportedBytes = await _service.ExportAsync(fy.Id, "Koala AB");
+        var exportedBytes = await _f.SieExportService.ExportAsync(fy.Id, "Koala AB");
 
         // Parse back using SieImportService
-        var importService = new SieImportService(_db);
+        var importService = new SieImportService(_f.Db);
         var stream = new MemoryStream(exportedBytes);
         var doc = importService.Parse(stream);
 

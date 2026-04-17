@@ -1,15 +1,11 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
-using KoalaBooks.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
 
 public class IncomeStatementTests : IDisposable
 {
-    private readonly AppDbContext _db;
-    private readonly JournalEntryService _service;
+    private readonly TestFixture _f;
     private readonly FiscalYear _fiscalYear;
     private readonly Account _cashAccount;
     private readonly Account _revenueAccount1;
@@ -19,64 +15,16 @@ public class IncomeStatementTests : IDisposable
 
     public IncomeStatementTests()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-        _db = new AppDbContext(options);
-        _db.Database.OpenConnection();
-        _db.Database.EnsureCreated();
-        _service = new JournalEntryService(_db);
-
-        _fiscalYear = new FiscalYear
-        {
-            Name = "2026",
-            StartDate = new DateOnly(2026, 1, 1),
-            EndDate = new DateOnly(2026, 12, 31)
-        };
-        _db.FiscalYears.Add(_fiscalYear);
-        _db.SaveChanges();
-
-        _cashAccount = new Account
-        {
-            AccountNumber = "1910",
-            Name = "Kassa",
-            AccountClass = AccountClass.Asset,
-            IncomingBalance = 10000m,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _revenueAccount1 = new Account
-        {
-            AccountNumber = "3010",
-            Name = "Försäljning varor",
-            AccountClass = AccountClass.Revenue,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _revenueAccount2 = new Account
-        {
-            AccountNumber = "3020",
-            Name = "Försäljning tjänster",
-            AccountClass = AccountClass.Revenue,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _expenseAccount1 = new Account
-        {
-            AccountNumber = "5010",
-            Name = "Lokalhyra",
-            AccountClass = AccountClass.Expense,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _expenseAccount2 = new Account
-        {
-            AccountNumber = "6010",
-            Name = "Kontorsmaterial",
-            AccountClass = AccountClass.Expense,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _db.Accounts.AddRange(_cashAccount, _revenueAccount1, _revenueAccount2, _expenseAccount1, _expenseAccount2);
-        _db.SaveChanges();
+        _f = new TestFixture();
+        _fiscalYear = _f.CreateFiscalYear();
+        _cashAccount = _f.CreateAccount(_fiscalYear.Id, "1910", "Kassa", incomingBalance: 10000m);
+        _revenueAccount1 = _f.CreateAccount(_fiscalYear.Id, "3010", "Försäljning varor", AccountClass.Revenue);
+        _revenueAccount2 = _f.CreateAccount(_fiscalYear.Id, "3020", "Försäljning tjänster", AccountClass.Revenue);
+        _expenseAccount1 = _f.CreateAccount(_fiscalYear.Id, "5010", "Lokalhyra", AccountClass.Expense);
+        _expenseAccount2 = _f.CreateAccount(_fiscalYear.Id, "6010", "Kontorsmaterial", AccountClass.Expense);
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _f.Dispose();
 
     [Fact]
     public async Task RevenueAndExpenseAmounts_CalculatedCorrectly()
@@ -88,7 +36,7 @@ public class IncomeStatementTests : IDisposable
         await CreateEntry(new DateOnly(2026, 4, 1), "Rent", _expenseAccount1.Id, _cashAccount.Id, 2000m);
         await CreateEntry(new DateOnly(2026, 5, 1), "Supplies", _expenseAccount2.Id, _cashAccount.Id, 500m);
 
-        var (sections, _) = await _service.GetIncomeStatementAsync(_fiscalYear.Id);
+        var (sections, _) = await _f.JournalEntryService.GetIncomeStatementAsync(_fiscalYear.Id);
 
         var revenue = sections.Single(s => s.Title == "Intäkter");
         Assert.Equal(2, revenue.Rows.Count);
@@ -111,7 +59,7 @@ public class IncomeStatementTests : IDisposable
         await CreateEntry(new DateOnly(2026, 6, 15), "Jun sale", _cashAccount.Id, _revenueAccount1.Id, 4000m);
         await CreateEntry(new DateOnly(2026, 4, 1), "Rent Q1", _expenseAccount1.Id, _cashAccount.Id, 500m);
 
-        var (sections, netResult) = await _service.GetIncomeStatementAsync(
+        var (sections, netResult) = await _f.JournalEntryService.GetIncomeStatementAsync(
             _fiscalYear.Id, from: new DateOnly(2026, 2, 1), to: new DateOnly(2026, 4, 30));
 
         var revenue = sections.Single(s => s.Title == "Intäkter");
@@ -134,7 +82,7 @@ public class IncomeStatementTests : IDisposable
         await CreateEntry(new DateOnly(2026, 2, 10), "Rent", _expenseAccount1.Id, _cashAccount.Id, 3000m);
         await CreateEntry(new DateOnly(2026, 3, 10), "Supplies", _expenseAccount2.Id, _cashAccount.Id, 1000m);
 
-        var (sections, netResult) = await _service.GetIncomeStatementAsync(_fiscalYear.Id);
+        var (sections, netResult) = await _f.JournalEntryService.GetIncomeStatementAsync(_fiscalYear.Id);
 
         Assert.Equal(10000m, sections.Single(s => s.Title == "Intäkter").Total);
         Assert.Equal(4000m, sections.Single(s => s.Title == "Kostnader").Total);
@@ -148,7 +96,7 @@ public class IncomeStatementTests : IDisposable
         // Only create a transaction for one revenue account; the other should be excluded
         await CreateEntry(new DateOnly(2026, 1, 10), "Sale", _cashAccount.Id, _revenueAccount1.Id, 1000m);
 
-        var (sections, _) = await _service.GetIncomeStatementAsync(_fiscalYear.Id);
+        var (sections, _) = await _f.JournalEntryService.GetIncomeStatementAsync(_fiscalYear.Id);
 
         var revenue = sections.Single(s => s.Title == "Intäkter");
         Assert.Single(revenue.Rows);
@@ -168,10 +116,10 @@ public class IncomeStatementTests : IDisposable
             StartDate = new DateOnly(2027, 1, 1),
             EndDate = new DateOnly(2027, 12, 31)
         };
-        _db.FiscalYears.Add(emptyFy);
-        await _db.SaveChangesAsync();
+        _f.Db.FiscalYears.Add(emptyFy);
+        await _f.Db.SaveChangesAsync();
 
-        var (sections, netResult) = await _service.GetIncomeStatementAsync(emptyFy.Id);
+        var (sections, netResult) = await _f.JournalEntryService.GetIncomeStatementAsync(emptyFy.Id);
 
         Assert.Equal(2, sections.Count);
         Assert.Empty(sections[0].Rows);
@@ -195,6 +143,6 @@ public class IncomeStatementTests : IDisposable
                 new() { AccountId = creditAccountId, DebitAmount = 0, CreditAmount = amount }
             ]
         };
-        await _service.CreateAsync(entry);
+        await _f.JournalEntryService.CreateAsync(entry);
     }
 }

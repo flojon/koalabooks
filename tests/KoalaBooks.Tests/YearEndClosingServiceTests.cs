@@ -1,7 +1,5 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
-using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
@@ -16,9 +14,7 @@ namespace KoalaBooks.Tests;
 /// </summary>
 public class YearEndClosingServiceTests : IDisposable
 {
-    private readonly AppDbContext _db;
-    private readonly YearEndClosingService _service;
-    private readonly JournalEntryService _journalService;
+    private readonly TestFixture _f;
     private readonly FiscalYear _fiscalYear;
     private readonly Account _cashAccount;
     private readonly Account _liabilityAccount;
@@ -28,57 +24,17 @@ public class YearEndClosingServiceTests : IDisposable
 
     public YearEndClosingServiceTests()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-        _db = new AppDbContext(options);
-        _db.Database.OpenConnection();
-        _db.Database.EnsureCreated();
+        _f = new TestFixture();
 
-        var fiscalYearService = new FiscalYearService(_db);
-        _service = new YearEndClosingService(_db, fiscalYearService);
-        _journalService = new JournalEntryService(_db);
-
-        _fiscalYear = new FiscalYear
-        {
-            Name = "2026",
-            StartDate = new DateOnly(2026, 1, 1),
-            EndDate = new DateOnly(2026, 12, 31)
-        };
-        _db.FiscalYears.Add(_fiscalYear);
-        _db.SaveChanges();
-
-        _cashAccount = new Account
-        {
-            AccountNumber = "1910", Name = "Kassa",
-            AccountClass = AccountClass.Asset, FiscalYearId = _fiscalYear.Id
-        };
-        _liabilityAccount = new Account
-        {
-            AccountNumber = "2440", Name = "Leverantörsskulder",
-            AccountClass = AccountClass.Liability, FiscalYearId = _fiscalYear.Id
-        };
-        _equityAccount = new Account
-        {
-            AccountNumber = "2081", Name = "Aktiekapital",
-            AccountClass = AccountClass.Equity, FiscalYearId = _fiscalYear.Id
-        };
-        _revenueAccount = new Account
-        {
-            AccountNumber = "3010", Name = "Försäljning",
-            AccountClass = AccountClass.Revenue, FiscalYearId = _fiscalYear.Id
-        };
-        _expenseAccount = new Account
-        {
-            AccountNumber = "5010", Name = "Lokalhyra",
-            AccountClass = AccountClass.Expense, FiscalYearId = _fiscalYear.Id
-        };
-
-        _db.Accounts.AddRange(_cashAccount, _liabilityAccount, _equityAccount, _revenueAccount, _expenseAccount);
-        _db.SaveChanges();
+        _fiscalYear = _f.CreateFiscalYear();
+        _cashAccount = _f.CreateAccount(_fiscalYear.Id, "1910", "Kassa");
+        _liabilityAccount = _f.CreateAccount(_fiscalYear.Id, "2440", "Leverantörsskulder", AccountClass.Liability);
+        _equityAccount = _f.CreateAccount(_fiscalYear.Id, "2081", "Aktiekapital", AccountClass.Equity);
+        _revenueAccount = _f.CreateAccount(_fiscalYear.Id, "3010", "Försäljning", AccountClass.Revenue);
+        _expenseAccount = _f.CreateAccount(_fiscalYear.Id, "5010", "Lokalhyra", AccountClass.Expense);
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _f.Dispose();
 
     #region Helpers
 
@@ -94,8 +50,8 @@ public class YearEndClosingServiceTests : IDisposable
             AccountNumber = "2099", Name = "Årets resultat",
             AccountClass = AccountClass.Equity, FiscalYearId = _fiscalYear.Id
         };
-        _db.Accounts.AddRange(a8999, a2099);
-        _db.SaveChanges();
+        _f.Db.Accounts.AddRange(a8999, a2099);
+        _f.Db.SaveChanges();
         return (a8999, a2099);
     }
 
@@ -112,10 +68,10 @@ public class YearEndClosingServiceTests : IDisposable
                 new() { AccountId = creditAccountId, DebitAmount = 0, CreditAmount = amount }
             ]
         };
-        var (created, error) = await _journalService.CreateAsync(entry);
+        var (created, error) = await _f.JournalEntryService.CreateAsync(entry);
         Assert.Null(error);
         Assert.NotNull(created);
-        var postError = await _journalService.PostAsync(created.Id);
+        var postError = await _f.JournalEntryService.PostAsync(created.Id);
         Assert.Null(postError);
     }
 
@@ -153,10 +109,10 @@ public class YearEndClosingServiceTests : IDisposable
                 new() { AccountId = _revenueAccount.Id, DebitAmount = 0, CreditAmount = 500m }
             ]
         };
-        var (created, _) = await _journalService.CreateAsync(draft);
+        var (created, _) = await _f.JournalEntryService.CreateAsync(draft);
         Assert.NotNull(created);
 
-        var result = await _service.ValidateForClosingAsync(_fiscalYear.Id);
+        var result = await _f.YearEndClosingService.ValidateForClosingAsync(_fiscalYear.Id);
 
         Assert.False(result.IsValid);
         Assert.NotEmpty(result.Errors);
@@ -166,9 +122,9 @@ public class YearEndClosingServiceTests : IDisposable
     public async Task ValidateForClosing_AlreadyClosed_ReturnsError()
     {
         _fiscalYear.IsClosed = true;
-        await _db.SaveChangesAsync();
+        await _f.Db.SaveChangesAsync();
 
-        var result = await _service.ValidateForClosingAsync(_fiscalYear.Id);
+        var result = await _f.YearEndClosingService.ValidateForClosingAsync(_fiscalYear.Id);
 
         Assert.False(result.IsValid);
         Assert.NotEmpty(result.Errors);
@@ -179,7 +135,7 @@ public class YearEndClosingServiceTests : IDisposable
     {
         await CreateAndPostEntry(_cashAccount.Id, _revenueAccount.Id, 5000m);
 
-        var result = await _service.ValidateForClosingAsync(_fiscalYear.Id);
+        var result = await _f.YearEndClosingService.ValidateForClosingAsync(_fiscalYear.Id);
 
         Assert.True(result.IsValid);
         Assert.Empty(result.Errors);
@@ -188,7 +144,7 @@ public class YearEndClosingServiceTests : IDisposable
     [Fact]
     public async Task ValidateForClosing_YearNotFound_ReturnsError()
     {
-        var result = await _service.ValidateForClosingAsync(99999);
+        var result = await _f.YearEndClosingService.ValidateForClosingAsync(99999);
 
         Assert.False(result.IsValid);
         Assert.NotEmpty(result.Errors);
@@ -208,7 +164,7 @@ public class YearEndClosingServiceTests : IDisposable
         AddResultAccounts();
         await SetupNormalYear(); // Revenue 10,000 — Expense 6,000
 
-        var preview = await _service.PreviewClosingAsync(_fiscalYear.Id);
+        var preview = await _f.YearEndClosingService.PreviewClosingAsync(_fiscalYear.Id);
 
         Assert.True(preview.IsValid);
         Assert.Equal(4000m, preview.NetResult);
@@ -226,7 +182,7 @@ public class YearEndClosingServiceTests : IDisposable
         await CreateAndPostEntry(_cashAccount.Id, _revenueAccount.Id, 5000m);
         await CreateAndPostEntry(_expenseAccount.Id, _cashAccount.Id, 5000m);
 
-        var preview = await _service.PreviewClosingAsync(_fiscalYear.Id);
+        var preview = await _f.YearEndClosingService.PreviewClosingAsync(_fiscalYear.Id);
 
         Assert.True(preview.IsValid);
         Assert.Equal(0m, preview.NetResult);
@@ -239,9 +195,9 @@ public class YearEndClosingServiceTests : IDisposable
         AddResultAccounts();
         // Revenue account has IB from SIE import but no transactions this year
         _revenueAccount.IncomingBalance = 5000m;
-        await _db.SaveChangesAsync();
+        await _f.Db.SaveChangesAsync();
 
-        var preview = await _service.PreviewClosingAsync(_fiscalYear.Id);
+        var preview = await _f.YearEndClosingService.PreviewClosingAsync(_fiscalYear.Id);
 
         Assert.True(preview.IsValid);
         Assert.Equal(5000m, preview.NetResult);
@@ -254,9 +210,9 @@ public class YearEndClosingServiceTests : IDisposable
     public async Task PreviewClosing_InvalidYear_ReturnsErrors()
     {
         _fiscalYear.IsClosed = true;
-        await _db.SaveChangesAsync();
+        await _f.Db.SaveChangesAsync();
 
-        var preview = await _service.PreviewClosingAsync(_fiscalYear.Id);
+        var preview = await _f.YearEndClosingService.PreviewClosingAsync(_fiscalYear.Id);
 
         Assert.False(preview.IsValid);
         Assert.NotEmpty(preview.Errors);
@@ -276,11 +232,11 @@ public class YearEndClosingServiceTests : IDisposable
         AddResultAccounts();
         await SetupNormalYear();
 
-        var result = await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        var result = await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
         Assert.True(result.Success);
 
-        var closingEntries = await _db.JournalEntries
+        var closingEntries = await _f.Db.JournalEntries
             .Include(j => j.Lines)
             .Where(j => j.FiscalYearId == _fiscalYear.Id && j.IsClosingEntry)
             .OrderBy(j => j.EntryNumber)
@@ -305,9 +261,9 @@ public class YearEndClosingServiceTests : IDisposable
         AddResultAccounts();
         await SetupNormalYear(); // Revenue 10,000 — Expense 6,000 → profit 4,000
 
-        await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
-        var accounts = await _db.Accounts
+        var accounts = await _f.Db.Accounts
             .Where(a => a.FiscalYearId == _fiscalYear.Id)
             .ToListAsync();
 
@@ -342,11 +298,11 @@ public class YearEndClosingServiceTests : IDisposable
         // Deliberately do NOT add result accounts
         await SetupNormalYear();
 
-        var result = await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        var result = await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
         Assert.True(result.Success);
 
-        var accounts = await _db.Accounts
+        var accounts = await _f.Db.Accounts
             .Where(a => a.FiscalYearId == _fiscalYear.Id)
             .ToListAsync();
 
@@ -365,9 +321,9 @@ public class YearEndClosingServiceTests : IDisposable
         AddResultAccounts();
         await SetupNormalYear();
 
-        await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
-        var closingEntries = await _db.JournalEntries
+        var closingEntries = await _f.Db.JournalEntries
             .Where(j => j.FiscalYearId == _fiscalYear.Id && j.IsClosingEntry)
             .ToListAsync();
 
@@ -387,9 +343,9 @@ public class YearEndClosingServiceTests : IDisposable
         await CreateAndPostEntry(_cashAccount.Id, _revenueAccount.Id, 5000m);
         await CreateAndPostEntry(_expenseAccount.Id, _cashAccount.Id, 5000m);
 
-        await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
-        var closingEntries = await _db.JournalEntries
+        var closingEntries = await _f.Db.JournalEntries
             .Where(j => j.FiscalYearId == _fiscalYear.Id && j.IsClosingEntry)
             .ToListAsync();
 
@@ -404,9 +360,9 @@ public class YearEndClosingServiceTests : IDisposable
         await SetupNormalYear();
 
         var beforeExecute = DateTime.UtcNow;
-        await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
-        var fy = await _db.FiscalYears.FindAsync(_fiscalYear.Id);
+        var fy = await _f.Db.FiscalYears.FindAsync(_fiscalYear.Id);
         Assert.NotNull(fy);
         Assert.True(fy.IsClosed);
         Assert.NotNull(fy.ClosedAt);
@@ -426,21 +382,21 @@ public class YearEndClosingServiceTests : IDisposable
             StartDate = new DateOnly(2027, 1, 1),
             EndDate = new DateOnly(2027, 12, 31)
         };
-        _db.FiscalYears.Add(nextYear);
-        await _db.SaveChangesAsync();
+        _f.Db.FiscalYears.Add(nextYear);
+        await _f.Db.SaveChangesAsync();
 
-        _db.Accounts.Add(new Account
+        _f.Db.Accounts.Add(new Account
         {
             AccountNumber = "1910", Name = "Kassa",
             AccountClass = AccountClass.Asset, FiscalYearId = nextYear.Id,
             IncomingBalance = 0m
         });
-        await _db.SaveChangesAsync();
+        await _f.Db.SaveChangesAsync();
 
-        await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
         // Next year's cash IB should be updated to closed year's cash UB
-        var nextCash = await _db.Accounts.SingleAsync(
+        var nextCash = await _f.Db.Accounts.SingleAsync(
             a => a.FiscalYearId == nextYear.Id && a.AccountNumber == "1910");
         Assert.Equal(4000m, nextCash.IncomingBalance);
     }
@@ -451,21 +407,21 @@ public class YearEndClosingServiceTests : IDisposable
         AddResultAccounts();
         // Dormant year — no journal entries at all
 
-        var result = await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        var result = await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
         Assert.True(result.Success);
 
-        var fy = await _db.FiscalYears.FindAsync(_fiscalYear.Id);
+        var fy = await _f.Db.FiscalYears.FindAsync(_fiscalYear.Id);
         Assert.True(fy!.IsClosed);
 
         // No closing entries needed (no P&L balances to close)
-        var closingEntries = await _db.JournalEntries
+        var closingEntries = await _f.Db.JournalEntries
             .Where(j => j.FiscalYearId == _fiscalYear.Id && j.IsClosingEntry)
             .ToListAsync();
         Assert.Empty(closingEntries);
 
         // B/S accounts: UB = IB (all zero)
-        var cash = await _db.Accounts.SingleAsync(
+        var cash = await _f.Db.Accounts.SingleAsync(
             a => a.FiscalYearId == _fiscalYear.Id && a.AccountNumber == "1910");
         Assert.Equal(0m, cash.OutgoingBalance);
     }
@@ -487,15 +443,15 @@ public class YearEndClosingServiceTests : IDisposable
                 new() { AccountId = _revenueAccount.Id, DebitAmount = 0, CreditAmount = 1000m }
             ]
         };
-        await _journalService.CreateAsync(draft);
+        await _f.JournalEntryService.CreateAsync(draft);
 
-        var result = await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        var result = await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
         Assert.False(result.Success);
         Assert.NotNull(result.Error);
 
         // Year must NOT have been closed
-        var fy = await _db.FiscalYears.FindAsync(_fiscalYear.Id);
+        var fy = await _f.Db.FiscalYears.FindAsync(_fiscalYear.Id);
         Assert.False(fy!.IsClosed);
     }
 
@@ -513,9 +469,9 @@ public class YearEndClosingServiceTests : IDisposable
         AddResultAccounts();
         await SetupNormalYear(); // 2 regular entries → numbers 1, 2
 
-        await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
-        var allEntries = await _db.JournalEntries
+        var allEntries = await _f.Db.JournalEntries
             .Where(j => j.FiscalYearId == _fiscalYear.Id)
             .OrderBy(j => j.EntryNumber)
             .ToListAsync();
@@ -533,9 +489,9 @@ public class YearEndClosingServiceTests : IDisposable
         AddResultAccounts();
         await SetupNormalYear();
 
-        await _service.ExecuteClosingAsync(_fiscalYear.Id);
+        await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
 
-        var closingEntries = await _db.JournalEntries
+        var closingEntries = await _f.Db.JournalEntries
             .Where(j => j.FiscalYearId == _fiscalYear.Id && j.IsClosingEntry)
             .ToListAsync();
 

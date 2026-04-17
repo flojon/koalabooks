@@ -1,7 +1,5 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
-using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,31 +7,18 @@ namespace KoalaBooks.Tests;
 
 public class CsvImportServiceTests : IDisposable
 {
-    private readonly AppDbContext _db;
-    private readonly CsvImportService _service;
+    private readonly TestFixture _f;
+    private readonly CsvImportService _csvService;
     private readonly FiscalYear _fiscalYear;
 
     public CsvImportServiceTests()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-        _db = new AppDbContext(options);
-        _db.Database.OpenConnection();
-        _db.Database.EnsureCreated();
-        _service = new CsvImportService(_db);
-
-        _fiscalYear = new FiscalYear
-        {
-            Name = "2026",
-            StartDate = new DateOnly(2026, 1, 1),
-            EndDate = new DateOnly(2026, 12, 31)
-        };
-        _db.FiscalYears.Add(_fiscalYear);
-        _db.SaveChanges();
+        _f = new TestFixture();
+        _csvService = new CsvImportService(_f.Db);
+        _fiscalYear = _f.CreateFiscalYear();
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _f.Dispose();
 
     [Fact]
     public async Task ImportAccounts_CreatesNewAccounts()
@@ -41,11 +26,11 @@ public class CsvImportServiceTests : IDisposable
         var csv = "AccountNumber,Name\n1910,Kassa\n3010,Försäljning\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
+        var result = await _csvService.ImportAccountsAsync(stream, _fiscalYear.Id);
 
         Assert.Equal(2, result.Created);
         Assert.Equal(0, result.Updated);
-        var accounts = await _db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
+        var accounts = await _f.Db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
         Assert.Equal(2, accounts.Count);
         Assert.Equal("1910", accounts[0].AccountNumber);
         Assert.Equal(AccountClass.Asset, accounts[0].AccountClass);
@@ -56,17 +41,17 @@ public class CsvImportServiceTests : IDisposable
     [Fact]
     public async Task ImportAccounts_UpdatesExistingAccount()
     {
-        _db.Accounts.Add(new Account { AccountNumber = "1910", Name = "Old Name", AccountClass = AccountClass.Asset, FiscalYearId = _fiscalYear.Id });
-        await _db.SaveChangesAsync();
+        _f.Db.Accounts.Add(new Account { AccountNumber = "1910", Name = "Old Name", AccountClass = AccountClass.Asset, FiscalYearId = _fiscalYear.Id });
+        await _f.Db.SaveChangesAsync();
 
         var csv = "AccountNumber,Name\n1910,Kassa\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
+        var result = await _csvService.ImportAccountsAsync(stream, _fiscalYear.Id);
 
         Assert.Equal(0, result.Created);
         Assert.Equal(1, result.Updated);
-        Assert.Equal("Kassa", (await _db.Accounts.SingleAsync()).Name);
+        Assert.Equal("Kassa", (await _f.Db.Accounts.SingleAsync()).Name);
     }
 
     [Fact]
@@ -75,7 +60,7 @@ public class CsvImportServiceTests : IDisposable
         var csv = "AccountNumber,Name\n,\n1910,Kassa\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
+        var result = await _csvService.ImportAccountsAsync(stream, _fiscalYear.Id);
 
         Assert.Equal(1, result.Created);
         Assert.Equal(1, result.Skipped);
@@ -88,10 +73,10 @@ public class CsvImportServiceTests : IDisposable
         var csv = "AccountNumber,Name\n1000,Tillgångar\n2010,Eget kapital\n2100,Skulder\n3000,Intäkter\n4000,Kostnader\n5000,Övriga kostnader\n8010,Ränteintäkter\n8400,Räntekostnader\n";
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
 
-        var result = await _service.ImportAccountsAsync(stream, _fiscalYear.Id);
+        var result = await _csvService.ImportAccountsAsync(stream, _fiscalYear.Id);
 
         Assert.Equal(8, result.Created);
-        var accounts = await _db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
+        var accounts = await _f.Db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
         Assert.Equal(AccountClass.Asset, accounts[0].AccountClass);     // 1000
         Assert.Equal(AccountClass.Equity, accounts[1].AccountClass);    // 2010
         Assert.Equal(AccountClass.Liability, accounts[2].AccountClass); // 2100
@@ -105,44 +90,26 @@ public class CsvImportServiceTests : IDisposable
 
 public class JournalEntryServiceTests : IDisposable
 {
-    private readonly AppDbContext _db;
-    private readonly JournalEntryService _service;
+    private readonly TestFixture _f;
     private readonly FiscalYear _fiscalYear;
     private readonly Account _account1;
     private readonly Account _account2;
 
     public JournalEntryServiceTests()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-        _db = new AppDbContext(options);
-        _db.Database.OpenConnection();
-        _db.Database.EnsureCreated();
-        _service = new JournalEntryService(_db);
-
-        _fiscalYear = new FiscalYear
-        {
-            Name = "2026",
-            StartDate = new DateOnly(2026, 1, 1),
-            EndDate = new DateOnly(2026, 12, 31)
-        };
-        _db.FiscalYears.Add(_fiscalYear);
-        _db.SaveChanges();
-
-        _account1 = new Account { AccountNumber = "1910", Name = "Kassa", AccountClass = AccountClass.Asset, FiscalYearId = _fiscalYear.Id };
-        _account2 = new Account { AccountNumber = "3010", Name = "Försäljning", AccountClass = AccountClass.Revenue, FiscalYearId = _fiscalYear.Id };
-        _db.Accounts.AddRange(_account1, _account2);
-        _db.SaveChanges();
+        _f = new TestFixture();
+        _fiscalYear = _f.CreateFiscalYear();
+        _account1 = _f.CreateAccount(_fiscalYear.Id, "1910", "Kassa");
+        _account2 = _f.CreateAccount(_fiscalYear.Id, "3010", "Försäljning", AccountClass.Revenue);
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _f.Dispose();
 
     [Fact]
     public async Task CreateEntry_BalancedEntry_Succeeds()
     {
         var entry = MakeEntry(1000m);
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(error);
         Assert.NotNull(result);
@@ -164,7 +131,7 @@ public class JournalEntryServiceTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.NotNull(error);
         Assert.Contains("Debit", error);
@@ -182,7 +149,7 @@ public class JournalEntryServiceTests : IDisposable
             Lines = [new() { AccountId = _account1.Id, DebitAmount = 100, CreditAmount = 0 }]
         };
 
-        var (_, error) = await _service.CreateAsync(entry);
+        var (_, error) = await _f.JournalEntryService.CreateAsync(entry);
         Assert.Contains("at least 2 lines", error);
     }
 
@@ -190,18 +157,18 @@ public class JournalEntryServiceTests : IDisposable
     public async Task CreateEntry_ClosedFiscalYear_Fails()
     {
         _fiscalYear.IsClosed = true;
-        await _db.SaveChangesAsync();
+        await _f.Db.SaveChangesAsync();
 
         var entry = MakeEntry(500m);
-        var (_, error) = await _service.CreateAsync(entry);
+        var (_, error) = await _f.JournalEntryService.CreateAsync(entry);
         Assert.Contains("closed", error);
     }
 
     [Fact]
     public async Task CreateEntry_SequentialEntryNumbers()
     {
-        var (e1, _) = await _service.CreateAsync(MakeEntry(100));
-        var (e2, _) = await _service.CreateAsync(MakeEntry(200));
+        var (e1, _) = await _f.JournalEntryService.CreateAsync(MakeEntry(100));
+        var (e2, _) = await _f.JournalEntryService.CreateAsync(MakeEntry(200));
 
         Assert.Equal(1, e1!.EntryNumber);
         Assert.Equal(2, e2!.EntryNumber);
@@ -222,7 +189,7 @@ public class JournalEntryServiceTests : IDisposable
             ]
         };
 
-        var (_, error) = await _service.CreateAsync(entry);
+        var (_, error) = await _f.JournalEntryService.CreateAsync(entry);
         Assert.Contains("negative", error);
     }
 
@@ -241,17 +208,17 @@ public class JournalEntryServiceTests : IDisposable
             ]
         };
 
-        var (_, error) = await _service.CreateAsync(entry);
+        var (_, error) = await _f.JournalEntryService.CreateAsync(entry);
         Assert.Contains("both debit and credit", error);
     }
 
     [Fact]
     public async Task GetTrialBalance_ReturnsCorrectTotals()
     {
-        await _service.CreateAsync(MakeEntry(1000));
-        await _service.CreateAsync(MakeEntry(500));
+        await _f.JournalEntryService.CreateAsync(MakeEntry(1000));
+        await _f.JournalEntryService.CreateAsync(MakeEntry(500));
 
-        var rows = await _service.GetTrialBalanceAsync(_fiscalYear.Id);
+        var rows = await _f.JournalEntryService.GetTrialBalanceAsync(_fiscalYear.Id);
 
         Assert.Equal(2, rows.Count);
         var debitAccount = rows.Single(r => r.AccountNumber == "1910");

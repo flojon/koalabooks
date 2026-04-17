@@ -1,7 +1,6 @@
 using jsiSIE;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
-using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,21 +8,16 @@ namespace KoalaBooks.Tests;
 
 public class SieImportServiceTests : IDisposable
 {
-    private readonly AppDbContext _db;
+    private readonly TestFixture _f;
     private readonly SieImportService _service;
 
     public SieImportServiceTests()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-        _db = new AppDbContext(options);
-        _db.Database.OpenConnection();
-        _db.Database.EnsureCreated();
-        _service = new SieImportService(_db);
+        _f = new TestFixture();
+        _service = new SieImportService(_f.Db);
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _f.Dispose();
 
     private static Stream MakeSieStream(string content)
     {
@@ -109,11 +103,11 @@ public class SieImportServiceTests : IDisposable
         Assert.Equal(4, result.LinesImported);
         Assert.True(result.AccountsCreated >= 4);
 
-        var fiscalYear = await _db.FiscalYears.SingleAsync();
+        var fiscalYear = await _f.Db.FiscalYears.SingleAsync();
         Assert.Equal(new DateOnly(2026, 1, 1), fiscalYear.StartDate);
         Assert.Equal(new DateOnly(2026, 12, 31), fiscalYear.EndDate);
 
-        var entries = await _db.JournalEntries
+        var entries = await _f.Db.JournalEntries
             .Include(j => j.Lines)
             .OrderBy(j => j.EntryNumber)
             .ToListAsync();
@@ -129,7 +123,7 @@ public class SieImportServiceTests : IDisposable
         var doc = _service.Parse(stream);
         await _service.ImportFiscalYearAsync(doc, 0, overwrite: false);
 
-        var entry = await _db.JournalEntries
+        var entry = await _f.Db.JournalEntries
             .Include(j => j.Lines).ThenInclude(l => l.Account)
             .FirstAsync(j => j.EntryNumber == 1);
 
@@ -153,7 +147,7 @@ public class SieImportServiceTests : IDisposable
         var doc1 = _service.Parse(stream1);
         await _service.ImportFiscalYearAsync(doc1, 0, overwrite: false);
 
-        Assert.Equal(2, await _db.JournalEntries.CountAsync());
+        Assert.Equal(2, await _f.Db.JournalEntries.CountAsync());
 
         // Second import with overwrite
         using var stream2 = MakeSieStream(SampleSie4);
@@ -162,9 +156,9 @@ public class SieImportServiceTests : IDisposable
 
         Assert.Equal(2, result.EntriesImported);
         // Should still be exactly 2 entries (old deleted, new imported)
-        Assert.Equal(2, await _db.JournalEntries.CountAsync());
+        Assert.Equal(2, await _f.Db.JournalEntries.CountAsync());
         // Still exactly 1 fiscal year
-        Assert.Single(await _db.FiscalYears.ToListAsync());
+        Assert.Single(await _f.Db.FiscalYears.ToListAsync());
     }
 
     [Fact]
@@ -191,18 +185,18 @@ public class SieImportServiceTests : IDisposable
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31)
         };
-        _db.FiscalYears.Add(fy);
-        await _db.SaveChangesAsync();
+        _f.Db.FiscalYears.Add(fy);
+        await _f.Db.SaveChangesAsync();
 
         // Pre-existing account with different name in that fiscal year
-        _db.Accounts.Add(new Account
+        _f.Db.Accounts.Add(new Account
         {
             AccountNumber = "1910",
             Name = "Old Name",
             AccountClass = AccountClass.Asset,
             FiscalYearId = fy.Id
         });
-        await _db.SaveChangesAsync();
+        await _f.Db.SaveChangesAsync();
 
         using var stream = MakeSieStream(SampleSie4);
         var doc = _service.Parse(stream);
@@ -212,20 +206,20 @@ public class SieImportServiceTests : IDisposable
         // Overwrite deletes existing accounts and re-creates them all
         Assert.True(result.AccountsCreated >= 4);
 
-        var updatedAccount = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910" && a.FiscalYearId == fy.Id);
+        var updatedAccount = await _f.Db.Accounts.SingleAsync(a => a.AccountNumber == "1910" && a.FiscalYearId == fy.Id);
         Assert.Equal("Kassa", updatedAccount.Name);
     }
 
     [Fact]
     public async Task GetPreview_DetectsExistingFiscalYear()
     {
-        _db.FiscalYears.Add(new FiscalYear
+        _f.Db.FiscalYears.Add(new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31)
         });
-        await _db.SaveChangesAsync();
+        await _f.Db.SaveChangesAsync();
 
         using var stream = MakeSieStream(SampleSie4);
         var doc = _service.Parse(stream);
@@ -295,7 +289,7 @@ public class SieImportServiceTests : IDisposable
 
         Assert.Equal(4, result.BalancesImported); // 2 IB + 2 UB
 
-        var accounts = await _db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
+        var accounts = await _f.Db.Accounts.OrderBy(a => a.AccountNumber).ToListAsync();
         var kassa = accounts.Single(a => a.AccountNumber == "1910");
         Assert.Equal(50000m, kassa.IncomingBalance);
         Assert.Equal(75000m, kassa.OutgoingBalance);
@@ -317,7 +311,7 @@ public class SieImportServiceTests : IDisposable
         Assert.Equal(0, result.EntriesImported);
         Assert.Equal(2, result.BalancesImported); // 1 IB + 1 UB
 
-        var kassa = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
+        var kassa = await _f.Db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
         Assert.Equal(30000m, kassa.IncomingBalance);
         Assert.Equal(50000m, kassa.OutgoingBalance);
     }
@@ -330,7 +324,7 @@ public class SieImportServiceTests : IDisposable
         await _service.ImportFiscalYearAsync(doc1, 0, overwrite: false);
 
         // Verify balances exist
-        var kassa = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
+        var kassa = await _f.Db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
         Assert.Equal(50000m, kassa.IncomingBalance);
 
         // Overwrite with basic sample (no balances)
@@ -339,7 +333,7 @@ public class SieImportServiceTests : IDisposable
         await _service.ImportFiscalYearAsync(doc2, 0, overwrite: true);
 
         // Balances should be 0 (reset)
-        kassa = await _db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
+        kassa = await _f.Db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
         Assert.Equal(0m, kassa.IncomingBalance);
         Assert.Equal(0m, kassa.OutgoingBalance);
     }
@@ -358,7 +352,7 @@ public class SieImportServiceTests : IDisposable
         Assert.True(result.TotalAccountsCreated >= 4);
 
         // Both FYs should exist in DB
-        Assert.Equal(2, await _db.FiscalYears.CountAsync());
+        Assert.Equal(2, await _f.Db.FiscalYears.CountAsync());
     }
 
     [Fact]
@@ -369,7 +363,7 @@ public class SieImportServiceTests : IDisposable
         var doc1 = _service.Parse(stream1);
         await _service.ImportAllAsync(doc1, overwrite: false);
 
-        Assert.Equal(2, await _db.FiscalYears.CountAsync());
+        Assert.Equal(2, await _f.Db.FiscalYears.CountAsync());
 
         // Second import with overwrite
         using var stream2 = MakeSieStream(SampleSie4WithBalances);
@@ -377,7 +371,7 @@ public class SieImportServiceTests : IDisposable
         var result = await _service.ImportAllAsync(doc2, overwrite: true);
 
         // Still 2 FYs, not duplicated
-        Assert.Equal(2, await _db.FiscalYears.CountAsync());
+        Assert.Equal(2, await _f.Db.FiscalYears.CountAsync());
         Assert.Equal(2, result.FiscalYears.Count);
     }
 }

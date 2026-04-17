@@ -1,8 +1,5 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
-using KoalaBooks.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
 
@@ -13,50 +10,20 @@ namespace KoalaBooks.Tests;
 /// </summary>
 public class DateAccountValidationTests : IDisposable
 {
-    private readonly AppDbContext _db;
-    private readonly JournalEntryService _service;
+    private readonly TestFixture _f;
     private readonly FiscalYear _fiscalYear;
     private readonly Account _account1;
     private readonly Account _account2;
 
     public DateAccountValidationTests()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .Options;
-        _db = new AppDbContext(options);
-        _db.Database.OpenConnection();
-        _db.Database.EnsureCreated();
-        _service = new JournalEntryService(_db);
-
-        _fiscalYear = new FiscalYear
-        {
-            Name = "2026",
-            StartDate = new DateOnly(2026, 1, 1),
-            EndDate = new DateOnly(2026, 12, 31)
-        };
-        _db.FiscalYears.Add(_fiscalYear);
-        _db.SaveChanges();
-
-        _account1 = new Account
-        {
-            AccountNumber = "1910",
-            Name = "Kassa",
-            AccountClass = AccountClass.Asset,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _account2 = new Account
-        {
-            AccountNumber = "3010",
-            Name = "Försäljning",
-            AccountClass = AccountClass.Revenue,
-            FiscalYearId = _fiscalYear.Id
-        };
-        _db.Accounts.AddRange(_account1, _account2);
-        _db.SaveChanges();
+        _f = new TestFixture();
+        _fiscalYear = _f.CreateFiscalYear();
+        _account1 = _f.CreateAccount(_fiscalYear.Id, "1910", "Kassa");
+        _account2 = _f.CreateAccount(_fiscalYear.Id, "3010", "Försäljning", AccountClass.Revenue);
     }
 
-    public void Dispose() => _db.Dispose();
+    public void Dispose() => _f.Dispose();
 
     [Fact]
     public async Task CreateEntry_DateBeforeFiscalYearStart_Fails()
@@ -73,7 +40,7 @@ public class DateAccountValidationTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(result);
         Assert.NotNull(error);
@@ -94,7 +61,7 @@ public class DateAccountValidationTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(result);
         Assert.NotNull(error);
@@ -115,7 +82,7 @@ public class DateAccountValidationTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(error);
         Assert.NotNull(result);
@@ -136,7 +103,7 @@ public class DateAccountValidationTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(error);
         Assert.NotNull(result);
@@ -157,7 +124,7 @@ public class DateAccountValidationTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(error);
         Assert.NotNull(result);
@@ -179,7 +146,7 @@ public class DateAccountValidationTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(result);
         Assert.NotNull(error);
@@ -200,7 +167,7 @@ public class DateAccountValidationTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(result);
         Assert.NotNull(error);
@@ -221,7 +188,7 @@ public class DateAccountValidationTests : IDisposable
             ]
         };
 
-        var (result, error) = await _service.CreateAsync(entry);
+        var (result, error) = await _f.JournalEntryService.CreateAsync(entry);
 
         Assert.Null(error);
         Assert.NotNull(result);
