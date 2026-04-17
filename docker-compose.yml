@@ -4,8 +4,7 @@ services:
     build:
       context: .
       dockerfile: src/KoalaBooks.Web/Dockerfile
-    ports:
-      - "8080:8080"
+
     environment:
       - ConnectionStrings__koalabooks=Host=postgres;Port=5432;Database=koalabooks;Username=koalabooks;Password=${POSTGRES_PASSWORD}
       - ASPNETCORE_ENVIRONMENT=Production
