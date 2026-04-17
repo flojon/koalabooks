@@ -61,3 +61,11 @@
 - **P&L IB zeroing**: `CopyAccountsFromPreviousYearAsync` and `PropagateBalancesToNextYearAsync` now set `IncomingBalance = 0` for Revenue/Expense accounts. Only balance sheet accounts (Asset, Liability, Equity) carry forward their outgoing balance as incoming balance.
 - **PostAsync closed-year guard**: `PostAsync` now loads the FiscalYear (via `.Include`) and rejects posting if `IsClosed == true`. Follows same pattern as `DeleteDraftAsync`.
 - **Pattern**: All optional parameters use defaults that match existing caller behavior — no breaking changes to call sites or tests.
+
+### 2026-04-18: Review Fixes — Danny & Reuben Findings
+- **Fix 1**: Deleted dead `FiscalYearService.CloseAsync()` — it bypassed year-end closing (no bokslut entries, no UB computation). No callers existed; `FiscalYears.razor` already uses `YearEndClosingService.ExecuteClosingAsync()`.
+- **Fix 2**: Added `excludeClosingEntries` parameter (default `true`) to `GetGeneralLedgerAsync` in `JournalEntryService`. Filters `IsClosingEntry == true` lines. Matches pattern in TrialBalance, BalanceSheet, IncomeStatement.
+- **Fix 3**: Moved `BasImportService.cs` from Application layer to Infrastructure layer (`KoalaBooks.Infrastructure.Services` namespace). Moved ExcelDataReader NuGet packages from Application.csproj to Infrastructure.csproj. Updated DI registration and `BasImport.razor` using directives.
+- **Fix 4**: Deleted unused `NotificationService` (ISnackbar wrapper). All pages inject `ISnackbar` directly. Removed DI registration, the class file, and the `KoalaBooks.Web.Services` using from Program.cs. Deleted empty Services directory.
+- **Fix 5**: Added sign convention TODO comments to top of `SieImportService.cs` and `SieExportService.cs` documenting the conflict between SIE-4 negative IB for credit-normal accounts vs. positive-magnitude manual entry storage.
+- **Build**: 0 errors, 0 warnings. **Tests**: 163 passed, 0 failed.

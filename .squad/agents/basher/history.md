@@ -10,6 +10,8 @@
 
 <!-- Append learnings below -->
 
+- **2026-04-18:** Removed `ports: - "8080:8080"` from the `web` service in `docker-compose.yml` to close a critical security hole. The app is now only accessible via the Caddy reverse proxy, ensuring all external traffic is encrypted and routed through Caddy. Caddy's config (`reverse_proxy web:8080`) continues to work via Docker's internal network.
+
 - **SIE export draft filtering:** `SieExportService.ExportAsync` was exporting all `JournalEntries` including drafts. Fixed by adding `.Where(e => e.IsPosted)` before the `#VER`/`#TRANS` loop. The `#KONTO`, `#IB`, and `#UB` records are account-level (not entry-level) so they were unaffected. Only the verification/transaction records needed filtering.
 
 - **DI registration lives in** `src/KoalaBooks.Web/Program.cs` — all services registered as `AddScoped<T>()`.

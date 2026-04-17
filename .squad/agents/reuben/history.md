@@ -38,6 +38,38 @@ Reviewed Danny's feature priority roadmap against the actual codebase. Confirmed
 - The BalanceSheetTests.BalanceSheet_AssetsEqualLiabilitiesPlusEquity_WhenBalanced test passes only because test data has no credit transactions on liability accounts — it only checks IB values
 - SIE import correctly handles CP437→Latin-1 transcoding for Swedish characters_
 
+### 2026-04-17 (Session 3) — Business Logic Accounting Correctness Review
+
+Full review of all service files and entity models against Swedish accounting standards. Findings filed to `.squad/decisions/inbox/reuben-review-findings.md`.
+
+**All P0 bugs from sessions 1 & 2 confirmed fixed.** No regressions.
+
+**New findings this session:**
+
+1. 🔴 **HIGH — Sign convention conflict (SIE import vs. manual entry):** SIE import stores IncomingBalance/OutgoingBalance as signed per SIE-4 (negative for credit-normal accounts). Manual entry stores them as positive (unsigned economic magnitude). This causes the balance sheet to show negative Skulder/Eget kapital totals for SIE-imported data, and the accounting equation test (A = L + E) fails for that data path. SIE export of manually created accounts also produces wrong-signed #IB/#UB. Fix: flip sign in SieImportService for credit-normal accounts; flip back in SieExportService.
+
+2. 🟡 **MEDIUM — Income statement ignores IB on P&L accounts:** `GetIncomeStatementAsync` computes Revenue = Credit - Debit (transactions only), but closing service uses IB + Credit - Debit. If a P&L account has non-zero IB (possible after SIE import), the income statement understates revenue vs. what the closing entries actually close. Does not affect normally maintained books (IB=0 for P&L enforced on year rollover).
+
+3. 🟡 **MEDIUM — FiscalYearService.CloseAsync() bypasses year-end closing:** `CloseAsync()` sets IsClosed=true with no closing entries or UB computation. If called directly instead of via YearEndClosingService, the year is sealed incorrectly. Should be marked obsolete or removed.
+
+4. 🟢 **LOW — Missing test coverage:** No loss scenario test, no post-closing income statement = zero test, no post-closing balance sheet showing 2099, no test covering SIE-imported sign convention.
+
+5. 🟢 **LOW — SIE export missing #ORGNR** (carry-over from session 2, still not fixed).
+
+6. 🟢 **LOW — JournalEntryLine constraints only at service layer** — no DB constraints on debit/credit mutual exclusion.
+
+**Items confirmed correct this session:**
+- AccountClassMapper BAS mapping (1xxx, 20xx, 21xx-29xx, 3xxx, 4xxx-7xxx, 80xx-83xx, 84xx-89xx) — perfect.
+- YearEndClosingService two-phase closing math — textbook Swedish bokslut.
+- All five report methods use correct IsPosted + IsClosingEntry filtering with correct defaults.
+- PropagateBalancesToNextYearAsync — P&L IB=0, balance sheet accounts carry UB forward.
+- Reversal date clamping logic — correct.
+- Entity model relationships — correct for double-entry.
+
+**Overall rating: B+ (7.5/10).** Core accounting math is sound. Sign convention conflict is the last remaining architectural issue.
+
+---
+
 ### 2026-04-17 — Comprehensive Accounting Correctness Review
 - Performed full review of all accounting logic. Findings delivered to `.squad/decisions/inbox/reuben-app-review.md`.
 - **P0 fixes from prior session confirmed correct:** AccountClass mapping (2xxx split, 8xxx P&L), credit-normal balance formulas, draft filtering in reports all verified working.

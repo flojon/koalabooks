@@ -105,3 +105,28 @@
 - PostAsync fiscal-year-open guard
 - AccountService validation
 - Reopen fiscal year feature
+
+### 2026-04-17 — Comprehensive Code Review (Session Batch)
+
+**Scope:** 6 commits — P0 bug fixes, test refactor, UX overhaul, BAS import, PostgreSQL migration, Docker deployment.
+
+**Build:** Clean (0 warnings). **Tests:** 149 passing (up from 139).
+
+**Critical findings:**
+1. `FiscalYearService.CloseAsync` (line 49) still exists as dead code — bypasses year-end closing logic. Should be removed or made `private` to prevent accidental use.
+2. `NotificationService` is registered but only used nowhere — pages inject `ISnackbar` directly. Either adopt it everywhere or remove it.
+3. Docker compose exposes port 8080 directly alongside Caddy on 80/443 — production should not expose 8080 externally.
+4. No `.env` file ships by default — first deploy will fail unless user creates one. `.env.example` exists but documentation gap.
+5. `DesignTimeDbContextFactory` contains hardcoded localhost PostgreSQL credentials — acceptable for dev tooling but noted.
+6. No `UseHttpsRedirection` in `Program.cs` — Caddy handles TLS, so this is correct for the reverse-proxy pattern.
+7. `GeneralLedger` report does NOT filter closing entries — may confuse users who see closing entries in the ledger.
+
+**Architecture assessment:** Overall coherent. Clean Architecture layers respected. AppDbContext direct dependency (no repository interfaces) remains accepted tech debt. MudBlazor integration is clean with proper provider setup.
+
+**Key validations confirmed working:**
+- P&L IB=0 on year rollover (FiscalYearService line 88)
+- Reversal date clamping to fiscal year bounds (JournalEntryService line 174)
+- PostAsync fiscal year guard (line 129)
+- SIE export filters to IsPosted only (line 59)
+- FiscalYears.razor correctly wired to YearEndClosingService (line 209, 222)
+- Journal.razor null crash fixed with early return (line 191-195)

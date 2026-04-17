@@ -84,3 +84,83 @@
 - P&L balance propagation already zeros out revenue/expense IB on copy
 
 **Total test count: 149 (139 original + 10 new)**
+
+### 2026-04-19: Full Test Coverage Assessment
+
+**Test suite status:** 149 tests, all green. 20 test files (21 .cs files including TestFixture).
+
+**Coverage gaps found by service:**
+
+**JournalEntryService (most critical gaps):**
+- `GetByFiscalYearAsync` — No tests (date range filter params untested)
+- `GetByIdAsync` — No tests
+- `DeleteDraftAsync` — No tests: success path, guard vs posted, guard vs closed FY, not-found all untested
+- `GetDashboardStatsAsync` — No tests (counts drafts in total but only posted debits/credits)
+- `UpdateAsync` — Partially tested: date out of FY range, account from wrong FY, closed FY guard all missing
+
+**FiscalYearService (mostly untested CRUD layer):**
+- `GetAllAsync` — No tests
+- `GetByIdAsync` — No tests
+- `GetActiveAsync` — No tests (important: "no active year" edge case)
+- `CloseAsync` — No tests (direct close, distinct from YearEndClosingService.ExecuteClosingAsync)
+
+**BasImportService — ZERO tests.** The entire service (ImportFromExcelAsync + TryParseAccountNumber) is untested. This includes: valid import, deduplication, sub-account parsing, invalid account numbers, broken Excel file, intra-import duplicate prevention, account class mapping.
+
+**SieImportService (good coverage, some gaps):**
+- Voucher with unknown account → warning path not tested
+- Voucher with <2 lines → skip path not tested
+- IB/UB for unknown account → warning path not tested
+- Multi-year SIE with RAR=-1 (previous year balances) not explicitly tested
+
+**SieExportService (good coverage):**
+- FY not found → throws InvalidOperationException not tested
+- CP437 Swedish chars in export not verified (only in import)
+
+**YearEndClosingService (good coverage):**
+- Net loss scenario in ExecuteClosingAsync not tested
+- Preview with only expenses / only revenue not tested
+
+**TestFixture design notes:**
+- `TestFixture` does not expose `SieImportService` or `BasImportService` — test classes instantiate these manually, which is fine but inconsistent
+- `TestFixture.GetTrialBalance` is called with default params everywhere; the `excludeClosingEntries=false` override tested only once
+- `MakeEntry` creates entries with `IsPosted = false` by default but inserts directly (bypasses CreateAsync validation) — some test classes bypass this, which is acceptable but should be documented
+
+**Priority summary:**
+- 🔴 `DeleteDraftAsync` — zero tests, 3 guards plus happy path
+- 🔴 `BasImportService.ImportFromExcelAsync` — entirely untested
+- ⚠️ `UpdateAsync` — date/account/closed-year guards missing
+- ⚠️ `FiscalYearService` CRUD — GetAllAsync, GetByIdAsync, GetActiveAsync, CloseAsync all untested
+- 💡 `GetDashboardStatsAsync`, `GetByFiscalYearAsync`, SieImport warning paths
+
+### 2026-04-19: Critical Coverage Gap Tests (DeleteDraftAsync + BasImportService)
+
+**Files created:**
+- `DeleteDraftAsyncTests.cs` — 6 tests covering all DeleteDraftAsync paths
+- `BasImportServiceTests.cs` — 8 tests covering real BAS XLS import, deduplication, error handling
+
+**DeleteDraftAsync tests (6):**
+1. Entry not found → returns error
+2. Posted entry → returns error (guard)
+3. Closed fiscal year → returns error (guard)
+4. Valid draft → returns null, entry removed
+5. Valid draft → lines also removed (cascade)
+6. Posted entry → entry NOT removed (safety check)
+
+**BasImportService tests (8):**
+1. Real BAS XLS file imports accounts successfully
+2. Imported accounts exist in database with correct properties
+3. Account class mapping correct (1xxx=Asset, 3xxx=Revenue, 5-6xxx=Expense)
+4. All account numbers are 4-digit strings
+5. Pre-existing account is skipped (deduplication)
+6. Second import run skips all (idempotency)
+7. Invalid stream returns error with message
+8. Empty stream returns error
+
+**Key findings:**
+- BasImportService was moved to Infrastructure layer by Linus — test uses `KoalaBooks.Infrastructure.Services` namespace
+- ExcelDataReader available transitively through Application project reference
+- Real BAS XLS file at `resources/Kontoplan_K1_2018.xls` used for integration tests
+- `TryParseAccountNumber` is private static — tested indirectly through ImportFromExcelAsync
+- FindRepoRoot() helper walks up directory tree to locate resources/
+
+**Total test count: 163 (149 existing + 14 new)**
