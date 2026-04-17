@@ -130,6 +130,14 @@
                             <button class="btn btn-sm btn-secondary" @onclick="CancelReversal">Cancel</button>
                         </div>
                     }
+                    else if (_deletingEntryId == entry.Id)
+                    {
+                        <div style="display:flex; gap:0.25rem; align-items:center;">
+                            <span>Are you sure?</span>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(entry.Id)">Yes, delete</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="CancelDelete">Cancel</button>
+                        </div>
+                    }
                     else if (entry.IsPosted)
                     {
                         <button class="btn btn-sm btn-warning" @onclick="() => StartReversal(entry.Id)">Reverse</button>
@@ -138,6 +146,7 @@
                     {
                         <button class="btn btn-sm btn-secondary" @onclick="() => EditEntry(entry)">Edit</button>
                         <button class="btn btn-sm btn-success" @onclick="() => PostEntry(entry.Id)">Post</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => StartDelete(entry.Id)">🗑️ Delete</button>
                     }
                 </td>
             </tr>
@@ -170,6 +179,7 @@
     private string? _success;
     private int? _reversingEntryId;
     private string _reversalReason = "";
+    private int? _deletingEntryId;
 
     private decimal TotalDebit => _formLines.Sum(l => l.DebitAmount);
     private decimal TotalCredit => _formLines.Sum(l => l.CreditAmount);
@@ -274,6 +284,34 @@
             return;
         }
         _success = "Entry posted.";
+        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
+    }
+
+    private void StartDelete(int entryId)
+    {
+        _deletingEntryId = entryId;
+        _error = null;
+        _success = null;
+    }
+
+    private void CancelDelete()
+    {
+        _deletingEntryId = null;
+    }
+
+    private async Task ConfirmDelete(int entryId)
+    {
+        _error = null;
+        _success = null;
+        var error = await JournalEntryService.DeleteDraftAsync(entryId);
+        if (error is not null)
+        {
+            _error = error;
+            _deletingEntryId = null;
+            return;
+        }
+        _success = "Draft entry deleted.";
+        _deletingEntryId = null;
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
     }
 

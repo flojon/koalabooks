@@ -34,3 +34,28 @@
 - `AccountClassMapper.FromAccountNumber()` — static, in Infrastructure
 - `JournalEntryService` — all report methods (trial balance, balance sheet, income statement, general ledger)
 - `TrialBalanceRow.Balance` — computed property, account-class-aware after P0 #2 fix
+
+### 2026-04-17: Year-End Closing Test Suite
+
+**File:** `YearEndClosingServiceTests.cs` — 19 tests written from Danny's ADR spec before service exists
+
+**Tests cover three service methods:**
+- `ValidateForClosingAsync` (4 tests): unposted drafts, already closed, valid year, year not found
+- `PreviewClosingAsync` (4 tests): normal year, zero net result, IB-only accounts, invalid year
+- `ExecuteClosingAsync` (9 tests): normal closing, UB computation, auto-create 8999/2099, posted+marked, zero result, IsClosed/ClosedAt, next-year propagation, dormant year, blocked by drafts
+- Edge cases (2 tests): sequential entry numbers, dates match fiscal year end
+
+**Expected result types (Linus to create):**
+- `ClosingValidationResult` with `IsValid` (bool), `Errors` (list of strings)
+- `ClosingPreview` with `IsValid`, `Errors`, `Entries` (list of JournalEntry), `NetResult` (decimal)
+- `ClosingResult` with `IsSuccess` (bool), `Errors` (list of strings)
+
+**Entity changes required (Linus Phase 1):**
+- `JournalEntry.IsClosingEntry` (bool) — marks system-generated closing entries
+- `FiscalYear.ClosedAt` (DateTime?) — timestamp of closing
+
+**Key test setup pattern:**
+- Base setup: fiscal year + 5 standard accounts (cash, liability, equity, revenue, expense)
+- `AddResultAccounts()` helper adds 8999 + 2099 when needed
+- `SetupNormalYear()` helper: revenue 10,000 + expense 6,000 → profit 4,000
+- Tests verify database state directly (robust to return type changes)

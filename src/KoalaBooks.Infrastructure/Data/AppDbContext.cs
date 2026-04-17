@@ -30,12 +30,14 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<FiscalYear>(entity =>
         {
             entity.Property(f => f.Name).HasMaxLength(100);
+            entity.Property(f => f.ClosedAt);
         });
 
         modelBuilder.Entity<JournalEntry>(entity =>
         {
             entity.HasIndex(j => new { j.FiscalYearId, j.EntryNumber }).IsUnique();
             entity.Property(j => j.Description).HasMaxLength(500);
+            entity.Property(j => j.IsClosingEntry).HasDefaultValue(false);
             entity.HasOne(j => j.FiscalYear)
                   .WithMany(f => f.JournalEntries)
                   .HasForeignKey(j => j.FiscalYearId)
