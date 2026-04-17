@@ -1,9 +1,3 @@
-// TODO: Sign convention conflict (Reuben review finding, 2026-04-17)
-// SIE-4 stores credit-normal accounts (liabilities, equity) with NEGATIVE IB.
-// Manual entry stores all IB as positive (economic magnitude).
-// Fix: Normalize to unsigned storage — flip sign for credit-normal on import,
-// flip back on export. See .squad/decisions/inbox/reuben-review-findings.md
-
 using System.Text;
 using jsiSIE;
 using KoalaBooks.Domain.Entities;
@@ -370,7 +364,7 @@ public class SieImportService
             if (ib.Account is null) continue;
             if (accountLookup.TryGetValue(ib.Account.Number, out var account))
             {
-                account.IncomingBalance = ib.Amount;
+                account.IncomingBalance = Math.Abs(ib.Amount);
                 count++;
             }
             else
@@ -384,7 +378,7 @@ public class SieImportService
             if (ub.Account is null) continue;
             if (accountLookup.TryGetValue(ub.Account.Number, out var account))
             {
-                account.OutgoingBalance = ub.Amount;
+                account.OutgoingBalance = Math.Abs(ub.Amount);
                 count++;
             }
             else

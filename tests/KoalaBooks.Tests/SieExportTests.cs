@@ -143,7 +143,7 @@ public class SieExportServiceTests : IDisposable
     {
         var fy = await CreateFiscalYearAsync();
         await CreateAccountAsync(fy.Id, "1910", "Kassa", incomingBalance: 50000m);
-        await CreateAccountAsync(fy.Id, "2440", "Leverantörsskuld", AccountClass.Liability, outgoingBalance: -15000m);
+        await CreateAccountAsync(fy.Id, "2440", "Leverantörsskuld", AccountClass.Liability, outgoingBalance: 15000m);
         await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
 
         var bytes = await _f.SieExportService.ExportAsync(fy.Id);
