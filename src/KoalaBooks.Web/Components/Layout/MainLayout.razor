@@ -66,6 +66,12 @@
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
 
+    protected override void OnParametersSet()
+    {
+        // Auto-recover ErrorBoundary on navigation so menu links keep working after a crash
+        _errorBoundary?.Recover();
+    }
+
     private void Recover()
     {
         _errorBoundary?.Recover();
