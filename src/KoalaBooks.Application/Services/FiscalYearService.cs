@@ -46,16 +46,6 @@ public class FiscalYearService
         return fiscalYear;
     }
 
-    public async Task CloseAsync(int id)
-    {
-        var fy = await _db.FiscalYears.FindAsync(id);
-        if (fy is not null)
-        {
-            fy.IsClosed = true;
-            await _db.SaveChangesAsync();
-        }
-    }
-
     /// <summary>
     /// Copies accounts from the previous fiscal year (by date) into the new year,
     /// setting IncomingBalance = previous year's OutgoingBalance.

@@ -1,3 +1,9 @@
+// TODO: Sign convention conflict (Reuben review finding, 2026-04-17)
+// SIE-4 stores credit-normal accounts (liabilities, equity) with NEGATIVE IB.
+// Manual entry stores all IB as positive (economic magnitude).
+// Fix: Normalize to unsigned storage — flip sign for credit-normal on import,
+// flip back on export. See .squad/decisions/inbox/reuben-review-findings.md
+
 using System.Globalization;
 using System.Text;
 using KoalaBooks.Domain.Entities;

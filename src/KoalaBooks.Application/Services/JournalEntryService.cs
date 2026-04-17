@@ -254,7 +254,7 @@ public class JournalEntryService
 
     public async Task<List<GeneralLedgerAccountSection>> GetGeneralLedgerAsync(
         int fiscalYearId, string? fromAccount = null, string? toAccount = null,
-        DateOnly? from = null, DateOnly? to = null)
+        DateOnly? from = null, DateOnly? to = null, bool excludeClosingEntries = true)
     {
         var accountQuery = _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId);
@@ -270,6 +270,9 @@ public class JournalEntryService
             .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
             .Where(l => l.JournalEntry.IsPosted);
+
+        if (excludeClosingEntries)
+            lineQuery = lineQuery.Where(l => !l.JournalEntry.IsClosingEntry);
 
         if (from.HasValue)
             lineQuery = lineQuery.Where(l => l.JournalEntry.Date >= from.Value);

@@ -2,7 +2,6 @@ using KoalaBooks.Application.Services;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using KoalaBooks.Web.Components;
-using KoalaBooks.Web.Services;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
@@ -25,8 +24,6 @@ builder.Services.AddScoped<JournalEntryService>();
 builder.Services.AddScoped<SieExportService>();
 builder.Services.AddScoped<YearEndClosingService>();
 builder.Services.AddScoped<BasImportService>();
-
-builder.Services.AddScoped<NotificationService>();
 
 builder.Services.AddMudServices(config =>
 {

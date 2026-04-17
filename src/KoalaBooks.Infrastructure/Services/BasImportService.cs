@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Data;
 using System.Text;
 
-namespace KoalaBooks.Application.Services;
+namespace KoalaBooks.Infrastructure.Services;
 
 public record BasImportResult(int ImportedCount, int SkippedCount, List<string> Errors);
 
