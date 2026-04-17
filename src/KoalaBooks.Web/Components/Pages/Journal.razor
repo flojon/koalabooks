@@ -40,7 +40,7 @@ else
             </div>
         </div>
 
-        <table>
+        <table style="overflow:visible;">
             <thead>
                 <tr>
                     <th>Konto</th>
@@ -290,7 +290,7 @@ else
             Snackbar.Add(error, Severity.Error);
             return;
         }
-        Snackbar.Add("Utkastverifikation raderad.", Severity.Success);
+        Snackbar.Add("Utkastet raderat.", Severity.Success);
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
     }
 

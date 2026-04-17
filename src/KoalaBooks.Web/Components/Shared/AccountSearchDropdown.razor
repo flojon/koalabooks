@@ -4,9 +4,10 @@
     <input type="text"
            @bind:get="_searchText"
            @bind:set="OnSearchChanged"
+           @bind:event="oninput"
            @onfocusin="HandleFocusIn"
            @onkeydown="HandleKeyDown"
-           placeholder="Search by number or name…"
+           placeholder="Sök på kontonummer eller namn…"
            autocomplete="off" />
 
     @if (_isOpen && _filtered.Count > 0)
@@ -28,7 +29,7 @@
     else if (_isOpen && _searchText.Length > 0 && _filtered.Count == 0)
     {
         <ul class="account-dropdown-list">
-            <li class="no-results">No matching accounts</li>
+            <li class="no-results">Inga matchande konton</li>
         </ul>
     }
 </div>
