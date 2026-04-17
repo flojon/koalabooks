@@ -2,7 +2,7 @@
 html, body {
     margin: 0;
     padding: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     font-size: 14px;
     color: #1e293b;
 }
@@ -54,12 +54,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .stat-value { font-size: 1.75rem; font-weight: 700; color: #0f172a; }
 .stat-label { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
 
-/* Alerts */
-.alert { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
-.alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-.alert-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-.alert-info { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
-
 /* Toolbar */
 .toolbar { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
 
@@ -79,3 +73,5 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
     color: white;
 }
     .blazor-error-boundary::after { content: "An error has occurred." }
+/* Monospace utility for monetary amounts */
+.mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }

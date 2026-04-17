@@ -2,12 +2,17 @@
 @rendermode InteractiveServer
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
+@using MudBlazor
 
 <PageTitle>General Ledger — KoalaBooks</PageTitle>
 
 <h1>📒 General Ledger</h1>
 
-@if (_fiscalYears.Any())
+@if (_isLoading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_fiscalYears.Any())
 {
     <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
         <label style="font-weight:600; color:#475569;">Fiscal Year:</label>
@@ -37,7 +42,7 @@
     {
         @if (!_sections.Any())
         {
-            <div class="alert alert-info" style="margin-top:1rem;">No accounts found for the selected criteria.</div>
+            <MudAlert Severity="Severity.Info" Class="mt-4">No accounts found for the selected criteria.</MudAlert>
         }
 
         @foreach (var acct in _sections)
@@ -83,7 +88,7 @@
 }
 else
 {
-    <div class="alert alert-info">No fiscal years found. <a href="/fiscal-years">Create one</a> first.</div>
+    <MudAlert Severity="Severity.Info">No fiscal years found. <a href="/fiscal-years">Create one</a> first.</MudAlert>
 }
 
 @code {
@@ -92,6 +97,7 @@ else
 
     private List<FiscalYear> _fiscalYears = [];
     private List<GeneralLedgerAccountSection>? _sections;
+    private bool _isLoading;
     private int SelectedFiscalYearId { get; set; }
     private string? FromAccount { get; set; }
     private string? ToAccount { get; set; }
@@ -100,6 +106,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        _isLoading = true;
         _fiscalYears = await FiscalYearService.GetAllAsync();
         var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
         if (active is not null)
@@ -107,6 +114,7 @@ else
             SelectedFiscalYearId = active.Id;
             await LoadReport();
         }
+        _isLoading = false;
     }
 
     private async Task LoadReport()

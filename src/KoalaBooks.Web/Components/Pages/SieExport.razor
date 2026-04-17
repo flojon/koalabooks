@@ -2,9 +2,11 @@
 @rendermode InteractiveServer
 @using KoalaBooks.Infrastructure.Services
 @using KoalaBooks.Application.Services
+@using MudBlazor
 @inject SieExportService SieExportService
 @inject FiscalYearService FiscalYearService
 @inject IJSRuntime JS
+@inject ISnackbar Snackbar
 
 <PageTitle>Export SIE — KoalaBooks</PageTitle>
 
@@ -46,11 +48,6 @@ else
             <span>Export SIE-4</span>
         }
     </button>
-
-    @if (_errorMessage is not null)
-    {
-        <div class="alert alert-danger" style="margin-top: 1rem;">@_errorMessage</div>
-    }
 }
 
 @code {
@@ -58,7 +55,6 @@ else
     private int _selectedFyId;
     private string? _companyName;
     private bool _exporting;
-    private string? _errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -72,7 +68,6 @@ else
     private async Task ExportAsync()
     {
         _exporting = true;
-        _errorMessage = null;
 
         try
         {
@@ -84,7 +79,7 @@ else
         }
         catch (Exception ex)
         {
-            _errorMessage = $"Export failed: {ex.Message}";
+            Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
         }
         finally
         {

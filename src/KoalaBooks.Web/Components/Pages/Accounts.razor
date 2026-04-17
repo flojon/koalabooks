@@ -4,16 +4,23 @@
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
 @using KoalaBooks.Infrastructure.Services
+@using MudBlazor
 
 <PageTitle>Chart of Accounts — KoalaBooks</PageTitle>
 
 <h1>📋 Chart of Accounts</h1>
 
-@if (_activeFiscalYear is null)
+@if (_isLoading)
 {
-    <div class="alert alert-info">No active fiscal year found. <a href="/fiscal-years">Create one</a> to manage accounts.</div>
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_activeFiscalYear is null)
+{
+    <MudAlert Severity="Severity.Info">No active fiscal year found. <a href="/fiscal-years">Create one</a> to manage accounts.</MudAlert>
     return;
 }
+else
+{
 
 <p style="color:#64748b; margin-bottom:1rem;">Fiscal Year: <strong>@_activeFiscalYear.Name</strong></p>
 
@@ -26,11 +33,6 @@
         <InputFile OnChange="HandleFileUpload" style="display:none" accept=".csv" />
     </label>
 </div>
-
-@if (_importMessage is not null)
-{
-    <div class="alert @(_importIsError ? "alert-danger" : "alert-success")">@_importMessage</div>
-}
 
 @if (_showForm)
 {
@@ -58,7 +60,7 @@
         </div>
         @if (_formError is not null)
         {
-            <div class="alert alert-danger" style="margin-top:0.5rem;">@_formError</div>
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_formError</MudAlert>
         }
     </div>
 }
@@ -98,30 +100,34 @@
 
 @if (!_accounts.Any())
 {
-    <div class="alert alert-info" style="margin-top:1rem;">No accounts yet. Import a CSV or add accounts manually.</div>
+    <MudAlert Severity="Severity.Info" Class="mt-4">No accounts yet. Import a CSV or add accounts manually.</MudAlert>
+}
+
 }
 
 @code {
     [Inject] private AccountService AccountService { get; set; } = default!;
     [Inject] private CsvImportService CsvImportService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
     private List<Account> _accounts = [];
     private bool _showForm;
+    private bool _isLoading;
     private Account? _editingAccount;
     private string _formNumber = "";
     private string _formName = "";
     private AccountClass _formClass = AccountClass.Asset;
     private string? _formError;
-    private string? _importMessage;
-    private bool _importIsError;
 
     protected override async Task OnInitializedAsync()
     {
+        _isLoading = true;
         _activeFiscalYear = await FiscalYearService.GetActiveAsync();
         if (_activeFiscalYear is not null)
             await LoadAccounts();
+        _isLoading = false;
     }
 
     private async Task LoadAccounts()
@@ -180,23 +186,19 @@
 
     private async Task HandleFileUpload(InputFileChangeEventArgs e)
     {
-        _importMessage = null;
         try
         {
             using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
             var result = await CsvImportService.ImportAccountsAsync(stream, _activeFiscalYear!.Id);
-            _importMessage = $"Import complete: {result.Created} created, {result.Updated} updated, {result.Skipped} skipped.";
-            _importIsError = false;
+            var message = $"Import complete: {result.Created} created, {result.Updated} updated, {result.Skipped} skipped.";
             if (result.Errors.Any())
-            {
-                _importMessage += " Errors: " + string.Join("; ", result.Errors.Take(5));
-            }
+                message += " Errors: " + string.Join("; ", result.Errors.Take(5));
+            Snackbar.Add(message, Severity.Success);
             await LoadAccounts();
         }
         catch (Exception ex)
         {
-            _importMessage = $"Import failed: {ex.Message}";
-            _importIsError = true;
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
         }
     }
 }

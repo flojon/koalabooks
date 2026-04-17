@@ -3,21 +3,13 @@
 @using KoalaBooks.Infrastructure.Services
 @using KoalaBooks.Application.Services
 @using jsiSIE
+@using MudBlazor
 
 <PageTitle>Import SIE — KoalaBooks</PageTitle>
 
 <h1>📥 Import SIE-4 File</h1>
 
 <p style="color:#64748b;">Upload a SIE-4 file (.se / .si) to import fiscal year data including accounts, journal entries and balances.</p>
-
-@if (_error is not null)
-{
-    <div class="alert alert-danger">@_error</div>
-}
-@if (_success is not null)
-{
-    <div class="alert alert-success">@_success</div>
-}
 
 @if (_preview is null)
 {
@@ -141,12 +133,11 @@ else
 @code {
     [Inject] private SieImportService SieImportService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private SieDocument? _sieDocument;
     private SieImportPreview? _preview;
     private SieImportAllResult? _importAllResult;
-    private string? _error;
-    private string? _success;
     private bool _parsing;
     private bool _importing;
     private bool _confirmOverwrite;
@@ -155,8 +146,6 @@ else
 
     private async Task HandleFileUpload(InputFileChangeEventArgs e)
     {
-        _error = null;
-        _success = null;
         _parsing = true;
         _importAllResult = null;
 
@@ -170,7 +159,7 @@ else
 
             if (_sieDocument.SIETYP != 4)
             {
-                _error = $"Only SIE type 4 is supported. This file is type {_sieDocument.SIETYP}.";
+                Snackbar.Add($"Only SIE type 4 is supported. This file is type {_sieDocument.SIETYP}.", Severity.Error);
                 _sieDocument = null;
                 return;
             }
@@ -179,7 +168,7 @@ else
         }
         catch (Exception ex)
         {
-            _error = $"Failed to parse SIE file: {ex.Message}";
+            Snackbar.Add($"Failed to parse SIE file: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -189,8 +178,6 @@ else
 
     private async Task ImportAll()
     {
-        _error = null;
-        _success = null;
         _importing = true;
         _confirmOverwrite = false;
 
@@ -198,17 +185,16 @@ else
         {
             _importAllResult = await SieImportService.ImportAllAsync(_sieDocument!, overwrite: _hasExistingYears);
 
-            // Propagate balances for each imported fiscal year
             foreach (var fy in _importAllResult.FiscalYears)
                 await FiscalYearService.PropagateBalancesToNextYearAsync(fy.FiscalYearId);
 
             var totalEntries = _importAllResult.TotalEntriesImported;
             var fyCount = _importAllResult.FiscalYears.Count;
-            _success = $"Successfully imported {fyCount} fiscal year(s) with {totalEntries} entries.";
+            Snackbar.Add($"Successfully imported {fyCount} fiscal year(s) with {totalEntries} entries.", Severity.Success);
         }
         catch (Exception ex)
         {
-            _error = $"Import failed: {ex.Message}";
+            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -221,8 +207,6 @@ else
         _sieDocument = null;
         _preview = null;
         _importAllResult = null;
-        _error = null;
-        _success = null;
         _confirmOverwrite = false;
     }
 }
