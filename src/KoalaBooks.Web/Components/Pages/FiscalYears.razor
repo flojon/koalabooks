@@ -59,11 +59,11 @@
                 <td>
                     @if (fy.IsClosed)
                     {
-                        <span style="color:#dc2626;">🔒 Stängd</span>
+                        <span style="color:#dc2626;">🔒 Stängt</span>
                     }
                     else
                     {
-                        <span style="color:#16a34a;">✅ Öppen</span>
+                        <span style="color:#16a34a;">✅ Öppet</span>
                     }
                 </td>
                 <td>
@@ -188,12 +188,20 @@
             return;
         }
 
-        await FiscalYearService.CreateAsync(new FiscalYear
+        try
         {
-            Name = _formName.Trim(),
-            StartDate = DateOnly.FromDateTime(_formStart),
-            EndDate = DateOnly.FromDateTime(_formEnd)
-        });
+            await FiscalYearService.CreateAsync(new FiscalYear
+            {
+                Name = _formName.Trim(),
+                StartDate = DateOnly.FromDateTime(_formStart),
+                EndDate = DateOnly.FromDateTime(_formEnd)
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            Snackbar.Add("Räkenskapsåret överlappar med ett befintligt räkenskapsår.", Severity.Error);
+            return;
+        }
 
         _showForm = false;
         _formName = "";
