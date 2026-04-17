@@ -27,9 +27,9 @@ else
     <button class="btn btn-primary" @onclick="() => _showForm = !_showForm">
         @(_showForm ? "Cancel" : "+ Add Account")
     </button>
-    <label class="btn btn-secondary" style="margin:0;">
-        📁 Import CSV
-        <InputFile OnChange="HandleFileUpload" style="display:none" accept=".csv" />
+    <label class="btn btn-primary" style="display:inline-block; cursor:pointer;">
+        @(_importing ? "Importerar..." : "📁 Importera BAS Kontoplan")
+        <InputFile OnChange="HandleBasImport" style="display:none" accept=".xls,.xlsx" disabled="@_importing" />
     </label>
 </div>
 
@@ -99,21 +99,22 @@ else
 
 @if (!_accounts.Any())
 {
-    <MudAlert Severity="Severity.Info" Class="mt-4">No accounts yet. Import a CSV or add accounts manually.</MudAlert>
+    <MudAlert Severity="Severity.Info" Class="mt-4">Inga konton ännu. Importera en BAS kontoplan eller lägg till konton manuellt.</MudAlert>
 }
 
 }
 
 @code {
     [Inject] private AccountService AccountService { get; set; } = default!;
-    [Inject] private CsvImportService CsvImportService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private BasImportService BasImportService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
     private List<Account> _accounts = [];
     private bool _showForm;
     private bool _isLoading;
+    private bool _importing;
     private Account? _editingAccount;
     private string _formNumber = "";
     private string _formName = "";
@@ -183,21 +184,31 @@ else
         await LoadAccounts();
     }
 
-    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    private async Task HandleBasImport(InputFileChangeEventArgs e)
     {
+        _importing = true;
         try
         {
-            using var stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
-            var result = await CsvImportService.ImportAccountsAsync(stream, _activeFiscalYear!.Id);
-            var message = $"Import complete: {result.Created} created, {result.Updated} updated, {result.Skipped} skipped.";
-            if (result.Errors.Any())
-                message += " Errors: " + string.Join("; ", result.Errors.Take(5));
-            Snackbar.Add(message, Severity.Success);
+            using var stream = new MemoryStream();
+            await e.File.OpenReadStream(maxAllowedSize: 20 * 1024 * 1024).CopyToAsync(stream);
+            stream.Position = 0;
+
+            var result = await BasImportService.ImportFromExcelAsync(stream, _activeFiscalYear!.Id);
             await LoadAccounts();
+
+            if (result.Errors.Count > 0)
+                Snackbar.Add($"Importerade {result.ImportedCount}, hoppade över {result.SkippedCount}, {result.Errors.Count} fel", Severity.Warning);
+            else
+                Snackbar.Add($"Importerade {result.ImportedCount} konton, hoppade över {result.SkippedCount}", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Import misslyckades: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _importing = false;
         }
     }
+
 }
