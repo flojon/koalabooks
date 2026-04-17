@@ -37,6 +37,11 @@ public class FiscalYearService
 
     public async Task<FiscalYear> CreateAsync(FiscalYear fiscalYear)
     {
+        var hasOverlap = await _db.FiscalYears
+            .AnyAsync(f => f.StartDate <= fiscalYear.EndDate && f.EndDate >= fiscalYear.StartDate);
+        if (hasOverlap)
+            throw new InvalidOperationException("The fiscal year overlaps with an existing fiscal year.");
+
         _db.FiscalYears.Add(fiscalYear);
         await _db.SaveChangesAsync();
 
