@@ -28,7 +28,7 @@ else
         @(_showForm ? "Avbryt" : "+ Lägg till konto")
     </button>
     <label class="btn btn-primary" style="display:inline-block; cursor:pointer;">
-        @(_importing ? "Importerar..." : "📁 Importera BAS Kontoplan")
+        @(_importing ? "Importerar..." : "📁 Importera BAS-kontoplan")
         <InputFile OnChange="HandleBasImport" style="display:none" accept=".xls,.xlsx" disabled="@_importing" />
     </label>
 </div>
