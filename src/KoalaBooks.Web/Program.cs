@@ -44,11 +44,22 @@ var app = builder.Build();
 
 app.MapDefaultEndpoints();
 
-// Auto-migrate on startup
+// Auto-migrate on startup (retry for Aspire database creation race)
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
+    for (var attempt = 0; attempt < 10; attempt++)
+    {
+        try
+        {
+            await db.Database.MigrateAsync();
+            break;
+        }
+        catch (Exception) when (attempt < 9)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2));
+        }
+    }
 }
 
 if (!app.Environment.IsDevelopment())
