@@ -4,58 +4,58 @@
 @using jsiSIE
 @using MudBlazor
 
-<PageTitle>Import SIE — KoalaBooks</PageTitle>
+<PageTitle>Importera SIE — KoalaBooks</PageTitle>
 
-<h1>📥 Import SIE-4 File</h1>
+<h1>📥 Importera SIE-4-fil</h1>
 
-<p style="color:#64748b;">Upload a SIE-4 file (.se / .si) to import fiscal year data including accounts, journal entries and balances.</p>
+<p style="color:#64748b;">Ladda upp en SIE-4-fil (.se / .si) för att importera räkenskapsårsdata inklusive konton, verifikationer och saldon.</p>
 
 @if (_preview is null)
 {
     <div class="card">
-        <h3>Select File</h3>
+        <h3>Välj fil</h3>
         <div class="toolbar">
             <label class="btn btn-primary" style="margin:0;">
-                📁 Choose SIE File
+                📁 Välj SIE-fil
                 <InputFile OnChange="HandleFileUpload" style="display:none" accept=".se,.si,.sie" />
             </label>
         </div>
         @if (_parsing)
         {
-            <p style="color:#64748b; margin-top:0.5rem;">Parsing file...</p>
+            <p style="color:#64748b; margin-top:0.5rem;">Läser fil...</p>
         }
     </div>
 }
 else
 {
     <div class="card">
-        <h3>File Preview</h3>
+        <h3>Förhandsgranskning</h3>
         <table>
             <tbody>
-                <tr><td style="font-weight:600; width:150px;">Company</td><td>@(_preview.CompanyName ?? "—")</td></tr>
-                <tr><td style="font-weight:600;">Org Number</td><td>@(_preview.OrgNumber ?? "—")</td></tr>
-                <tr><td style="font-weight:600;">SIE Type</td><td>@_preview.SieType</td></tr>
-                <tr><td style="font-weight:600;">Accounts</td><td>@_preview.AccountCount</td></tr>
-                <tr><td style="font-weight:600;">Total Vouchers</td><td>@_preview.VoucherCount</td></tr>
+                <tr><td style="font-weight:600; width:150px;">Företag</td><td>@(_preview.CompanyName ?? "—")</td></tr>
+                <tr><td style="font-weight:600;">Org.nummer</td><td>@(_preview.OrgNumber ?? "—")</td></tr>
+                <tr><td style="font-weight:600;">SIE-typ</td><td>@_preview.SieType</td></tr>
+                <tr><td style="font-weight:600;">Konton</td><td>@_preview.AccountCount</td></tr>
+                <tr><td style="font-weight:600;">Antal verifikationer</td><td>@_preview.VoucherCount</td></tr>
             </tbody>
         </table>
     </div>
 
-    <h2>Fiscal Years</h2>
+    <h2>Räkenskapsår</h2>
 
     @foreach (var fy in _preview.FiscalYears)
     {
         <div class="card" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
             <strong>@fy.Label</strong>
             <span style="color:#64748b;">(@fy.Start — @fy.End)</span>
-            <span style="color:#64748b;">@fy.VoucherCount voucher(s)</span>
+            <span style="color:#64748b;">@fy.VoucherCount verifikation(er)</span>
             @if (fy.BalanceCount > 0)
             {
-                <span style="color:#64748b;">@fy.BalanceCount balance(s)</span>
+                <span style="color:#64748b;">@fy.BalanceCount saldo(n)</span>
             }
             @if (fy.ExistsInDatabase)
             {
-                <span style="color:#f59e0b;">⚠️ Already exists</span>
+                <span style="color:#f59e0b;">⚠️ Finns redan</span>
             }
         </div>
     }
@@ -66,22 +66,22 @@ else
             @if (_hasExistingYears && !_confirmOverwrite)
             {
                 <button class="btn btn-danger" @onclick="() => _confirmOverwrite = true" disabled="@_importing">
-                    Import (Overwrite Existing)
+                    Importera (skriv över befintliga)
                 </button>
             }
             else if (_confirmOverwrite)
             {
-                <span style="color:#dc2626; font-weight:600;">This will overwrite existing fiscal year data. Continue?</span>
-                <button class="btn btn-danger" @onclick="ImportAll" disabled="@_importing">Yes, Import All</button>
-                <button class="btn btn-secondary" @onclick="() => _confirmOverwrite = false">Cancel</button>
+                <span style="color:#dc2626; font-weight:600;">Detta skriver över befintlig räkenskapsårsdata. Fortsätta?</span>
+                <button class="btn btn-danger" @onclick="ImportAll" disabled="@_importing">Ja, importera allt</button>
+                <button class="btn btn-secondary" @onclick="() => _confirmOverwrite = false">Avbryt</button>
             }
             else
             {
-                <button class="btn btn-success" @onclick="ImportAll" disabled="@_importing">Import All</button>
+                <button class="btn btn-success" @onclick="ImportAll" disabled="@_importing">Importera allt</button>
             }
             @if (_importing)
             {
-                <span style="color:#64748b;">Importing...</span>
+                <span style="color:#64748b;">Importerar...</span>
             }
         </div>
     }
@@ -89,26 +89,26 @@ else
     @if (_importAllResult is not null)
     {
         <div class="card" style="margin-top:1rem;">
-            <h3>Import Result</h3>
+            <h3>Importresultat</h3>
             <table>
                 <tbody>
                     @foreach (var fy in _importAllResult.FiscalYears)
                     {
                         <tr>
                             <td style="font-weight:600;">@fy.FiscalYearName</td>
-                            <td>@fy.AccountsCreated account(s), @fy.EntriesImported entries, @fy.BalancesImported balance(s)</td>
+                            <td>@fy.AccountsCreated konto(n), @fy.EntriesImported verifikationer, @fy.BalancesImported saldo(n)</td>
                         </tr>
                     }
                     <tr style="font-weight:700; border-top:2px solid #e2e8f0;">
-                        <td>Total</td>
-                        <td>@_importAllResult.TotalAccountsCreated account(s), @_importAllResult.TotalEntriesImported entries, @_importAllResult.TotalBalancesImported balance(s)</td>
+                        <td>Summa</td>
+                        <td>@_importAllResult.TotalAccountsCreated konto(n), @_importAllResult.TotalEntriesImported verifikationer, @_importAllResult.TotalBalancesImported saldo(n)</td>
                     </tr>
                 </tbody>
             </table>
             @if (_importAllResult.Warnings.Any())
             {
                 <div class="alert alert-info" style="margin-top:0.5rem;">
-                    <strong>Warnings:</strong>
+                    <strong>Varningar:</strong>
                     <ul style="margin:0.25rem 0 0; padding-left:1.25rem;">
                         @foreach (var w in _importAllResult.Warnings.Take(20))
                         {
@@ -116,7 +116,7 @@ else
                         }
                         @if (_importAllResult.Warnings.Count > 20)
                         {
-                            <li>...and @(_importAllResult.Warnings.Count - 20) more</li>
+                            <li>...och @(_importAllResult.Warnings.Count - 20) till</li>
                         }
                     </ul>
                 </div>
@@ -125,7 +125,7 @@ else
     }
 
     <div style="margin-top:1rem;">
-        <button class="btn btn-secondary" @onclick="Reset">↩ Upload Another File</button>
+        <button class="btn btn-secondary" @onclick="Reset">↩ Ladda upp en ny fil</button>
     </div>
 }
 
@@ -158,7 +158,7 @@ else
 
             if (_sieDocument.SIETYP != 4)
             {
-                Snackbar.Add($"Only SIE type 4 is supported. This file is type {_sieDocument.SIETYP}.", Severity.Error);
+                Snackbar.Add($"Bara SIE typ 4 stöds. Denna fil är typ {_sieDocument.SIETYP}.", Severity.Error);
                 _sieDocument = null;
                 return;
             }
@@ -167,7 +167,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to parse SIE file: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Kunde inte läsa SIE-fil: {ex.Message}", Severity.Error);
         }
         finally
         {
@@ -189,11 +189,11 @@ else
 
             var totalEntries = _importAllResult.TotalEntriesImported;
             var fyCount = _importAllResult.FiscalYears.Count;
-            Snackbar.Add($"Successfully imported {fyCount} fiscal year(s) with {totalEntries} entries.", Severity.Success);
+            Snackbar.Add($"Importerade {fyCount} räkenskapsår med {totalEntries} verifikationer.", Severity.Success);
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Import failed: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Import misslyckades: {ex.Message}", Severity.Error);
         }
         finally
         {

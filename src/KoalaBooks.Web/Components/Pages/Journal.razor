@@ -4,13 +4,13 @@
 @using KoalaBooks.Domain.Entities
 @using MudBlazor
 
-<PageTitle>Journal Entries — KoalaBooks</PageTitle>
+<PageTitle>Verifikationer — KoalaBooks</PageTitle>
 
-<h1>📝 Journal Entries</h1>
+<h1>📝 Verifikationer</h1>
 
 @if (_activeFiscalYear is null && !_isLoading)
 {
-    <MudAlert Severity="Severity.Info">No active fiscal year. <a href="/fiscal-years">Create one</a> first.</MudAlert>
+    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
     return;
 }
 
@@ -21,31 +21,31 @@
 else
 {
 <div class="toolbar">
-    <button class="btn btn-primary" @onclick="NewEntry">+ New Entry</button>
-    <span style="color:#64748b;">Fiscal Year: <strong>@_activeFiscalYear!.Name</strong></span>
+    <button class="btn btn-primary" @onclick="NewEntry">+ Ny verifikation</button>
+    <span style="color:#64748b;">Räkenskapsår: <strong>@_activeFiscalYear!.Name</strong></span>
 </div>
 
 @if (_showForm)
 {
     <div class="card">
-        <h3>@(_isEditing ? "Edit" : "New") Journal Entry</h3>
+        <h3>@(_isEditing ? "Redigera" : "Ny") verifikation</h3>
         <div style="display:grid; grid-template-columns:150px 1fr; gap:0.5rem; margin-bottom:1rem;">
             <div class="form-group">
-                <label>Date</label>
+                <label>Datum</label>
                 <input type="date" @bind="_formDate" />
             </div>
             <div class="form-group">
-                <label>Description</label>
-                <input type="text" @bind="_formDescription" placeholder="Description of transaction" />
+                <label>Beskrivning</label>
+                <input type="text" @bind="_formDescription" placeholder="Beskrivning av transaktion" />
             </div>
         </div>
 
         <table>
             <thead>
                 <tr>
-                    <th>Account</th>
-                    <th style="width:160px;">Debit</th>
-                    <th style="width:160px;">Credit</th>
+                    <th>Konto</th>
+                    <th style="width:160px;">Debet</th>
+                    <th style="width:160px;">Kredit</th>
                     <th style="width:60px;"></th>
                 </tr>
             </thead>
@@ -72,17 +72,17 @@ else
         </table>
 
         <div class="toolbar" style="margin-top:0.5rem;">
-            <button class="btn btn-sm btn-secondary" @onclick="AddLine">+ Add Line</button>
+            <button class="btn btn-sm btn-secondary" @onclick="AddLine">+ Lägg till rad</button>
             <span>
-                Debit: <strong>@TotalDebit.ToString("N2")</strong> |
-                Credit: <strong>@TotalCredit.ToString("N2")</strong> |
-                Balance: <span class="@(IsBalanced ? "balance-ok" : "balance-err")">@((TotalDebit - TotalCredit).ToString("N2"))</span>
+                Debet: <strong>@TotalDebit.ToString("N2")</strong> |
+                Kredit: <strong>@TotalCredit.ToString("N2")</strong> |
+                Saldo: <span class="@(IsBalanced ? "balance-ok" : "balance-err")">@((TotalDebit - TotalCredit).ToString("N2"))</span>
             </span>
         </div>
 
         <div style="margin-top:1rem; display:flex; gap:0.5rem;">
-            <button class="btn btn-success" @onclick="SaveEntry" disabled="@(!IsBalanced)">💾 Save</button>
-            <button class="btn btn-secondary" @onclick="CancelForm">Cancel</button>
+            <button class="btn btn-success" @onclick="SaveEntry" disabled="@(!IsBalanced)">💾 Spara</button>
+            <button class="btn btn-secondary" @onclick="CancelForm">Avbryt</button>
         </div>
     </div>
 }
@@ -91,12 +91,12 @@ else
     <thead>
         <tr>
             <th style="width:60px;">#</th>
-            <th style="width:110px;">Date</th>
-            <th>Description</th>
-            <th style="width:120px;">Debit</th>
-            <th style="width:120px;">Credit</th>
+            <th style="width:110px;">Datum</th>
+            <th>Beskrivning</th>
+            <th style="width:120px;">Debet</th>
+            <th style="width:120px;">Kredit</th>
             <th style="width:90px;">Status</th>
-            <th style="width:180px;">Actions</th>
+            <th style="width:180px;">Åtgärder</th>
         </tr>
     </thead>
     <tbody>
@@ -111,39 +111,39 @@ else
                 <td>
                     @if (entry.IsPosted)
                     {
-                        <span style="color:#16a34a;">✅ Posted</span>
+                        <span style="color:#16a34a;">✅ Bokförd</span>
                     }
                     else
                     {
-                        <span style="color:#f59e0b;">📝 Draft</span>
+                        <span style="color:#f59e0b;">📝 Utkast</span>
                     }
                 </td>
                 <td>
                     @if (_reversingEntryId == entry.Id)
                     {
                         <div style="display:flex; gap:0.25rem; align-items:center;">
-                            <input type="text" @bind="_reversalReason" placeholder="Reason" style="width:120px;" />
-                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmReversal(entry.Id)">Confirm</button>
-                            <button class="btn btn-sm btn-secondary" @onclick="CancelReversal">Cancel</button>
+                            <input type="text" @bind="_reversalReason" placeholder="Anledning" style="width:120px;" />
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmReversal(entry.Id)">Bekräfta</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="CancelReversal">Avbryt</button>
                         </div>
                     }
                     else if (_deletingEntryId == entry.Id)
                     {
                         <div style="display:flex; gap:0.25rem; align-items:center;">
-                            <span>Are you sure?</span>
-                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(entry.Id)">Yes, delete</button>
-                            <button class="btn btn-sm btn-secondary" @onclick="CancelDelete">Cancel</button>
+                            <span>Är du säker?</span>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(entry.Id)">Ja, radera</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="CancelDelete">Avbryt</button>
                         </div>
                     }
                     else if (entry.IsPosted)
                     {
-                        <button class="btn btn-sm btn-warning" @onclick="() => StartReversal(entry.Id)">Reverse</button>
+                        <button class="btn btn-sm btn-warning" @onclick="() => StartReversal(entry.Id)">Återför</button>
                     }
                     else
                     {
-                        <button class="btn btn-sm btn-secondary" @onclick="() => EditEntry(entry)">Edit</button>
-                        <button class="btn btn-sm btn-success" @onclick="() => PostEntry(entry.Id)">Post</button>
-                        <button class="btn btn-sm btn-danger" @onclick="() => StartDelete(entry.Id)">🗑️ Delete</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => EditEntry(entry)">Redigera</button>
+                        <button class="btn btn-sm btn-success" @onclick="() => PostEntry(entry.Id)">Bokför</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => StartDelete(entry.Id)">🗑️ Radera</button>
                     }
                 </td>
             </tr>
@@ -153,7 +153,7 @@ else
 
 @if (!_entries.Any() && !_showForm)
 {
-    <MudAlert Severity="Severity.Info" Class="mt-4">No journal entries yet. Click "New Entry" to create one.</MudAlert>
+    <MudAlert Severity="Severity.Info" Class="mt-4">Inga verifikationer ännu. Klicka "Ny verifikation" för att skapa en.</MudAlert>
 }
 }
 
@@ -253,7 +253,7 @@ else
             return;
         }
 
-        Snackbar.Add(_isEditing ? "Entry updated." : $"Entry #{result!.EntryNumber} created.", Severity.Success);
+        Snackbar.Add(_isEditing ? "Verifikation uppdaterad." : $"Verifikation #{result!.EntryNumber} skapad.", Severity.Success);
         _showForm = false;
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
     }
@@ -273,7 +273,7 @@ else
             Snackbar.Add(error, Severity.Error);
             return;
         }
-        Snackbar.Add("Entry posted.", Severity.Success);
+        Snackbar.Add("Verifikation bokförd.", Severity.Success);
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
     }
 
@@ -290,7 +290,7 @@ else
             Snackbar.Add(error, Severity.Error);
             return;
         }
-        Snackbar.Add("Draft entry deleted.", Severity.Success);
+        Snackbar.Add("Utkastverifikation raderad.", Severity.Success);
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
     }
 
@@ -314,7 +314,7 @@ else
             Snackbar.Add(error, Severity.Error);
             return;
         }
-        Snackbar.Add($"Reversal entry #{result!.EntryNumber} created.", Severity.Success);
+        Snackbar.Add($"Återföringsverifikation #{result!.EntryNumber} skapad.", Severity.Success);
         _reversingEntryId = null;
         _reversalReason = "";
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);

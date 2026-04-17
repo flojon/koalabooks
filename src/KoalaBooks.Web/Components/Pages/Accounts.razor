@@ -5,9 +5,9 @@
 @using KoalaBooks.Infrastructure.Services
 @using MudBlazor
 
-<PageTitle>Chart of Accounts — KoalaBooks</PageTitle>
+<PageTitle>Kontoplan — KoalaBooks</PageTitle>
 
-<h1>📋 Chart of Accounts</h1>
+<h1>📋 Kontoplan</h1>
 
 @if (_isLoading)
 {
@@ -15,17 +15,17 @@
 }
 else if (_activeFiscalYear is null)
 {
-    <MudAlert Severity="Severity.Info">No active fiscal year found. <a href="/fiscal-years">Create one</a> to manage accounts.</MudAlert>
+    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår hittades. <a href="/fiscal-years">Skapa ett</a> för att hantera konton.</MudAlert>
     return;
 }
 else
 {
 
-<p style="color:#64748b; margin-bottom:1rem;">Fiscal Year: <strong>@_activeFiscalYear.Name</strong></p>
+<p style="color:#64748b; margin-bottom:1rem;">Räkenskapsår: <strong>@_activeFiscalYear.Name</strong></p>
 
 <div class="toolbar">
     <button class="btn btn-primary" @onclick="() => _showForm = !_showForm">
-        @(_showForm ? "Cancel" : "+ Add Account")
+        @(_showForm ? "Avbryt" : "+ Lägg till konto")
     </button>
     <label class="btn btn-primary" style="display:inline-block; cursor:pointer;">
         @(_importing ? "Importerar..." : "📁 Importera BAS Kontoplan")
@@ -36,18 +36,18 @@ else
 @if (_showForm)
 {
     <div class="card">
-        <h3>@(_editingAccount is null ? "Add Account" : "Edit Account")</h3>
+        <h3>@(_editingAccount is null ? "Lägg till konto" : "Redigera konto")</h3>
         <div style="display:grid; grid-template-columns:120px 1fr 200px auto; gap:0.5rem; align-items:end;">
             <div class="form-group">
-                <label>Number</label>
+                <label>Nummer</label>
                 <input type="text" @bind="_formNumber" placeholder="1910" />
             </div>
             <div class="form-group">
-                <label>Name</label>
+                <label>Namn</label>
                 <input type="text" @bind="_formName" placeholder="Kassa" />
             </div>
             <div class="form-group">
-                <label>Class</label>
+                <label>Klass</label>
                 <select @bind="_formClass">
                     @foreach (var c in Enum.GetValues<AccountClass>())
                     {
@@ -55,7 +55,7 @@ else
                     }
                 </select>
             </div>
-            <button class="btn btn-success" @onclick="SaveAccount">Save</button>
+            <button class="btn btn-success" @onclick="SaveAccount">Spara</button>
         </div>
         @if (_formError is not null)
         {
@@ -67,13 +67,13 @@ else
 <table>
     <thead>
         <tr>
-            <th style="width:100px;">Number</th>
-            <th>Name</th>
-            <th style="width:120px;">Class</th>
+            <th style="width:100px;">Nummer</th>
+            <th>Namn</th>
+            <th style="width:120px;">Klass</th>
             <th style="width:120px; text-align:right;">IB</th>
             <th style="width:120px; text-align:right;">UB</th>
-            <th style="width:80px;">Active</th>
-            <th style="width:120px;">Actions</th>
+            <th style="width:80px;">Aktiv</th>
+            <th style="width:120px;">Åtgärder</th>
         </tr>
     </thead>
     <tbody>
@@ -87,9 +87,9 @@ else
                 <td style="text-align:right;">@(account.OutgoingBalance != 0 ? account.OutgoingBalance.ToString("N2") : "—")</td>
                 <td>@(account.IsActive ? "✅" : "❌")</td>
                 <td>
-                    <button class="btn btn-sm btn-secondary" @onclick="() => EditAccount(account)">Edit</button>
+                    <button class="btn btn-sm btn-secondary" @onclick="() => EditAccount(account)">Redigera</button>
                     <button class="btn btn-sm btn-danger" @onclick="() => ToggleActive(account.Id)">
-                        @(account.IsActive ? "Disable" : "Enable")
+                        @(account.IsActive ? "Inaktivera" : "Aktivera")
                     </button>
                 </td>
             </tr>
@@ -149,7 +149,7 @@ else
         _formError = null;
         if (string.IsNullOrWhiteSpace(_formNumber) || string.IsNullOrWhiteSpace(_formName))
         {
-            _formError = "Number and Name are required.";
+            _formError = "Nummer och namn är obligatoriska.";
             return;
         }
 

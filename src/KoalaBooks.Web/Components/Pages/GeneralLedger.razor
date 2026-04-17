@@ -3,9 +3,9 @@
 @using KoalaBooks.Domain.Entities
 @using MudBlazor
 
-<PageTitle>General Ledger — KoalaBooks</PageTitle>
+<PageTitle>Huvudbok — KoalaBooks</PageTitle>
 
-<h1>📒 General Ledger</h1>
+<h1>📒 Huvudbok</h1>
 
 @if (_isLoading)
 {
@@ -14,7 +14,7 @@
 else if (_fiscalYears.Any())
 {
     <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
-        <label style="font-weight:600; color:#475569;">Fiscal Year:</label>
+        <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
         <select @bind="SelectedFiscalYearId" style="width:200px;">
             @foreach (var fy in _fiscalYears)
             {
@@ -22,26 +22,26 @@ else if (_fiscalYears.Any())
             }
         </select>
 
-        <label style="font-weight:600; color:#475569;">From Account:</label>
-        <input type="text" @bind="FromAccount" placeholder="e.g. 1000" style="width:100px;" />
+        <label style="font-weight:600; color:#475569;">Från konto:</label>
+        <input type="text" @bind="FromAccount" placeholder="t.ex. 1000" style="width:100px;" />
 
-        <label style="font-weight:600; color:#475569;">To Account:</label>
-        <input type="text" @bind="ToAccount" placeholder="e.g. 1999" style="width:100px;" />
+        <label style="font-weight:600; color:#475569;">Till konto:</label>
+        <input type="text" @bind="ToAccount" placeholder="t.ex. 1999" style="width:100px;" />
 
-        <label style="font-weight:600; color:#475569;">From Date:</label>
+        <label style="font-weight:600; color:#475569;">Från datum:</label>
         <input type="date" @bind="FromDate" style="width:150px;" />
 
-        <label style="font-weight:600; color:#475569;">To Date:</label>
+        <label style="font-weight:600; color:#475569;">Till datum:</label>
         <input type="date" @bind="ToDate" style="width:150px;" />
 
-        <button class="btn" @onclick="LoadReport">Generate</button>
+        <button class="btn" @onclick="LoadReport">Generera</button>
     </div>
 
     @if (_sections is not null)
     {
         @if (!_sections.Any())
         {
-            <MudAlert Severity="Severity.Info" Class="mt-4">No accounts found for the selected criteria.</MudAlert>
+            <MudAlert Severity="Severity.Info" Class="mt-4">Inga konton hittades för de valda kriterierna.</MudAlert>
         }
 
         @foreach (var acct in _sections)
@@ -51,17 +51,17 @@ else if (_fiscalYears.Any())
                 <table>
                     <thead>
                         <tr>
-                            <th style="width:110px;">Date</th>
-                            <th style="width:80px;">Entry#</th>
-                            <th>Description</th>
-                            <th style="width:130px; text-align:right;">Debit</th>
-                            <th style="width:130px; text-align:right;">Credit</th>
-                            <th style="width:140px; text-align:right;">Balance</th>
+                            <th style="width:110px;">Datum</th>
+                            <th style="width:80px;">Ver.nr</th>
+                            <th>Beskrivning</th>
+                            <th style="width:130px; text-align:right;">Debet</th>
+                            <th style="width:130px; text-align:right;">Kredit</th>
+                            <th style="width:140px; text-align:right;">Saldo</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr style="background:#f8fafc; font-weight:600;">
-                            <td colspan="5">Opening Balance</td>
+                            <td colspan="5">Ingående saldo</td>
                             <td style="text-align:right;">@acct.IncomingBalance.ToString("N2")</td>
                         </tr>
                         @foreach (var row in acct.Rows)
@@ -76,7 +76,7 @@ else if (_fiscalYears.Any())
                             </tr>
                         }
                         <tr style="background:#f1f5f9; font-weight:700;">
-                            <td colspan="5">Closing Balance</td>
+                            <td colspan="5">Utgående saldo</td>
                             <td style="text-align:right;">@acct.ClosingBalance.ToString("N2")</td>
                         </tr>
                     </tbody>
@@ -87,7 +87,7 @@ else if (_fiscalYears.Any())
 }
 else
 {
-    <MudAlert Severity="Severity.Info">No fiscal years found. <a href="/fiscal-years">Create one</a> first.</MudAlert>
+    <MudAlert Severity="Severity.Info">Inga räkenskapsår hittades. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
 }
 
 @code {

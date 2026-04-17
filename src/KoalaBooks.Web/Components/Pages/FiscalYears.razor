@@ -3,34 +3,34 @@
 @using KoalaBooks.Domain.Entities
 @using MudBlazor
 
-<PageTitle>Fiscal Years — KoalaBooks</PageTitle>
+<PageTitle>Räkenskapsår — KoalaBooks</PageTitle>
 
-<h1>📅 Fiscal Years</h1>
+<h1>📅 Räkenskapsår</h1>
 
 <div class="toolbar">
     <button class="btn btn-primary" @onclick="() => _showForm = !_showForm">
-        @(_showForm ? "Cancel" : "+ New Fiscal Year")
+        @(_showForm ? "Avbryt" : "+ Nytt räkenskapsår")
     </button>
 </div>
 
 @if (_showForm)
 {
     <div class="card">
-        <h3>Create Fiscal Year</h3>
+        <h3>Skapa räkenskapsår</h3>
         <div style="display:grid; grid-template-columns:1fr 150px 150px auto; gap:0.5rem; align-items:end;">
             <div class="form-group">
-                <label>Name</label>
-                <input type="text" @bind="_formName" placeholder="e.g. 2026" />
+                <label>Namn</label>
+                <input type="text" @bind="_formName" placeholder="t.ex. 2026" />
             </div>
             <div class="form-group">
-                <label>Start Date</label>
+                <label>Startdatum</label>
                 <input type="date" @bind="_formStart" />
             </div>
             <div class="form-group">
-                <label>End Date</label>
+                <label>Slutdatum</label>
                 <input type="date" @bind="_formEnd" />
             </div>
-            <button class="btn btn-success" @onclick="Create">Create</button>
+            <button class="btn btn-success" @onclick="Create">Skapa</button>
         </div>
         @if (_formError is not null)
         {
@@ -42,11 +42,11 @@
 <table>
     <thead>
         <tr>
-            <th>Name</th>
+            <th>Namn</th>
             <th>Start</th>
-            <th>End</th>
+            <th>Slut</th>
             <th style="width:100px;">Status</th>
-            <th style="width:160px;">Actions</th>
+            <th style="width:160px;">Åtgärder</th>
         </tr>
     </thead>
     <tbody>
@@ -59,11 +59,11 @@
                 <td>
                     @if (fy.IsClosed)
                     {
-                        <span style="color:#dc2626;">🔒 Closed</span>
+                        <span style="color:#dc2626;">🔒 Stängd</span>
                     }
                     else
                     {
-                        <span style="color:#16a34a;">✅ Open</span>
+                        <span style="color:#16a34a;">✅ Öppen</span>
                     }
                 </td>
                 <td>
@@ -144,7 +144,7 @@
 
 @if (!_fiscalYears.Any())
 {
-    <MudAlert Severity="Severity.Info" Class="mt-4">No fiscal years created yet.</MudAlert>
+    <MudAlert Severity="Severity.Info" Class="mt-4">Inga räkenskapsår skapade ännu.</MudAlert>
 }
 
 @code {
@@ -179,12 +179,12 @@
         _formError = null;
         if (string.IsNullOrWhiteSpace(_formName))
         {
-            _formError = "Name is required.";
+            _formError = "Namn är obligatoriskt.";
             return;
         }
         if (_formStart >= _formEnd)
         {
-            _formError = "Start date must be before end date.";
+            _formError = "Startdatum måste vara före slutdatum.";
             return;
         }
 
@@ -223,7 +223,7 @@
 
         if (!result.Success)
         {
-            Snackbar.Add(result.Error ?? "Closing failed.", Severity.Error);
+            Snackbar.Add(result.Error ?? "Bokslut misslyckades.", Severity.Error);
             _closingFiscalYearId = null;
             _closingPreview = null;
             return;

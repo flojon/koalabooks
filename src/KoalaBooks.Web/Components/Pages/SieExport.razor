@@ -7,22 +7,22 @@
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar
 
-<PageTitle>Export SIE — KoalaBooks</PageTitle>
+<PageTitle>Exportera SIE — KoalaBooks</PageTitle>
 
-<h1>📤 Export SIE-4 File</h1>
+<h1>📤 Exportera SIE-4-fil</h1>
 
 @if (_fiscalYears is null)
 {
-    <p>Loading fiscal years…</p>
+    <p>Laddar räkenskapsår…</p>
 }
 else if (_fiscalYears.Count == 0)
 {
-    <p>No fiscal years found. Create one first.</p>
+    <p>Inga räkenskapsår hittades. Skapa ett först.</p>
 }
 else
 {
     <div class="form-group" style="margin-bottom: 1rem;">
-        <label for="fy-select"><strong>Fiscal Year</strong></label>
+        <label for="fy-select"><strong>Räkenskapsår</strong></label>
         <select id="fy-select" @bind="_selectedFyId" class="form-control" style="max-width: 300px;">
             @foreach (var fy in _fiscalYears)
             {
@@ -32,19 +32,19 @@ else
     </div>
 
     <div class="form-group" style="margin-bottom: 1rem;">
-        <label for="company-name"><strong>Company Name</strong> (optional)</label>
+        <label for="company-name"><strong>Företagsnamn</strong> (valfritt)</label>
         <input id="company-name" type="text" @bind="_companyName" class="form-control"
-               placeholder="Leave blank to use fiscal year name" style="max-width: 300px;" />
+               placeholder="Lämna tomt för att använda räkenskapsårets namn" style="max-width: 300px;" />
     </div>
 
     <button class="btn btn-primary" @onclick="ExportAsync" disabled="@_exporting">
         @if (_exporting)
         {
-            <span>Exporting…</span>
+            <span>Exporterar…</span>
         }
         else
         {
-            <span>Export SIE-4</span>
+            <span>Exportera SIE-4</span>
         }
     </button>
 }
@@ -78,7 +78,7 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Export failed: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Export misslyckades: {ex.Message}", Severity.Error);
         }
         finally
         {
