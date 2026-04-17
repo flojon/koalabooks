@@ -2,7 +2,10 @@ using KoalaBooks.Application.Services;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using KoalaBooks.Web.Components;
+using KoalaBooks.Web.Services;
 using Microsoft.EntityFrameworkCore;
+using MudBlazor;
+using MudBlazor.Services;
 using System.Text;
 
 // Register CP437 encoding provider early so JsiSie uses it for SIE file parsing
@@ -12,7 +15,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.AddSqlServerDbContext<AppDbContext>("koalabooks");
+builder.AddNpgsqlDbContext<AppDbContext>("koalabooks");
 
 builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<SieImportService>();
@@ -21,6 +24,18 @@ builder.Services.AddScoped<FiscalYearService>();
 builder.Services.AddScoped<JournalEntryService>();
 builder.Services.AddScoped<SieExportService>();
 builder.Services.AddScoped<YearEndClosingService>();
+builder.Services.AddScoped<BasImportService>();
+
+builder.Services.AddScoped<NotificationService>();
+
+builder.Services.AddMudServices(config =>
+{
+    config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight;
+    config.SnackbarConfiguration.MaxDisplayedSnackbars = 3;
+    config.SnackbarConfiguration.VisibleStateDuration = 3000;
+    config.SnackbarConfiguration.HideTransitionDuration = 300;
+    config.SnackbarConfiguration.ShowTransitionDuration = 300;
+});
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

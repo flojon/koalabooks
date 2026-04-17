@@ -1,12 +1,12 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var sql = builder.AddSqlServer("sql")
-    .WithDataVolume("koalabooks-sql-data")
+var postgres = builder.AddPostgres("postgres")
+    .WithDataVolume("koalabooks-postgres-data")
     .WithLifetime(ContainerLifetime.Persistent)
     .AddDatabase("koalabooks");
 
 builder.AddProject<Projects.KoalaBooks_Web>("koalabooks-web")
-    .WithReference(sql)
-    .WaitFor(sql);
+    .WithReference(postgres)
+    .WaitFor(postgres);
 
 builder.Build().Run();

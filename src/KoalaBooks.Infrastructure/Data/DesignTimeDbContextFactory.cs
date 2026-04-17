@@ -8,7 +8,7 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
     public AppDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=KoalaBooks;Trusted_Connection=True;");
+        optionsBuilder.UseNpgsql("Host=localhost;Database=KoalaBooks;Username=postgres;Password=postgres");
         return new AppDbContext(optionsBuilder.Options);
     }
 }
