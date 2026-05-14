@@ -29,10 +29,12 @@ public record BankImportResult(int Imported, int Skipped, int Duplicates, List<s
 public class BankImportService
 {
     private readonly AppDbContext _db;
+    private readonly TenantContext _tenant;
 
-    public BankImportService(AppDbContext db)
+    public BankImportService(AppDbContext db, TenantContext tenant)
     {
         _db = db;
+        _tenant = tenant;
     }
 
     public BankFileParseResult ParseFile(Stream stream, string fileName)
@@ -239,6 +241,7 @@ public class BankImportService
 
             var tx = new BankTransaction
             {
+                OrganisationId = _tenant.OrganisationId ?? throw new InvalidOperationException("No active tenant."),
                 AccountId = accountId,
                 Date = p.Date!.Value,
                 Amount = p.Amount!.Value,

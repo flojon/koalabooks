@@ -9,10 +9,12 @@ namespace KoalaBooks.Application.Services;
 public class FiscalYearService
 {
     private readonly AppDbContext _db;
+    private readonly TenantContext _tenant;
 
-    public FiscalYearService(AppDbContext db)
+    public FiscalYearService(AppDbContext db, TenantContext tenant)
     {
         _db = db;
+        _tenant = tenant;
     }
 
     public async Task<List<FiscalYear>> GetAllAsync()
@@ -37,6 +39,9 @@ public class FiscalYearService
 
     public async Task<FiscalYear> CreateAsync(FiscalYear fiscalYear)
     {
+        fiscalYear.OrganisationId = _tenant.OrganisationId
+            ?? throw new InvalidOperationException("No active tenant.");
+
         var hasOverlap = await _db.FiscalYears
             .AnyAsync(f => f.StartDate <= fiscalYear.EndDate && f.EndDate >= fiscalYear.StartDate);
         if (hasOverlap)

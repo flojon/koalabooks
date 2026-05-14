@@ -5,6 +5,8 @@ namespace KoalaBooks.Domain.Entities;
 public class BankTransaction
 {
     public int Id { get; set; }
+    public int OrganisationId { get; set; }
+    public Organisation Organisation { get; set; } = null!;
     public int AccountId { get; set; }
     public Account Account { get; set; } = null!;
     public DateOnly Date { get; set; }

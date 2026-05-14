@@ -1,4 +1,5 @@
 using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Entities;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using KoalaBooks.Web.Components;
@@ -17,6 +18,9 @@ builder.AddServiceDefaults();
 
 builder.AddNpgsqlDbContext<AppDbContext>("koalabooks");
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<TenantContext>();
+
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
     options.Password.RequireDigit = true;
@@ -27,7 +31,8 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     options.SignIn.RequireConfirmedAccount = false;
 })
 .AddEntityFrameworkStores<AppDbContext>()
-.AddDefaultTokenProviders();
+.AddDefaultTokenProviders()
+.AddClaimsPrincipalFactory<ApplicationUserClaimsPrincipalFactory>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {
@@ -112,17 +117,22 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    // Seed a default dev user if none exists
+    // Seed a default org + dev user if none exists
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
     const string devEmail = "admin@koalabooks.local";
     if (await userManager.FindByEmailAsync(devEmail) is null)
     {
+        var org = new Organisation { Name = "Dev Organisation", Slug = "dev" };
+        db.Organisations.Add(org);
+        await db.SaveChangesAsync();
+
         var devUser = new ApplicationUser
         {
             UserName = devEmail,
             Email = devEmail,
             EmailConfirmed = true,
-            DisplayName = "Admin"
+            DisplayName = "Admin",
+            OrganisationId = org.Id
         };
         await userManager.CreateAsync(devUser, "Admin123!");
     }

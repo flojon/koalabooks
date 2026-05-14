@@ -6,8 +6,14 @@ namespace KoalaBooks.Infrastructure.Data;
 
 public class AppDbContext : IdentityDbContext<ApplicationUser>
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    private readonly TenantContext _tenant;
 
+    public AppDbContext(DbContextOptions<AppDbContext> options, TenantContext tenant) : base(options)
+    {
+        _tenant = tenant;
+    }
+
+    public DbSet<Organisation> Organisations => Set<Organisation>();
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
@@ -20,6 +26,19 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.UseOpenIddict();
+
+        modelBuilder.Entity<Organisation>(entity =>
+        {
+            entity.Property(o => o.Name).HasMaxLength(200);
+            entity.Property(o => o.Slug).HasMaxLength(100);
+            entity.HasIndex(o => o.Slug).IsUnique();
+        });
+
+        modelBuilder.Entity<FiscalYear>()
+            .HasQueryFilter(f => _tenant.OrganisationId == null || f.OrganisationId == _tenant.OrganisationId);
+
+        modelBuilder.Entity<BankTransaction>()
+            .HasQueryFilter(b => _tenant.OrganisationId == null || b.OrganisationId == _tenant.OrganisationId);
 
         modelBuilder.Entity<Account>(entity =>
         {
@@ -38,6 +57,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.Property(f => f.Name).HasMaxLength(100);
             entity.Property(f => f.ClosedAt);
+            entity.HasOne(f => f.Organisation)
+                  .WithMany()
+                  .HasForeignKey(f => f.OrganisationId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<JournalEntry>(entity =>
@@ -104,6 +127,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(b => b.Amount).HasPrecision(18, 2);
             entity.Property(b => b.Description).HasMaxLength(500);
             entity.Property(b => b.Reference).HasMaxLength(200);
+            entity.HasOne(b => b.Organisation)
+                  .WithMany()
+                  .HasForeignKey(b => b.OrganisationId)
+                  .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(b => b.Account)
                   .WithMany()
                   .HasForeignKey(b => b.AccountId)
