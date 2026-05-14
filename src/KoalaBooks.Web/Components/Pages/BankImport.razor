@@ -1,0 +1,711 @@
+@page "/import/bank"
+@page "/import/tax"
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Enums
+@using KoalaBooks.Infrastructure.Services
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Forms
+
+<PageTitle>@PageTitle — KoalaBooks</PageTitle>
+
+<h1>@PageIcon @PageTitle</h1>
+
+@if (_isLoading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_fiscalYear is null)
+{
+    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår hittades. <a href="/fiscal-years">Skapa ett</a> för att fortsätta.</MudAlert>
+}
+else if (!_bankAccounts.Any())
+{
+    <MudAlert Severity="Severity.Info">Inga konton (@AccountPrefix&#42;&#42;) hittades för räkenskapsåret <strong>@_fiscalYear.Name</strong>. <a href="/accounts">Lägg till konton</a> eller importera en kontoplan.</MudAlert>
+}
+else
+{
+
+<div class="toolbar" style="margin-bottom:1.5rem; align-items:center; flex-wrap:wrap; gap:0.75rem;">
+    @if (!IsTaxMode)
+    {
+        <label style="font-weight:600; color:#475569;">Konto:</label>
+        <select @bind="_selectedAccountId" @bind:after="OnAccountChanged" style="width:260px;">
+            @foreach (var a in _bankAccounts)
+            {
+                <option value="@a.Id">@a.AccountNumber — @a.Name</option>
+            }
+        </select>
+    }
+    <button class="btn btn-primary" @onclick="ShowImportWizard">+ Importera transaktioner</button>
+</div>
+
+@if (_showWizard)
+{
+    <div class="card" style="margin-bottom:1.5rem;">
+        @if (_wizardStep == 1)
+        {
+            <h3>@(IsTaxMode ? "Välj fil" : "Steg 1 av 3 — Välj fil")</h3>
+            <p style="color:#64748b;">Välj en CSV-fil med @(IsTaxMode ? "skattekontouttag" : "banktransaktioner").</p>
+
+            @if (!IsTaxMode)
+            {
+                <div class="form-group" style="margin-bottom:1rem;">
+                    <label>Datumformat i filen:</label>
+                    <select @bind="_dateFormat" style="width:200px;">
+                        <option value="yyyy-MM-dd">yyyy-MM-dd (ISO, vanligast)</option>
+                        <option value="yyyyMMdd">yyyyMMdd</option>
+                        <option value="dd/MM/yyyy">dd/MM/yyyy</option>
+                        <option value="dd-MM-yyyy">dd-MM-yyyy</option>
+                        <option value="MM/dd/yyyy">MM/dd/yyyy</option>
+                    </select>
+                </div>
+            }
+
+            <label class="btn btn-secondary" style="cursor:pointer; display:inline-block;">
+                📁 Välj fil (@(_uploadedFileName ?? "ingen vald"))
+                <InputFile OnChange="HandleFileUpload" style="display:none"
+                           accept=".csv,.txt,.tsv,.xls,.xlsx" />
+            </label>
+
+            @if (_parseError is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-3">@_parseError</MudAlert>
+            }
+
+            <div style="margin-top:1rem;">
+                <button class="btn btn-secondary" @onclick="CancelWizard">Avbryt</button>
+            </div>
+        }
+        else if (_wizardStep == 2)
+        {
+            <h3>Steg 2 av 3 — Mappa kolumner</h3>
+            <p style="color:#64748b;">Välj vilken kolumn i filen som innehåller varje fält.</p>
+
+            <div style="display:grid; grid-template-columns:140px 1fr; gap:0.5rem 1rem; align-items:center; max-width:420px; margin-bottom:1.5rem;">
+                <label style="font-weight:600;">Datum <span style="color:#ef4444;">*</span></label>
+                <select @bind="_dateCol">
+                    @for (int i = 0; i < _headers.Count; i++) { var idx = i;
+                        <option value="@idx">@_headers[idx]</option>
+                    }
+                </select>
+
+                <label style="font-weight:600;">Belopp <span style="color:#ef4444;">*</span></label>
+                <select @bind="_amountCol">
+                    @for (int i = 0; i < _headers.Count; i++) { var idx = i;
+                        <option value="@idx">@_headers[idx]</option>
+                    }
+                </select>
+
+                <label style="font-weight:600;">Beskrivning <span style="color:#ef4444;">*</span></label>
+                <select @bind="_descCol">
+                    @for (int i = 0; i < _headers.Count; i++) { var idx = i;
+                        <option value="@idx">@_headers[idx]</option>
+                    }
+                </select>
+
+                <label style="font-weight:600; color:#64748b;">Referens</label>
+                <select @bind="_refColRaw">
+                    <option value="-1">(ingen)</option>
+                    @for (int i = 0; i < _headers.Count; i++) { var idx = i;
+                        <option value="@idx">@_headers[idx]</option>
+                    }
+                </select>
+            </div>
+
+            <p style="color:#64748b; font-size:0.875rem;">Förhandsvisning (första @Math.Min(3, _allRows.Count) rader):</p>
+            <div style="overflow-x:auto; margin-bottom:1rem;">
+                <table style="font-size:0.8rem;">
+                    <thead><tr>@foreach (var h in _headers) { <th>@h</th> }</tr></thead>
+                    <tbody>
+                        @foreach (var row in _allRows.Take(3))
+                        {
+                            <tr>@foreach (var cell in row) { <td>@cell</td> }</tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-secondary" @onclick="() => _wizardStep = 1">Tillbaka</button>
+                <button class="btn btn-primary" @onclick="BuildPreview" disabled="@_buildingPreview">
+                    @(_buildingPreview ? "Analyserar..." : "Nästa →")
+                </button>
+            </div>
+        }
+        else if (_wizardStep == 3)
+        {
+            var newRows = _preview.Where(p => p.ParseError is null && !p.IsDuplicate).ToList();
+            var dupRows = _preview.Where(p => p.IsDuplicate).ToList();
+            var errRows = _preview.Where(p => p.ParseError is not null).ToList();
+
+            <h3>Steg 3 av 3 — Förhandsvisning</h3>
+            <div style="display:flex; gap:1.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+                <span style="color:#16a34a; font-weight:600;">✅ @newRows.Count nya</span>
+                <span style="color:#f59e0b; font-weight:600;">⏭ @dupRows.Count dubbletter (hoppas över)</span>
+                @if (errRows.Any())
+                {
+                    <span style="color:#ef4444; font-weight:600;">❌ @errRows.Count fel (hoppas över)</span>
+                }
+            </div>
+
+            <div style="overflow-x:auto; max-height:400px; overflow-y:auto;">
+                <table style="font-size:0.85rem;">
+                    <thead>
+                        <tr>
+                            <th style="width:110px;">Datum</th>
+                            <th style="width:120px; text-align:right;">Belopp</th>
+                            <th>Beskrivning</th>
+                            <th>Referens</th>
+                            <th style="width:90px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _preview)
+                        {
+                            var s = row.ParseError is not null ? "background:#fef2f2;" : row.IsDuplicate ? "background:#fefce8; color:#78716c;" : "";
+                            <tr style="@s">
+                                <td>@(row.Date.HasValue ? row.Date.Value.ToString("yyyy-MM-dd") : "—")</td>
+                                <td style="text-align:right; font-family:monospace;">@(row.Amount.HasValue ? row.Amount.Value.ToString("N2") : "—")</td>
+                                <td>@row.Description</td>
+                                <td style="color:#64748b;">@(row.Reference ?? "")</td>
+                                <td style="font-size:0.8rem;">
+                                    @if (row.ParseError is not null) { <span style="color:#ef4444;" title="@row.ParseError">❌ Fel</span> }
+                                    else if (row.IsDuplicate) { <span style="color:#d97706;">Dubblett</span> }
+                                    else { <span style="color:#16a34a;">Ny</span> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+                <button class="btn btn-secondary" @onclick="() => _wizardStep = 2">Tillbaka</button>
+                <button class="btn btn-success" @onclick="ConfirmImport"
+                        disabled="@(_importing || newRows.Count == 0)">
+                    @(_importing ? "Importerar..." : $"Importera {newRows.Count} transaktioner")
+                </button>
+                <button class="btn btn-secondary" @onclick="CancelWizard">Avbryt</button>
+            </div>
+        }
+    </div>
+}
+
+@if (_importResult is not null)
+{
+    <MudAlert Severity="Severity.Success" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="() => _importResult = null">
+        Importerade <strong>@_importResult.Imported</strong> transaktioner.
+        @if (_importResult.Duplicates > 0) { <span> @_importResult.Duplicates dubbletter hoppades över.</span> }
+        @if (_importResult.Skipped > 0) { <span> @_importResult.Skipped rader med fel hoppades över.</span> }
+    </MudAlert>
+}
+
+@if (_actionError is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => _actionError = null">@_actionError</MudAlert>
+}
+
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; flex-wrap:wrap; gap:0.5rem;">
+        <h3 style="margin:0;">
+            Importerade transaktioner
+            @if (_transactions.Any())
+            {
+                <span style="font-size:0.875rem; font-weight:400; color:#64748b; margin-left:0.5rem;">(@Filtered.Count() st visas)</span>
+            }
+        </h3>
+        <div style="display:flex; gap:0.25rem;">
+            @foreach (var (label, val) in StatusTabs)
+            {
+                <button class="btn btn-sm @(_statusFilter == val ? "btn-primary" : "btn-secondary")"
+                        @onclick="() => { _statusFilter = val; _expandedId = null; }">
+                    @label
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (!Filtered.Any())
+    {
+        <p style="color:#94a3b8; font-style:italic; margin:0;">
+            @(_transactions.Any() ? "Inga transaktioner matchar filtret." : "Inga importerade transaktioner för detta konto.")
+        </p>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:110px;">Datum</th>
+                    <th style="width:130px; text-align:right;">Belopp</th>
+                    <th>Beskrivning</th>
+                    <th style="width:130px;">Referens</th>
+                    <th style="width:220px;">Åtgärd</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var tx in Filtered)
+                {
+                    var isExpanded = _expandedId == tx.Id;
+                    var rowStyle = tx.Status == BankTransactionStatus.Ignored ? "opacity:0.55;" : "";
+
+                    <tr style="@rowStyle">
+                        <td>@tx.Date.ToString("yyyy-MM-dd")</td>
+                        <td style="text-align:right; font-family:monospace; @(tx.Amount < 0 ? "color:#ef4444;" : "color:#16a34a;")">
+                            @tx.Amount.ToString("N2")
+                        </td>
+                        <td>@tx.Description</td>
+                        <td style="color:#64748b; font-size:0.875rem;">@(tx.Reference ?? "")</td>
+                        <td>
+                            @if (tx.Status == BankTransactionStatus.Matched && tx.JournalEntry is not null)
+                            {
+                                <span style="color:#16a34a; font-size:0.875rem;">✅ Ver. #@tx.JournalEntry.EntryNumber</span>
+                                <button class="btn btn-sm btn-secondary" style="margin-left:0.5rem;"
+                                        @onclick="() => UnmatchAsync(tx)">Lossa</button>
+                            }
+                            else if (tx.Status == BankTransactionStatus.Ignored)
+                            {
+                                <button class="btn btn-sm btn-secondary" @onclick="() => UnignoreAsync(tx)">Återställ</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-success"
+                                        @onclick="() => ToggleExpand(tx.Id, ExpandMode.CreateEntry)">
+                                    @(isExpanded && _expandMode == ExpandMode.CreateEntry ? "Avbryt" : "Bokför")
+                                </button>
+                                <button class="btn btn-sm btn-secondary"
+                                        @onclick="() => ToggleExpand(tx.Id, ExpandMode.MatchEntry)">
+                                    @(isExpanded && _expandMode == ExpandMode.MatchEntry ? "Avbryt" : "Matcha")
+                                </button>
+                                <button class="btn btn-sm btn-secondary"
+                                        @onclick="() => IgnoreAsync(tx)">Ignorera</button>
+                            }
+                        </td>
+                    </tr>
+
+                    @if (isExpanded && _expandMode == ExpandMode.CreateEntry)
+                    {
+                        <tr style="background:#f8fafc;">
+                            <td colspan="5" style="padding:1rem;">
+                                <div style="max-width:500px;">
+                                    <p style="margin:0 0 0.75rem 0; font-weight:600;">Ny verifikation från banktransaktion</p>
+
+                                    @{
+                                        var bankLine = tx.Amount >= 0
+                                            ? $"Debet {tx.Amount:N2} → {SelectedBankAccountNumber}"
+                                            : $"Kredit {Math.Abs(tx.Amount):N2} → {SelectedBankAccountNumber}";
+                                        var contraLine = tx.Amount >= 0
+                                            ? $"Kredit {tx.Amount:N2} → motkonto"
+                                            : $"Debet {Math.Abs(tx.Amount):N2} → motkonto";
+                                    }
+                                    <p style="font-size:0.8rem; color:#64748b; margin:0 0 0.75rem 0;">
+                                        @bankLine &nbsp;|&nbsp; @contraLine
+                                    </p>
+
+                                    <div style="display:grid; grid-template-columns:120px 1fr; gap:0.4rem 0.75rem; align-items:center; margin-bottom:0.75rem;">
+                                        <label style="font-weight:600;">Motkonto</label>
+                                        <div>
+                                            <AccountSearchDropdown Accounts="_allAccounts"
+                                                @bind-SelectedAccountId="_newEntryContraAccountId" />
+                                            @if (_contraWasSuggested && _newEntryContraAccountId != 0)
+                                            {
+                                                <div style="font-size:0.75rem; color:#64748b; margin-top:0.2rem;">💡 Förslag baserat på tidigare bokföring</div>
+                                            }
+                                        </div>
+
+                                        <label style="font-weight:600;">Beskrivning</label>
+                                        <input type="text" @bind="_newEntryDescription" style="width:100%;" />
+                                    </div>
+
+                                    <button class="btn btn-success" @onclick="() => CreateJournalEntryAsync(tx)"
+                                            disabled="@(_newEntryContraAccountId == 0 || _actioning)">
+                                        @(_actioning ? "Skapar..." : "Skapa verifikation")
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+
+                    @if (isExpanded && _expandMode == ExpandMode.MatchEntry)
+                    {
+                        <tr style="background:#f8fafc;">
+                            <td colspan="5" style="padding:1rem;">
+                                <div style="max-width:600px;">
+                                    <p style="margin:0 0 0.75rem 0; font-weight:600;">Matcha mot befintlig verifikation</p>
+                                    @if (!_existingEntries.Any())
+                                    {
+                                        <p style="color:#94a3b8; font-style:italic;">Inga omatchade bokförda verifikationer på detta konto.</p>
+                                    }
+                                    else
+                                    {
+                                        <table style="font-size:0.85rem; margin-bottom:0.75rem;">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:60px;">Ver.nr</th>
+                                                    <th style="width:110px;">Datum</th>
+                                                    <th>Beskrivning</th>
+                                                    <th style="width:120px; text-align:right;">Belopp</th>
+                                                    <th style="width:80px;"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var entry in _existingEntries)
+                                                {
+                                                    var bankLine = entry.Lines.FirstOrDefault(l => l.AccountId == _selectedAccountId);
+                                                    var entryAmount = bankLine is not null ? bankLine.DebitAmount - bankLine.CreditAmount : 0m;
+                                                    <tr>
+                                                        <td>#@entry.EntryNumber</td>
+                                                        <td>@entry.Date.ToString("yyyy-MM-dd")</td>
+                                                        <td>@entry.Description</td>
+                                                        <td style="text-align:right; font-family:monospace; @(entryAmount < 0 ? "color:#ef4444;" : "color:#16a34a;")">
+                                                            @entryAmount.ToString("N2")
+                                                        </td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-success"
+                                                                    @onclick="() => MatchToExistingAsync(tx, entry.Id)"
+                                                                    disabled="@_actioning">
+                                                                Välj
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => _expandedId = null">Avbryt</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+}
+
+@code {
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private BankImportService BankImportService { get; set; } = default!;
+    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    private bool IsTaxMode => Nav.Uri.Contains("/import/tax");
+    private string AccountPrefix => IsTaxMode ? "16" : "19";
+    private string PageTitle => IsTaxMode ? "Skattekontoimport" : "Bankimport";
+    private string PageIcon => IsTaxMode ? "🧾" : "🏦";
+    private string NoAccountsHint => IsTaxMode ? "skattekonton (16xx)" : "bankkonton (19xx)";
+
+    private FiscalYear? _fiscalYear;
+    private List<Account> _bankAccounts = [];
+    private List<Account> _allAccounts = [];
+    private List<BankTransaction> _transactions = [];
+    private bool _isLoading;
+
+    // Wizard
+    private bool _showWizard;
+    private int _wizardStep = 1;
+    private string? _uploadedFileName;
+    private string? _parseError;
+    private List<string> _headers = [];
+    private List<string[]> _allRows = [];
+    private int _dateCol;
+    private int _amountCol = 1;
+    private int _descCol = 2;
+    private int _refColRaw = -1;
+    private string _dateFormat = "yyyy-MM-dd";
+    private List<BankTransactionPreview> _preview = [];
+    private bool _buildingPreview;
+    private bool _importing;
+    private BankImportResult? _importResult;
+
+    // Transaction list
+    private int _selectedAccountId;
+    private string _statusFilter = "unmatched";
+    private string? _actionError;
+
+    // Inline action
+    private enum ExpandMode { CreateEntry, MatchEntry }
+    private int? _expandedId;
+    private ExpandMode _expandMode;
+    private int _newEntryContraAccountId;
+    private bool _contraWasSuggested;
+    private string _newEntryDescription = "";
+    private bool _actioning;
+    private List<JournalEntry> _existingEntries = [];
+
+    private int? _refCol => _refColRaw >= 0 ? _refColRaw : null;
+
+    private string SelectedBankAccountNumber =>
+        _bankAccounts.FirstOrDefault(a => a.Id == _selectedAccountId)?.AccountNumber ?? "";
+
+    private static (string Label, string Value)[] StatusTabs =>
+    [
+        ("Alla", "all"),
+        ("Omatchade", "unmatched"),
+        ("Matchade", "matched"),
+        ("Ignorerade", "ignored"),
+    ];
+
+    private IEnumerable<BankTransaction> Filtered => _statusFilter switch
+    {
+        "unmatched" => _transactions.Where(t => t.Status == BankTransactionStatus.Unmatched),
+        "matched"   => _transactions.Where(t => t.Status == BankTransactionStatus.Matched),
+        "ignored"   => _transactions.Where(t => t.Status == BankTransactionStatus.Ignored),
+        _           => _transactions
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        _fiscalYear = await FiscalYearService.GetActiveAsync();
+        if (_fiscalYear is not null)
+        {
+            _bankAccounts = await BankImportService.GetImportableAccountsAsync(_fiscalYear.Id, AccountPrefix);
+            _allAccounts = await AccountService.GetAllAsync(_fiscalYear.Id);
+            if (_bankAccounts.Any())
+            {
+                _selectedAccountId = AutoSelectAccount();
+                await LoadTransactions();
+            }
+        }
+        _isLoading = false;
+    }
+
+    private async Task OnAccountChanged()
+    {
+        _importResult = null;
+        _actionError = null;
+        _expandedId = null;
+        CancelWizard();
+        await LoadTransactions();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Re-initialise when navigating between /import/bank and /import/tax
+        if (_fiscalYear is not null && _bankAccounts.Any() &&
+            !_bankAccounts.All(a => a.AccountNumber.StartsWith(AccountPrefix)))
+        {
+            _bankAccounts = await BankImportService.GetImportableAccountsAsync(_fiscalYear.Id, AccountPrefix);
+            _transactions = [];
+            _expandedId = null;
+            _importResult = null;
+            _actionError = null;
+            CancelWizard();
+            if (_bankAccounts.Any())
+            {
+                _selectedAccountId = AutoSelectAccount();
+                await LoadTransactions();
+            }
+        }
+    }
+
+    private async Task LoadTransactions()
+    {
+        _transactions = await BankImportService.GetByAccountAsync(_selectedAccountId);
+    }
+
+    // ── Wizard ────────────────────────────────────────────────────────────
+
+    private void ShowImportWizard()
+    {
+        _showWizard = true;
+        _wizardStep = 1;
+        _uploadedFileName = null;
+        _parseError = null;
+        _headers = [];
+        _allRows = [];
+        _preview = [];
+        _importResult = null;
+    }
+
+    private void CancelWizard() { _showWizard = false; _wizardStep = 1; }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        _parseError = null;
+        _uploadedFileName = e.File.Name;
+        try
+        {
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024).CopyToAsync(ms);
+            ms.Position = 0;
+            var result = BankImportService.ParseFile(ms, e.File.Name);
+            if (!result.Success) { _parseError = result.Error; return; }
+            _headers = result.Headers;
+            _allRows = result.DataRows;
+            if (IsTaxMode)
+            {
+                _dateFormat = "yyyy-MM-dd";
+                _dateCol = 0; _descCol = 1; _amountCol = 2; _refColRaw = -1;
+                await BuildPreview();
+            }
+            else
+            {
+                AutoSelectColumns();
+                _wizardStep = 2;
+            }
+        }
+        catch (Exception ex) { _parseError = $"Fel vid inläsning: {ex.Message}"; }
+    }
+
+    private int AutoSelectAccount()
+    {
+        if (IsTaxMode)
+        {
+            var acct = _bankAccounts.FirstOrDefault(a => a.AccountNumber == "1630");
+            if (acct is not null) return acct.Id;
+        }
+        return _bankAccounts[0].Id;
+    }
+
+    private void AutoSelectColumns()
+    {
+        _dateCol   = FindCol("datum", "date", "bokföringsdag", "transaktionsdag", "bokf") ?? 0;
+        _amountCol = FindCol("belopp", "amount", "summa", "kronor", "sek") ?? (_headers.Count > 1 ? 1 : 0);
+        _descCol   = FindCol("text", "beskrivning", "meddelande", "avsändare", "description", "kommentar") ?? (_headers.Count > 2 ? 2 : 0);
+        _refColRaw = FindCol("referens", "reference", "ref", "id") ?? -1;
+    }
+
+    private int? FindCol(params string[] keywords)
+    {
+        for (int i = 0; i < _headers.Count; i++)
+        {
+            var h = _headers[i].ToLowerInvariant();
+            if (keywords.Any(k => h.Contains(k))) return i;
+        }
+        return null;
+    }
+
+    private async Task BuildPreview()
+    {
+        _buildingPreview = true;
+        StateHasChanged();
+        try
+        {
+            _preview = await BankImportService.BuildPreviewAsync(
+                _selectedAccountId, _allRows, _dateCol, _amountCol, _descCol, _refCol, _dateFormat);
+            _wizardStep = 3;
+        }
+        finally { _buildingPreview = false; }
+    }
+
+    private async Task ConfirmImport()
+    {
+        _importing = true;
+        try
+        {
+            _importResult = await BankImportService.ImportAsync(_selectedAccountId, _preview);
+            _showWizard = false;
+            _wizardStep = 1;
+            await LoadTransactions();
+        }
+        finally { _importing = false; }
+    }
+
+    // ── Row actions ───────────────────────────────────────────────────────
+
+    private async Task ToggleExpand(int txId, ExpandMode mode)
+    {
+        _actionError = null;
+        if (_expandedId == txId && _expandMode == mode)
+        {
+            _expandedId = null;
+            return;
+        }
+        _expandedId = txId;
+        _expandMode = mode;
+
+        var tx = _transactions.First(t => t.Id == txId);
+        _newEntryDescription = tx.Description;
+        _newEntryContraAccountId = 0;
+        _contraWasSuggested = false;
+
+        if (mode == ExpandMode.CreateEntry)
+        {
+            var suggested = await BankImportService.SuggestContraAccountAsync(_selectedAccountId, tx.Description);
+            if (suggested.HasValue && _allAccounts.Any(a => a.Id == suggested.Value))
+            {
+                _newEntryContraAccountId = suggested.Value;
+                _contraWasSuggested = true;
+            }
+        }
+        else if (mode == ExpandMode.MatchEntry)
+        {
+            _existingEntries = await BankImportService.GetUnmatchedJournalEntriesAsync(_fiscalYear!.Id, _selectedAccountId);
+        }
+    }
+
+    private async Task IgnoreAsync(BankTransaction tx)
+    {
+        await BankImportService.SetStatusAsync(tx.Id, BankTransactionStatus.Ignored);
+        await LoadTransactions();
+    }
+
+    private async Task UnignoreAsync(BankTransaction tx)
+    {
+        await BankImportService.SetStatusAsync(tx.Id, BankTransactionStatus.Unmatched);
+        await LoadTransactions();
+    }
+
+    private async Task UnmatchAsync(BankTransaction tx)
+    {
+        await BankImportService.SetStatusAsync(tx.Id, BankTransactionStatus.Unmatched);
+        await LoadTransactions();
+    }
+
+    private async Task CreateJournalEntryAsync(BankTransaction tx)
+    {
+        _actioning = true;
+        _actionError = null;
+        try
+        {
+            var absAmount = Math.Abs(tx.Amount);
+            var bankDebit  = tx.Amount >= 0 ? absAmount : 0m;
+            var bankCredit = tx.Amount < 0  ? absAmount : 0m;
+            var contraDebit  = bankCredit;
+            var contraCredit = bankDebit;
+
+            var entry = new JournalEntry
+            {
+                Date = tx.Date,
+                Description = _newEntryDescription.Trim(),
+                FiscalYearId = _fiscalYear!.Id,
+                Lines =
+                [
+                    new JournalEntryLine { AccountId = _selectedAccountId, DebitAmount = bankDebit, CreditAmount = bankCredit },
+                    new JournalEntryLine { AccountId = _newEntryContraAccountId, DebitAmount = contraDebit, CreditAmount = contraCredit }
+                ]
+            };
+
+            var (created, error) = await JournalEntryService.CreateAsync(entry);
+            if (error is not null) { _actionError = error; return; }
+
+            await BankImportService.MatchToEntryAsync(tx.Id, created!.Id);
+            _expandedId = null;
+            Snackbar.Add($"Verifikation #{created.EntryNumber} skapad (utkast).", Severity.Success);
+            await LoadTransactions();
+        }
+        finally { _actioning = false; }
+    }
+
+    private async Task MatchToExistingAsync(BankTransaction tx, int journalEntryId)
+    {
+        _actioning = true;
+        _actionError = null;
+        try
+        {
+            var error = await BankImportService.MatchToEntryAsync(tx.Id, journalEntryId);
+            if (error is not null) { _actionError = error; return; }
+            _expandedId = null;
+            Snackbar.Add("Transaktion matchad mot verifikation.", Severity.Success);
+            await LoadTransactions();
+        }
+        finally { _actioning = false; }
+    }
+}
