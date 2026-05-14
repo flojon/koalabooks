@@ -1,0 +1,181 @@
+@page "/reports/vat"
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+
+<PageTitle>Momsredovisning — KoalaBooks</PageTitle>
+
+<h1>🧾 Momsredovisning</h1>
+
+@if (_fiscalYears.Any())
+{
+    <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
+        <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
+        <select @bind="SelectedFiscalYearId" @bind:after="OnFiscalYearChanged" style="width:200px;">
+            @foreach (var fy in _fiscalYears)
+            {
+                <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+            }
+        </select>
+
+        <label style="font-weight:600; color:#475569;">Från datum:</label>
+        <input type="date" @bind="FromDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
+
+        <label style="font-weight:600; color:#475569;">Till datum:</label>
+        <input type="date" @bind="ToDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
+
+        <button class="btn" @onclick="() => SetQuarter(1)">K1</button>
+        <button class="btn" @onclick="() => SetQuarter(2)">K2</button>
+        <button class="btn" @onclick="() => SetQuarter(3)">K3</button>
+        <button class="btn" @onclick="() => SetQuarter(4)">K4</button>
+        <button class="btn" @onclick="LoadReport">Generera</button>
+    </div>
+
+    @if (_data is not null)
+    {
+        @if (!_data.OutputVat.Rows.Any() && !_data.InputVat.Rows.Any())
+        {
+            <div class="alert alert-info" style="margin-top:1rem;">Inga momstransaktioner hittades för de valda kriterierna.</div>
+        }
+        else
+        {
+            <div class="card" style="margin-top:1.5rem;">
+                <h3 style="margin:0 0 0.75rem 0;">@_data.OutputVat.Title (2610–2639)</h3>
+                @if (_data.OutputVat.Rows.Any())
+                {
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:100px;">Konto</th>
+                                <th>Namn</th>
+                                <th style="width:140px; text-align:right;">Debet</th>
+                                <th style="width:140px; text-align:right;">Kredit</th>
+                                <th style="width:140px; text-align:right;">Netto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _data.OutputVat.Rows)
+                            {
+                                <tr>
+                                    <td>@row.AccountNumber</td>
+                                    <td>@row.AccountName</td>
+                                    <td style="text-align:right;">@row.Debit.ToString("N2")</td>
+                                    <td style="text-align:right;">@row.Credit.ToString("N2")</td>
+                                    <td style="text-align:right;">@((row.Credit - row.Debit).ToString("N2"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr style="font-weight:700; background:#f1f5f9;">
+                                <td colspan="4">Summa utgående moms</td>
+                                <td style="text-align:right;">@_data.OutputVat.Total.ToString("N2")</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                }
+                else
+                {
+                    <div class="alert alert-info">Inga utgående momstransaktioner.</div>
+                }
+            </div>
+
+            <div class="card" style="margin-top:1.5rem;">
+                <h3 style="margin:0 0 0.75rem 0;">@_data.InputVat.Title (2640–2649)</h3>
+                @if (_data.InputVat.Rows.Any())
+                {
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:100px;">Konto</th>
+                                <th>Namn</th>
+                                <th style="width:140px; text-align:right;">Debet</th>
+                                <th style="width:140px; text-align:right;">Kredit</th>
+                                <th style="width:140px; text-align:right;">Netto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in _data.InputVat.Rows)
+                            {
+                                <tr>
+                                    <td>@row.AccountNumber</td>
+                                    <td>@row.AccountName</td>
+                                    <td style="text-align:right;">@row.Debit.ToString("N2")</td>
+                                    <td style="text-align:right;">@row.Credit.ToString("N2")</td>
+                                    <td style="text-align:right;">@((row.Debit - row.Credit).ToString("N2"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr style="font-weight:700; background:#f1f5f9;">
+                                <td colspan="4">Summa ingående moms</td>
+                                <td style="text-align:right;">@_data.InputVat.Total.ToString("N2")</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                }
+                else
+                {
+                    <div class="alert alert-info">Inga ingående momstransaktioner.</div>
+                }
+            </div>
+
+            <div class="card" style="margin-top:1.5rem; text-align:center;">
+                <h2 style="margin:0; color:@(_data.NetPayable >= 0 ? "#dc2626" : "#16a34a");">
+                    Moms att @(_data.NetPayable >= 0 ? "betala" : "återfå"): @Math.Abs(_data.NetPayable).ToString("N2") kr
+                </h2>
+                <p style="color:#64748b; margin:0.5rem 0 0;">
+                    @(_data.NetPayable >= 0 ? "Betalas till Skatteverket" : "Återbetalning från Skatteverket")
+                </p>
+            </div>
+        }
+    }
+}
+else
+{
+    <div class="alert alert-info">Inga räkenskapsår hittades. <a href="/fiscal-years">Skapa ett</a> först.</div>
+}
+
+@code {
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+
+    private List<FiscalYear> _fiscalYears = [];
+    private VatReportData? _data;
+    private int SelectedFiscalYearId { get; set; }
+    private DateOnly? FromDate { get; set; }
+    private DateOnly? ToDate { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _fiscalYears = await FiscalYearService.GetAllAsync();
+        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
+        if (active is not null)
+        {
+            SelectedFiscalYearId = active.Id;
+            await LoadReport();
+        }
+    }
+
+    private async Task OnFiscalYearChanged()
+    {
+        FromDate = null;
+        ToDate = null;
+        await LoadReport();
+    }
+
+    private async Task SetQuarter(int quarter)
+    {
+        var fy = _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
+        if (fy is null) return;
+
+        FromDate = fy.StartDate.AddMonths((quarter - 1) * 3);
+        ToDate = fy.StartDate.AddMonths(quarter * 3).AddDays(-1);
+        if (ToDate > fy.EndDate) ToDate = fy.EndDate;
+
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _data = await JournalEntryService.GetVatReportAsync(SelectedFiscalYearId, FromDate, ToDate);
+    }
+}

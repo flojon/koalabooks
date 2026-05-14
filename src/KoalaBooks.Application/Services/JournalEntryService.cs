@@ -252,6 +252,63 @@ public class JournalEntryService
         return rows.OrderBy(r => r.AccountNumber).ToList();
     }
 
+    public async Task<GeneralLedgerAccountSection?> GetAccountLedgerAsync(
+        int fiscalYearId, int accountId, DateOnly? from = null, DateOnly? to = null,
+        bool excludeClosingEntries = true)
+    {
+        var account = await _db.Accounts
+            .FirstOrDefaultAsync(a => a.Id == accountId && a.FiscalYearId == fiscalYearId);
+        if (account is null) return null;
+
+        var lineQuery = _db.JournalEntryLines
+            .Include(l => l.JournalEntry)
+            .Where(l => l.AccountId == accountId)
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .Where(l => l.JournalEntry.IsPosted);
+
+        if (excludeClosingEntries)
+            lineQuery = lineQuery.Where(l => !l.JournalEntry.IsClosingEntry);
+
+        if (from.HasValue)
+            lineQuery = lineQuery.Where(l => l.JournalEntry.Date >= from.Value);
+        if (to.HasValue)
+            lineQuery = lineQuery.Where(l => l.JournalEntry.Date <= to.Value);
+
+        var lines = await lineQuery
+            .OrderBy(l => l.JournalEntry.Date)
+            .ThenBy(l => l.JournalEntry.EntryNumber)
+            .ToListAsync();
+
+        var isCreditNormal = account.AccountClass.IsCreditNormal();
+        var runningBalance = account.IncomingBalance;
+
+        var section = new GeneralLedgerAccountSection
+        {
+            AccountNumber = account.AccountNumber,
+            AccountName = account.Name,
+            IncomingBalance = account.IncomingBalance
+        };
+
+        foreach (var line in lines)
+        {
+            runningBalance += isCreditNormal
+                ? line.CreditAmount - line.DebitAmount
+                : line.DebitAmount - line.CreditAmount;
+            section.Rows.Add(new GeneralLedgerRow
+            {
+                Date = line.JournalEntry.Date,
+                EntryNumber = line.JournalEntry.EntryNumber,
+                Description = line.JournalEntry.Description,
+                DebitAmount = line.DebitAmount,
+                CreditAmount = line.CreditAmount,
+                RunningBalance = runningBalance
+            });
+        }
+
+        section.ClosingBalance = runningBalance;
+        return section;
+    }
+
     public async Task<List<GeneralLedgerAccountSection>> GetGeneralLedgerAsync(
         int fiscalYearId, string? fromAccount = null, string? toAccount = null,
         DateOnly? from = null, DateOnly? to = null, bool excludeClosingEntries = true)
@@ -473,6 +530,69 @@ public class JournalEntryService
         return (sections, revenueTotal - expenseTotal);
     }
 
+    public async Task<VatReportData> GetVatReportAsync(int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
+    {
+        var vatAccounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .Where(a => string.Compare(a.AccountNumber, "2610") >= 0 && string.Compare(a.AccountNumber, "2649") <= 0)
+            .OrderBy(a => a.AccountNumber)
+            .ToListAsync();
+
+        var vatAccountIds = vatAccounts.Select(a => a.Id).ToHashSet();
+
+        var lineQuery = _db.JournalEntryLines
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .Where(l => l.JournalEntry.IsPosted)
+            .Where(l => !l.JournalEntry.IsClosingEntry)
+            .Where(l => vatAccountIds.Contains(l.AccountId));
+
+        if (from.HasValue)
+            lineQuery = lineQuery.Where(l => l.JournalEntry.Date >= from.Value);
+        if (to.HasValue)
+            lineQuery = lineQuery.Where(l => l.JournalEntry.Date <= to.Value);
+
+        var transactionTotals = await lineQuery
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
+            .ToDictionaryAsync(t => t.AccountId);
+
+        var outputRows = new List<VatReportRow>();
+        var inputRows = new List<VatReportRow>();
+
+        foreach (var account in vatAccounts)
+        {
+            transactionTotals.TryGetValue(account.Id, out var totals);
+            var debit = totals?.Debit ?? 0;
+            var credit = totals?.Credit ?? 0;
+
+            if (debit == 0 && credit == 0)
+                continue;
+
+            var row = new VatReportRow
+            {
+                AccountNumber = account.AccountNumber,
+                AccountName = account.Name,
+                Debit = debit,
+                Credit = credit
+            };
+
+            if (string.Compare(account.AccountNumber, "2640") >= 0)
+                inputRows.Add(row);
+            else
+                outputRows.Add(row);
+        }
+
+        var outputTotal = outputRows.Sum(r => r.Credit - r.Debit);
+        var inputTotal = inputRows.Sum(r => r.Debit - r.Credit);
+
+        return new VatReportData
+        {
+            OutputVat = new VatReportSection { Title = "Utgående moms", Rows = outputRows, Total = outputTotal },
+            InputVat = new VatReportSection { Title = "Ingående moms", Rows = inputRows, Total = inputTotal },
+            NetPayable = outputTotal - inputTotal
+        };
+    }
+
     public async Task<DashboardStats> GetDashboardStatsAsync(int fiscalYearId)
     {
         var entryCount = await _db.JournalEntries
@@ -584,4 +704,26 @@ public class IncomeStatementRow
     public string AccountNumber { get; set; } = "";
     public string AccountName { get; set; } = "";
     public decimal Amount { get; set; }
+}
+
+public class VatReportData
+{
+    public VatReportSection OutputVat { get; set; } = new();
+    public VatReportSection InputVat { get; set; } = new();
+    public decimal NetPayable { get; set; }
+}
+
+public class VatReportSection
+{
+    public string Title { get; set; } = "";
+    public List<VatReportRow> Rows { get; set; } = [];
+    public decimal Total { get; set; }
+}
+
+public class VatReportRow
+{
+    public string AccountNumber { get; set; } = "";
+    public string AccountName { get; set; } = "";
+    public decimal Debit { get; set; }
+    public decimal Credit { get; set; }
 }
