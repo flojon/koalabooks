@@ -1,8 +1,10 @@
+using System.Security.Claims;
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
@@ -18,20 +20,40 @@ public class TestFixture : IDisposable
     public FiscalYearService FiscalYearService { get; }
     public YearEndClosingService YearEndClosingService { get; }
     public SieExportService SieExportService { get; }
+    public SieImportService SieImportService { get; }
+
+    public int OrganisationId { get; private set; }
 
     public TestFixture()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite("Data Source=:memory:")
             .Options;
-        Db = new AppDbContext(options);
+        // Start with null HttpContext so the initial SaveChanges (creating the org) has no filter applied.
+        // After the org is created, wire up a real HttpContext with the org_id claim so that
+        // FiscalYearService.CreateAsync and query filters work correctly for all subsequent operations.
+        var accessor = new HttpContextAccessor();
+        var tenant = new TenantContext(accessor);
+        Db = new AppDbContext(options, tenant);
         Db.Database.OpenConnection();
         Db.Database.EnsureCreated();
 
+        var org = new Organisation { Name = "Test Org", Slug = "test-org" };
+        Db.Organisations.Add(org);
+        Db.SaveChanges();
+        OrganisationId = org.Id;
+
+        accessor.HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("org_id", OrganisationId.ToString())]))
+        };
+
         JournalEntryService = new JournalEntryService(Db);
-        FiscalYearService = new FiscalYearService(Db);
+        FiscalYearService = new FiscalYearService(Db, tenant);
         YearEndClosingService = new YearEndClosingService(Db, FiscalYearService);
         SieExportService = new SieExportService(Db);
+        SieImportService = new SieImportService(Db, tenant);
     }
 
     public void Dispose() => Db.Dispose();
@@ -49,7 +71,8 @@ public class TestFixture : IDisposable
             Name = name,
             StartDate = start ?? new DateOnly(2026, 1, 1),
             EndDate = end ?? new DateOnly(2026, 12, 31),
-            IsClosed = isClosed
+            IsClosed = isClosed,
+            OrganisationId = OrganisationId
         };
         Db.FiscalYears.Add(fy);
         Db.SaveChanges();

@@ -380,7 +380,8 @@ public class YearEndClosingServiceTests : IDisposable
         {
             Name = "2027",
             StartDate = new DateOnly(2027, 1, 1),
-            EndDate = new DateOnly(2027, 12, 31)
+            EndDate = new DateOnly(2027, 12, 31),
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.Add(nextYear);
         await _f.Db.SaveChangesAsync();
