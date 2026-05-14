@@ -1,0 +1,282 @@
+@page "/todo"
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Enums
+@using KoalaBooks.Infrastructure.Services
+@using MudBlazor
+
+<PageTitle>Att göra — KoalaBooks</PageTitle>
+
+<h1>✅ Att göra</h1>
+
+@if (_isLoading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_fiscalYear is null)
+{
+    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
+}
+else if (!_items.Any())
+{
+    <MudAlert Severity="Severity.Success">Allt är bokfört och betalt. Inget att göra!</MudAlert>
+}
+else
+{
+    @if (_actionError is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => _actionError = null">@_actionError</MudAlert>
+    }
+
+    <div class="card">
+        <p style="color:#64748b; margin:0 0 1rem 0; font-size:0.875rem;">@_items.Count poster att hantera</p>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:110px;">Datum</th>
+                    <th style="width:110px;">Typ</th>
+                    <th>Beskrivning</th>
+                    <th style="width:130px; text-align:right;">Belopp</th>
+                    <th style="width:100px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _items)
+                {
+                    var isExpanded = _expandedId == item.EntityId && _expandedKind == item.Kind;
+                    <tr style="@(item.IsOverdue ? "background:#fef2f2;" : "")">
+                        <td style="@(item.IsOverdue ? "color:#ef4444; font-weight:600;" : "")">@item.Date.ToString("yyyy-MM-dd")</td>
+                        <td>
+                            @if (item.Kind == TodoKind.BankTx)
+                            {
+                                <span style="font-size:0.8rem; color:#3b82f6;">🏦 @item.AccountNumber</span>
+                            }
+                            else
+                            {
+                                <span style="font-size:0.8rem; color:#8b5cf6;">🧾 Faktura</span>
+                            }
+                        </td>
+                        <td>@item.Description</td>
+                        <td style="text-align:right; font-family:monospace; @(item.Amount < 0 ? "color:#ef4444;" : "color:#16a34a;")">
+                            @item.Amount.ToString("N2")
+                        </td>
+                        <td>
+                            <button class="btn btn-sm @(isExpanded ? "btn-secondary" : "btn-success")"
+                                    @onclick="() => ToggleExpand(item)">
+                                @(isExpanded ? "Avbryt" : "Bokför")
+                            </button>
+                        </td>
+                    </tr>
+
+                    @if (isExpanded && item.Kind == TodoKind.BankTx)
+                    {
+                        <tr style="background:#f8fafc;">
+                            <td colspan="5" style="padding:1rem;">
+                                <div style="max-width:480px;">
+                                    <p style="margin:0 0 0.75rem 0; font-weight:600;">Bokför banktransaktion</p>
+                                    <div style="display:grid; grid-template-columns:120px 1fr; gap:0.4rem 0.75rem; align-items:center; margin-bottom:0.75rem;">
+                                        <label style="font-weight:600;">Motkonto</label>
+                                        <div>
+                                            <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_contraAccountId" />
+                                            @if (_contraWasSuggested && _contraAccountId != 0)
+                                            {
+                                                <div style="font-size:0.75rem; color:#64748b; margin-top:0.2rem;">💡 Förslag baserat på tidigare bokföring</div>
+                                            }
+                                        </div>
+                                        <label style="font-weight:600;">Beskrivning</label>
+                                        <input type="text" @bind="_entryDescription" style="width:100%;" />
+                                    </div>
+                                    <button class="btn btn-success" @onclick="() => PostBankTxAsync(item)"
+                                            disabled="@(_actioning || _contraAccountId == 0)">
+                                        @(_actioning ? "Sparar..." : "Skapa verifikation")
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+
+                    @if (isExpanded && item.Kind == TodoKind.Invoice)
+                    {
+                        <tr style="background:#f8fafc;">
+                            <td colspan="5" style="padding:1rem;">
+                                <div style="max-width:480px;">
+                                    <p style="margin:0 0 0.75rem 0; font-weight:600;">Bokför betalning</p>
+                                    <div style="display:grid; grid-template-columns:160px 1fr; gap:0.4rem 0.75rem; align-items:center; margin-bottom:0.75rem;">
+                                        <label style="font-weight:600;">Betalningsdatum</label>
+                                        <DateInput @bind-Value="_payDate" style="width:100%;" />
+                                        <label style="font-weight:600;">Bankkonto</label>
+                                        <AccountSearchDropdown Accounts="_bankAccounts" @bind-SelectedAccountId="_payBankAccountId" />
+                                        <label style="font-weight:600;">Leverantörsskulder</label>
+                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_payPayableAccountId" />
+                                    </div>
+                                    <button class="btn btn-success" @onclick="() => PostInvoiceAsync(item)"
+                                            disabled="@(_actioning || _payBankAccountId == 0 || _payPayableAccountId == 0)">
+                                        @(_actioning ? "Sparar..." : $"Bokför betalning {Math.Abs(item.Amount):N2}")
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private BankImportService BankImportService { get; set; } = default!;
+    [Inject] private SupplierInvoiceService SupplierInvoiceService { get; set; } = default!;
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private FiscalYear? _fiscalYear;
+    private List<TodoItem> _items = [];
+    private List<Account> _allAccounts = [];
+    private List<Account> _bankAccounts = [];
+    private bool _isLoading;
+    private string? _actionError;
+
+    // Expand state
+    private int? _expandedId;
+    private TodoKind _expandedKind;
+    private bool _actioning;
+
+    // Bank tx form
+    private int _contraAccountId;
+    private bool _contraWasSuggested;
+    private string _entryDescription = "";
+
+    // Invoice payment form
+    private DateTime _payDate = DateTime.Today;
+    private int _payBankAccountId;
+    private int _payPayableAccountId;
+
+    private enum TodoKind { BankTx, Invoice }
+
+    private record TodoItem(
+        DateOnly Date, TodoKind Kind, string Description, decimal Amount,
+        bool IsOverdue, int EntityId,
+        string? AccountNumber = null, int? BankAccountId = null);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        _fiscalYear = await FiscalYearService.GetActiveAsync();
+        if (_fiscalYear is not null)
+        {
+            _allAccounts = await AccountService.GetAllAsync(_fiscalYear.Id);
+            _bankAccounts = _allAccounts.Where(a => a.AccountNumber.StartsWith("19")).ToList();
+
+            await ReloadItems();
+        }
+        _isLoading = false;
+    }
+
+    private async Task ReloadItems()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        var txItems = (await BankImportService.GetUnmatchedAsync(_fiscalYear!.Id))
+            .Select(tx => new TodoItem(
+                tx.Date, TodoKind.BankTx, tx.Description, tx.Amount,
+                false, tx.Id, tx.Account.AccountNumber, tx.AccountId));
+
+        var invoices = await SupplierInvoiceService.GetAllAsync(_fiscalYear.Id);
+        var invItems = invoices
+            .Where(i => !i.IsPaid)
+            .Select(i => new TodoItem(
+                i.DueDate, TodoKind.Invoice,
+                i.SupplierName + (i.InvoiceNumber is not null ? $" #{i.InvoiceNumber}" : ""),
+                -i.TotalAmount, i.DueDate < today, i.Id));
+
+        _items = txItems.Concat(invItems).OrderBy(i => i.Date).ThenBy(i => i.Kind).ToList();
+    }
+
+    private async Task ToggleExpand(TodoItem item)
+    {
+        _actionError = null;
+        if (_expandedId == item.EntityId && _expandedKind == item.Kind)
+        {
+            _expandedId = null;
+            return;
+        }
+        _expandedId = item.EntityId;
+        _expandedKind = item.Kind;
+
+        if (item.Kind == TodoKind.BankTx)
+        {
+            _entryDescription = item.Description;
+            _contraAccountId = 0;
+            _contraWasSuggested = false;
+
+            var suggested = await BankImportService.SuggestContraAccountAsync(item.BankAccountId!.Value, item.Description);
+            if (suggested.HasValue && _allAccounts.Any(a => a.Id == suggested.Value))
+            {
+                _contraAccountId = suggested.Value;
+                _contraWasSuggested = true;
+            }
+        }
+        else
+        {
+            _payDate = DateTime.Today;
+            _payBankAccountId = _bankAccounts.FirstOrDefault()?.Id ?? 0;
+            _payPayableAccountId = _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith("2440"))?.Id ?? 0;
+        }
+    }
+
+    private async Task PostBankTxAsync(TodoItem item)
+    {
+        _actioning = true;
+        _actionError = null;
+        try
+        {
+            var absAmount = Math.Abs(item.Amount);
+            var bankDebit   = item.Amount >= 0 ? absAmount : 0m;
+            var bankCredit  = item.Amount < 0  ? absAmount : 0m;
+
+            var entry = new JournalEntry
+            {
+                Date = item.Date,
+                Description = _entryDescription.Trim(),
+                FiscalYearId = _fiscalYear!.Id,
+                Lines =
+                [
+                    new JournalEntryLine { AccountId = item.BankAccountId!.Value, DebitAmount = bankDebit,       CreditAmount = bankCredit },
+                    new JournalEntryLine { AccountId = _contraAccountId,           DebitAmount = bankCredit,      CreditAmount = bankDebit  }
+                ]
+            };
+
+            var (created, error) = await JournalEntryService.CreateAsync(entry);
+            if (error is not null) { _actionError = error; return; }
+
+            await BankImportService.MatchToEntryAsync(item.EntityId, created!.Id);
+            _expandedId = null;
+            Snackbar.Add($"Verifikation #{created.EntryNumber} skapad.", Severity.Success);
+            await ReloadItems();
+        }
+        finally { _actioning = false; }
+    }
+
+    private async Task PostInvoiceAsync(TodoItem item)
+    {
+        _actioning = true;
+        _actionError = null;
+        try
+        {
+            var (_, error) = await SupplierInvoiceService.MarkAsPaidAsync(
+                item.EntityId,
+                DateOnly.FromDateTime(_payDate),
+                _payBankAccountId,
+                _payPayableAccountId);
+
+            if (error is not null) { _actionError = error; return; }
+
+            _expandedId = null;
+            Snackbar.Add("Betalning bokförd.", Severity.Success);
+            await ReloadItems();
+        }
+        finally { _actioning = false; }
+    }
+}
