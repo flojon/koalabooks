@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      microsoft-aspire:
+        patterns:
+          - "Microsoft.*"
+          - "Aspire.*"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: docker
+    directory: /src/KoalaBooks.Web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
