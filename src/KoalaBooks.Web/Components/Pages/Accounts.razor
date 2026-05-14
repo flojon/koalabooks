@@ -23,14 +23,20 @@ else
 
 <p style="color:#64748b; margin-bottom:1rem;">Räkenskapsår: <strong>@_activeFiscalYear.Name</strong></p>
 
-<div class="toolbar">
-    <button class="btn btn-primary" @onclick="() => _showForm = !_showForm">
-        @(_showForm ? "Avbryt" : "+ Lägg till konto")
+<div class="toolbar" style="flex-wrap:wrap; gap:0.5rem;">
+    <button class="btn btn-primary" @onclick="ToggleAddForm">
+        @(_showForm && _editingAccount is null ? "Avbryt" : "+ Lägg till konto")
     </button>
     <label class="btn btn-primary" style="display:inline-block; cursor:pointer;">
         @(_importing ? "Importerar..." : "📁 Importera BAS-kontoplan")
         <InputFile OnChange="HandleBasImport" style="display:none" accept=".xls,.xlsx" disabled="@_importing" />
     </label>
+    @if (_otherFiscalYears.Any())
+    {
+        <button class="btn btn-secondary" @onclick="OpenCopyPanel">
+            📋 Kopiera från annat år
+        </button>
+    }
 </div>
 
 @if (_showForm)
@@ -51,7 +57,7 @@ else
                 <select @bind="_formClass">
                     @foreach (var c in Enum.GetValues<AccountClass>())
                     {
-                        <option value="@c">@c</option>
+                        <option value="@c">@c.ToLocalizedString()</option>
                     }
                 </select>
             </div>
@@ -64,7 +70,100 @@ else
     </div>
 }
 
-<table>
+@if (_showCopyPanel)
+{
+    <div class="card" style="margin-top:1rem;">
+        <h3 style="margin:0 0 1rem 0;">Kopiera konton från annat år</h3>
+
+        <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap; margin-bottom:1rem;">
+            <div class="form-group" style="margin:0;">
+                <label style="font-weight:600;">Källår:</label>
+                <select @bind="_sourceYearId" @bind:after="LoadMissingAccounts" style="width:200px;">
+                    @foreach (var fy in _otherFiscalYears)
+                    {
+                        <option value="@fy.Id">@fy.Name</option>
+                    }
+                </select>
+            </div>
+
+            <label style="display:flex; align-items:center; gap:0.4rem; font-weight:600; cursor:pointer; margin-top:1.2rem;">
+                <input type="checkbox" @bind="_onlyWithUb" @bind:after="StateHasChanged" />
+                Visa bara konton med UB
+            </label>
+        </div>
+
+        @if (_loadingMissing)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-3" />
+        }
+        else if (!_missingAccounts.Any())
+        {
+            <MudAlert Severity="Severity.Success" Class="mb-3">
+                Inga konton saknas — alla konton från @SourceYearName finns redan i @_activeFiscalYear.Name.
+            </MudAlert>
+        }
+        else
+        {
+            var shown = DisplayedAccounts.ToList();
+
+            <div style="display:flex; gap:1rem; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap;">
+                <span style="color:#64748b; font-size:0.875rem;">
+                    @shown.Count konton visas (@_selected.Count markerade)
+                </span>
+                <button class="btn btn-sm btn-secondary" @onclick="() => SelectAll(shown)">Välj alla</button>
+                <button class="btn btn-sm btn-secondary" @onclick="ClearSelection">Avmarkera alla</button>
+            </div>
+
+            <div style="max-height:380px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:1rem;">
+                <table style="margin:0;">
+                    <thead style="position:sticky; top:0; background:#f8fafc; z-index:1;">
+                        <tr>
+                            <th style="width:40px;"></th>
+                            <th style="width:90px;">Nummer</th>
+                            <th>Namn</th>
+                            <th style="width:110px;">Klass</th>
+                            <th style="width:120px; text-align:right;">UB</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in shown)
+                        {
+                            var id = a.Id;
+                            <tr style="cursor:pointer;" @onclick="() => ToggleSelect(id)">
+                                <td style="text-align:center;">
+                                    <input type="checkbox" checked="@_selected.Contains(id)"
+                                           @onclick:stopPropagation @onchange="() => ToggleSelect(id)" />
+                                </td>
+                                <td style="font-family:monospace;">@a.AccountNumber</td>
+                                <td>@a.Name</td>
+                                <td style="color:#64748b;">@a.AccountClass.ToLocalizedString()</td>
+                                <td style="text-align:right; font-family:monospace;">
+                                    @(a.OutgoingBalance != 0 ? a.OutgoingBalance.ToString("N2") : "—")
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <p style="font-size:0.8rem; color:#94a3b8; margin:0 0 0.75rem 0;">
+                UB från källåret kopieras som IB i @_activeFiscalYear.Name.
+            </p>
+        }
+
+        <div style="display:flex; gap:0.5rem;">
+            @if (_missingAccounts.Any() && _selected.Any())
+            {
+                <button class="btn btn-success" @onclick="CopySelected" disabled="@_copying">
+                    @(_copying ? "Kopierar..." : $"Kopiera {_selected.Count} konton")
+                </button>
+            }
+            <button class="btn btn-secondary" @onclick="CloseCopyPanel">Stäng</button>
+        </div>
+    </div>
+}
+
+<table style="margin-top:1.5rem;">
     <thead>
         <tr>
             <th style="width:100px;">Nummer</th>
@@ -82,7 +181,7 @@ else
             <tr style="@(account.IsActive ? "" : "opacity:0.5")">
                 <td>@account.AccountNumber</td>
                 <td>@account.Name</td>
-                <td>@account.AccountClass</td>
+                <td>@account.AccountClass.ToLocalizedString()</td>
                 <td style="text-align:right;">@(account.IncomingBalance != 0 ? account.IncomingBalance.ToString("N2") : "—")</td>
                 <td style="text-align:right;">@(account.OutgoingBalance != 0 ? account.OutgoingBalance.ToString("N2") : "—")</td>
                 <td>@(account.IsActive ? "✅" : "❌")</td>
@@ -111,6 +210,7 @@ else
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
+    private List<FiscalYear> _otherFiscalYears = [];
     private List<Account> _accounts = [];
     private bool _showForm;
     private bool _isLoading;
@@ -121,10 +221,30 @@ else
     private AccountClass _formClass = AccountClass.Asset;
     private string? _formError;
 
+    // Copy panel
+    private bool _showCopyPanel;
+    private int _sourceYearId;
+    private bool _onlyWithUb;
+    private List<Account> _missingAccounts = [];
+    private HashSet<int> _selected = [];
+    private bool _loadingMissing;
+    private bool _copying;
+
+    private string SourceYearName => _otherFiscalYears.FirstOrDefault(f => f.Id == _sourceYearId)?.Name ?? "";
+    private IEnumerable<Account> DisplayedAccounts => _onlyWithUb
+        ? _missingAccounts.Where(a => a.OutgoingBalance != 0)
+        : _missingAccounts;
+
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        _activeFiscalYear = await FiscalYearService.GetActiveAsync();
+        var allYears = await FiscalYearService.GetAllAsync();
+        _activeFiscalYear = allYears.FirstOrDefault(f => !f.IsClosed)
+                         ?? allYears.OrderByDescending(f => f.StartDate).FirstOrDefault();
+        _otherFiscalYears = allYears
+            .Where(f => f.Id != _activeFiscalYear?.Id)
+            .OrderByDescending(f => f.StartDate)
+            .ToList();
         if (_activeFiscalYear is not null)
             await LoadAccounts();
         _isLoading = false;
@@ -135,6 +255,15 @@ else
         _accounts = await AccountService.GetAllAsync(_activeFiscalYear!.Id);
     }
 
+    private void ToggleAddForm()
+    {
+        _editingAccount = null;
+        _formNumber = "";
+        _formName = "";
+        _formError = null;
+        _showForm = !_showForm;
+    }
+
     private void EditAccount(Account account)
     {
         _editingAccount = account;
@@ -142,6 +271,7 @@ else
         _formName = account.Name;
         _formClass = account.AccountClass;
         _showForm = true;
+        _showCopyPanel = false;
     }
 
     private async Task SaveAccount()
@@ -211,4 +341,59 @@ else
         }
     }
 
+    // ── Copy panel ────────────────────────────────────────────────────────
+
+    private async Task OpenCopyPanel()
+    {
+        _showCopyPanel = true;
+        _showForm = false;
+        _selected = [];
+        _sourceYearId = _otherFiscalYears[0].Id;
+        await LoadMissingAccounts();
+    }
+
+    private void CloseCopyPanel()
+    {
+        _showCopyPanel = false;
+        _missingAccounts = [];
+        _selected = [];
+    }
+
+    private async Task LoadMissingAccounts()
+    {
+        _loadingMissing = true;
+        _selected = [];
+        _missingAccounts = await AccountService.GetMissingFromSourceAsync(_activeFiscalYear!.Id, _sourceYearId);
+        _loadingMissing = false;
+    }
+
+    private void ToggleSelect(int id)
+    {
+        if (!_selected.Remove(id)) _selected.Add(id);
+    }
+
+    private void SelectAll(List<Account> accounts)
+    {
+        foreach (var a in accounts) _selected.Add(a.Id);
+    }
+
+    private void ClearSelection() => _selected = [];
+
+    private async Task CopySelected()
+    {
+        _copying = true;
+        try
+        {
+            var count = await AccountService.CopyAccountsAsync(_activeFiscalYear!.Id, [.. _selected]);
+            Snackbar.Add($"Kopierade {count} konton till {_activeFiscalYear.Name}.", Severity.Success);
+            _showCopyPanel = false;
+            _missingAccounts = [];
+            _selected = [];
+            await LoadAccounts();
+        }
+        finally
+        {
+            _copying = false;
+        }
+    }
 }

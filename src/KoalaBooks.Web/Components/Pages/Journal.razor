@@ -3,6 +3,9 @@
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
 @using MudBlazor
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Forms
+@inject IJSRuntime JS
 
 <PageTitle>Verifikationer — KoalaBooks</PageTitle>
 
@@ -32,7 +35,7 @@ else
         <div style="display:grid; grid-template-columns:150px 1fr; gap:0.5rem; margin-bottom:1rem;">
             <div class="form-group">
                 <label>Datum</label>
-                <input type="date" @bind="_formDate" />
+                <DateInput @bind-Value="_formDate" />
             </div>
             <div class="form-group">
                 <label>Beskrivning</label>
@@ -56,10 +59,13 @@ else
                     <tr>
                         <td>
                             <AccountSearchDropdown Accounts="_accounts"
-                                                   @bind-SelectedAccountId="_formLines[idx].AccountId" />
+                                                   @bind-SelectedAccountId="_formLines[idx].AccountId"
+                                                   InputId="@($"line-account-{idx}")"
+                                                   OnAfterKeyboardSelect="() => FocusDebitAsync(idx)" />
                         </td>
-                        <td><input type="number" step="0.01" min="0" @bind="_formLines[idx].DebitAmount" /></td>
-                        <td><input type="number" step="0.01" min="0" @bind="_formLines[idx].CreditAmount" /></td>
+                        <td><input id="@($"line-debit-{idx}")" type="number" step="0.01" min="0" @bind="_formLines[idx].DebitAmount" /></td>
+                        <td><input type="number" step="0.01" min="0" @bind="_formLines[idx].CreditAmount"
+                                   @onkeydown="e => HandleCreditKeyDown(e, idx)" /></td>
                         <td>
                             @if (_formLines.Count > 2)
                             {
@@ -96,12 +102,18 @@ else
             <th style="width:120px;">Debet</th>
             <th style="width:120px;">Kredit</th>
             <th style="width:90px;">Status</th>
+            <th style="width:40px;" title="Bilagor"></th>
             <th style="width:180px;">Åtgärder</th>
         </tr>
     </thead>
     <tbody>
         @foreach (var entry in _entries)
         {
+            var canConvert = entry.IsPosted
+                && !entry.IsClosingEntry
+                && !_linkedJournalEntryIds.Contains(entry.Id)
+                && entry.Lines.Any(l => l.CreditAmount > 0 && l.Account?.AccountNumber?.StartsWith("24") == true);
+
             <tr>
                 <td>@entry.EntryNumber</td>
                 <td>@entry.Date</td>
@@ -117,6 +129,15 @@ else
                     {
                         <span style="color:#f59e0b;">📝 Utkast</span>
                     }
+                </td>
+                <td style="text-align:center;">
+                    @{ var attachCount = _attachmentCounts.GetValueOrDefault(entry.Id); }
+                    <button class="btn btn-sm @(_attachmentEntryId == entry.Id ? "btn-primary" : "btn-secondary")"
+                            style="padding:0.1rem 0.35rem; font-size:0.8rem;"
+                            title="@(attachCount > 0 ? $"{attachCount} bilaga(or)" : "Lägg till bilaga")"
+                            @onclick="() => ToggleAttachments(entry)">
+                        📎@(attachCount > 0 ? attachCount.ToString() : "")
+                    </button>
                 </td>
                 <td>
                     @if (_reversingEntryId == entry.Id)
@@ -135,9 +156,22 @@ else
                             <button class="btn btn-sm btn-secondary" @onclick="CancelDelete">Avbryt</button>
                         </div>
                     }
+                    else if (_convertingEntryId == entry.Id)
+                    {
+                        <button class="btn btn-sm btn-secondary" @onclick="CancelConvert">Avbryt</button>
+                    }
                     else if (entry.IsPosted)
                     {
                         <button class="btn btn-sm btn-warning" @onclick="() => StartReversal(entry.Id)">Återför</button>
+                        @if (canConvert)
+                        {
+                            <button class="btn btn-sm btn-primary" style="margin-left:0.25rem;"
+                                    @onclick="() => StartConvert(entry)">Konvertera</button>
+                        }
+                        @if (_linkedJournalEntryIds.Contains(entry.Id))
+                        {
+                            <span style="font-size:0.75rem; color:#16a34a; margin-left:0.25rem;">📄 Faktura</span>
+                        }
                     }
                     else
                     {
@@ -147,6 +181,143 @@ else
                     }
                 </td>
             </tr>
+
+            @if (_attachmentEntryId == entry.Id)
+            {
+                <tr style="background:#f8fafc;">
+                    <td colspan="8" style="padding:1rem;">
+                        <div style="max-width:640px;">
+                            <p style="margin:0 0 0.75rem; font-weight:600;">📎 Bilagor — Verifikation #@entry.EntryNumber</p>
+
+                            @if (_attachmentError is not null)
+                            {
+                                <div style="color:#ef4444; margin-bottom:0.5rem; font-size:0.875rem;">@_attachmentError</div>
+                            }
+
+                            @if (_attachmentMeta.Any())
+                            {
+                                <table style="font-size:0.85rem; margin-bottom:1rem;">
+                                    <thead>
+                                        <tr>
+                                            <th>Filnamn</th>
+                                            <th style="width:90px; text-align:right;">Storlek</th>
+                                            <th style="width:140px;">Uppladdad</th>
+                                            <th style="width:80px;"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var a in _attachmentMeta)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <a href="/attachments/@a.Id" target="_blank" style="color:#2563eb;">@a.FileName</a>
+                                                </td>
+                                                <td style="text-align:right; color:#64748b;">@a.FileSizeDisplay</td>
+                                                <td style="color:#64748b;">@a.UploadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-danger"
+                                                            @onclick="() => DeleteAttachmentAsync(a.Id)"
+                                                            disabled="@_uploadingAttachment">🗑️</button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            else
+                            {
+                                <p style="color:#94a3b8; font-style:italic; margin:0 0 0.75rem;">Inga bilagor ännu.</p>
+                            }
+
+                            <label class="btn btn-secondary" style="cursor:pointer; display:inline-block;">
+                                @(_uploadingAttachment ? "Laddar upp..." : "📁 Välj fil (max 10 MB)")
+                                <InputFile OnChange="UploadAttachmentAsync" style="display:none"
+                                           accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.tiff,.heic,.xls,.xlsx,.csv,.txt"
+                                           disabled="@_uploadingAttachment" />
+                            </label>
+                        </div>
+                    </td>
+                </tr>
+            }
+
+            @if (_convertingEntryId == entry.Id)
+            {
+                <tr style="background:#f0f9ff;">
+                    <td colspan="8" style="padding:1rem;">
+                        <div style="max-width:700px;">
+                            <p style="margin:0 0 0.75rem; font-weight:600;">Konvertera till leverantörsfaktura</p>
+                            <p style="font-size:0.8rem; color:#64748b; margin:0 0 0.75rem;">
+                                Skapar en faktura kopplad till verifikation #@entry.EntryNumber — ingen ny verifikation skapas.
+                            </p>
+
+                            @if (_convertError is not null)
+                            {
+                                <div style="color:#ef4444; margin-bottom:0.5rem; font-size:0.875rem;">@_convertError</div>
+                            }
+
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem 1.5rem; margin-bottom:0.75rem;">
+                                <div class="form-group">
+                                    <label>Leverantör <span style="color:#ef4444;">*</span></label>
+                                    <input type="text" list="journal-supplier-list" @bind="_cSupplier" autocomplete="off" />
+                                    <datalist id="journal-supplier-list">
+                                        @foreach (var s in _knownSuppliers)
+                                        {
+                                            <option value="@s" />
+                                        }
+                                    </datalist>
+                                </div>
+                                <div class="form-group">
+                                    <label>Fakturanummer</label>
+                                    <input type="text" @bind="_cInvoiceNumber" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Fakturadatum <span style="color:#ef4444;">*</span></label>
+                                    <DateInput @bind-Value="_cInvoiceDate" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Förfallodatum <span style="color:#ef4444;">*</span></label>
+                                    <DateInput @bind-Value="_cDueDate" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Belopp exkl. moms <span style="color:#ef4444;">*</span></label>
+                                    <input type="number" step="0.01" min="0" @bind="_cAmountExclVat" @bind:after="RecalcConvertTotal" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Momsbelopp</label>
+                                    <input type="number" step="0.01" min="0" @bind="_cVatAmount" @bind:after="RecalcConvertTotal" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Totalt (inkl. moms)</label>
+                                    <input type="number" readonly value="@_cTotal" style="background:#f8fafc; color:#64748b;" />
+                                </div>
+                                <div></div>
+                                <div class="form-group" style="grid-column:1/-1;">
+                                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                                        <input type="checkbox" @bind="_cIsPaid" />
+                                        Markera som betald
+                                    </label>
+                                </div>
+                                @if (_cIsPaid)
+                                {
+                                    <div class="form-group">
+                                        <label>Betalningsdatum</label>
+                                        <DateInput @bind-Value="_cPaidDate" />
+                                    </div>
+                                    <div></div>
+                                }
+                                <div class="form-group" style="grid-column:1/-1;">
+                                    <label>Anteckningar</label>
+                                    <input type="text" @bind="_cNotes" placeholder="Valfri kommentar" />
+                                </div>
+                            </div>
+
+                            <button class="btn btn-primary" @onclick="() => ConfirmConvert(entry.Id)" disabled="@_converting">
+                                @(_converting ? "Sparar..." : "Skapa faktura")
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            }
         }
     </tbody>
 </table>
@@ -163,6 +334,8 @@ else
     [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private SupplierInvoiceService InvoiceService { get; set; } = default!;
+    [Inject] private AttachmentService AttachmentService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
@@ -178,10 +351,46 @@ else
     private int? _reversingEntryId;
     private string _reversalReason = "";
     private int? _deletingEntryId;
+    private HashSet<int> _linkedJournalEntryIds = [];
+
+    // Attachment panel
+    private int? _attachmentEntryId;
+    private List<AttachmentMeta> _attachmentMeta = [];
+    private Dictionary<int, int> _attachmentCounts = [];
+    private bool _uploadingAttachment;
+    private string? _attachmentError;
+
+    // Convert-to-invoice form
+    private int? _convertingEntryId;
+    private string _cSupplier = "";
+    private string _cInvoiceNumber = "";
+    private DateTime _cInvoiceDate = DateTime.Today;
+    private DateTime _cDueDate = DateTime.Today.AddDays(30);
+    private decimal _cAmountExclVat;
+    private decimal _cVatAmount;
+    private decimal _cTotal;
+    private string _cNotes = "";
+    private bool _cIsPaid = true;
+    private DateTime _cPaidDate = DateTime.Today;
+    private bool _converting;
+    private string? _convertError;
+    private List<string> _knownSuppliers = [];
+
+    private string? _pendingFocusId;
 
     private decimal TotalDebit => _formLines.Sum(l => l.DebitAmount);
     private decimal TotalCredit => _formLines.Sum(l => l.CreditAmount);
     private bool IsBalanced => TotalDebit > 0 && TotalDebit == TotalCredit;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingFocusId is not null)
+        {
+            var id = _pendingFocusId;
+            _pendingFocusId = null;
+            await JS.InvokeVoidAsync("koala.focusId", id);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -195,6 +404,9 @@ else
 
         _accounts = (await AccountService.GetAllAsync(_activeFiscalYear.Id)).Where(a => a.IsActive).ToList();
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
+        _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_activeFiscalYear.Id);
+        _knownSuppliers = await InvoiceService.GetSuppliersAsync(_activeFiscalYear.Id);
+        _attachmentCounts = await AttachmentService.GetCountsAsync(_entries.Select(e => e.Id));
         _isLoading = false;
     }
 
@@ -224,6 +436,18 @@ else
     }
 
     private void AddLine() => _formLines.Add(new());
+
+    private void HandleCreditKeyDown(KeyboardEventArgs e, int idx)
+    {
+        if (e.Key == "Tab" && !e.ShiftKey && idx == _formLines.Count - 1)
+        {
+            _formLines.Add(new());
+            _pendingFocusId = $"line-account-{_formLines.Count - 1}";
+        }
+    }
+
+    private async Task FocusDebitAsync(int idx) =>
+        await JS.InvokeVoidAsync("koala.focusId", $"line-debit-{idx}");
 
     private void CancelForm() => _showForm = false;
 
@@ -255,7 +479,13 @@ else
 
         Snackbar.Add(_isEditing ? "Verifikation uppdaterad." : $"Verifikation #{result!.EntryNumber} skapad.", Severity.Success);
         _showForm = false;
-        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
+        await ReloadEntriesAsync();
+    }
+
+    private async Task ReloadEntriesAsync()
+    {
+        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
+        _attachmentCounts = await AttachmentService.GetCountsAsync(_entries.Select(e => e.Id));
     }
 
     private class LineModel
@@ -274,7 +504,7 @@ else
             return;
         }
         Snackbar.Add("Verifikation bokförd.", Severity.Success);
-        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
+        await ReloadEntriesAsync();
     }
 
     private void StartDelete(int entryId) => _deletingEntryId = entryId;
@@ -291,7 +521,7 @@ else
             return;
         }
         Snackbar.Add("Utkastet raderat.", Severity.Success);
-        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
+        await ReloadEntriesAsync();
     }
 
     private void StartReversal(int entryId)
@@ -317,6 +547,132 @@ else
         Snackbar.Add($"Återföringsverifikation #{result!.EntryNumber} skapad.", Severity.Success);
         _reversingEntryId = null;
         _reversalReason = "";
-        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
+        await ReloadEntriesAsync();
+    }
+
+    private void StartConvert(JournalEntry entry)
+    {
+        _convertingEntryId = entry.Id;
+        _convertError = null;
+        _cInvoiceDate = entry.Date.ToDateTime(TimeOnly.MinValue);
+        _cDueDate = entry.Date.ToDateTime(TimeOnly.MinValue).AddDays(30);
+        _cIsPaid = true;
+        _cPaidDate = entry.Date.ToDateTime(TimeOnly.MinValue);
+        _cNotes = "";
+
+        // Parse supplier name and invoice number from description
+        const string prefix = "Leverantörsfaktura ";
+        var desc = entry.Description;
+        if (desc.StartsWith(prefix))
+        {
+            var rest = desc[prefix.Length..];
+            var hashIdx = rest.IndexOf(" #");
+            _cSupplier = hashIdx >= 0 ? rest[..hashIdx] : rest;
+            _cInvoiceNumber = hashIdx >= 0 ? rest[(hashIdx + 2)..] : "";
+        }
+        else
+        {
+            _cSupplier = desc;
+            _cInvoiceNumber = "";
+        }
+
+        // Pre-fill amounts from lines
+        var vatLine = entry.Lines.FirstOrDefault(l => l.DebitAmount > 0 && l.Account?.AccountNumber?.StartsWith("2641") == true);
+        _cVatAmount = vatLine?.DebitAmount ?? 0;
+
+        var payableLine = entry.Lines.FirstOrDefault(l => l.CreditAmount > 0 && l.Account?.AccountNumber?.StartsWith("24") == true);
+        _cTotal = payableLine?.CreditAmount ?? entry.Lines.Sum(l => l.CreditAmount);
+        _cAmountExclVat = _cTotal - _cVatAmount;
+    }
+
+    private void CancelConvert()
+    {
+        _convertingEntryId = null;
+        _convertError = null;
+    }
+
+    private void RecalcConvertTotal() => _cTotal = _cAmountExclVat + _cVatAmount;
+
+    private async Task ConfirmConvert(int entryId)
+    {
+        _convertError = null;
+        _converting = true;
+        try
+        {
+            var invoice = new SupplierInvoice
+            {
+                FiscalYearId = _activeFiscalYear!.Id,
+                SupplierName = _cSupplier.Trim(),
+                InvoiceNumber = string.IsNullOrWhiteSpace(_cInvoiceNumber) ? null : _cInvoiceNumber.Trim(),
+                InvoiceDate = DateOnly.FromDateTime(_cInvoiceDate),
+                DueDate = DateOnly.FromDateTime(_cDueDate),
+                AmountExclVat = _cAmountExclVat,
+                VatAmount = _cVatAmount,
+                TotalAmount = _cTotal,
+                Notes = string.IsNullOrWhiteSpace(_cNotes) ? null : _cNotes.Trim(),
+                IsPaid = _cIsPaid,
+                PaidDate = _cIsPaid ? DateOnly.FromDateTime(_cPaidDate) : null
+            };
+
+            var (result, error) = await InvoiceService.CreateFromEntryAsync(entryId, invoice);
+            if (error is not null) { _convertError = error; return; }
+
+            Snackbar.Add($"Faktura för {result!.SupplierName} skapad och kopplad till verifikation.", Severity.Success);
+            _convertingEntryId = null;
+            _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
+            _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_activeFiscalYear.Id);
+            _knownSuppliers = await InvoiceService.GetSuppliersAsync(_activeFiscalYear.Id);
+        }
+        finally { _converting = false; }
+    }
+
+    private async Task ToggleAttachments(JournalEntry entry)
+    {
+        _attachmentError = null;
+        if (_attachmentEntryId == entry.Id)
+        {
+            _attachmentEntryId = null;
+            _attachmentMeta = [];
+            return;
+        }
+        _attachmentEntryId = entry.Id;
+        _attachmentMeta = await AttachmentService.GetMetaAsync(entry.Id);
+    }
+
+    private async Task UploadAttachmentAsync(InputFileChangeEventArgs e)
+    {
+        _attachmentError = null;
+        _uploadingAttachment = true;
+        try
+        {
+            const long maxBytes = 10 * 1024 * 1024;
+            if (e.File.Size > maxBytes)
+            {
+                _attachmentError = "Filen är för stor (max 10 MB).";
+                return;
+            }
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(maxBytes).CopyToAsync(ms);
+            var contentType = string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
+            await AttachmentService.AddAsync(_attachmentEntryId!.Value, e.File.Name, contentType, ms.ToArray());
+            _attachmentMeta = await AttachmentService.GetMetaAsync(_attachmentEntryId.Value);
+            _attachmentCounts[_attachmentEntryId.Value] = _attachmentMeta.Count;
+            Snackbar.Add($"{e.File.Name} uppladdad.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _attachmentError = $"Uppladdning misslyckades: {ex.Message}";
+        }
+        finally { _uploadingAttachment = false; }
+    }
+
+    private async Task DeleteAttachmentAsync(int attachmentId)
+    {
+        _attachmentError = null;
+        await AttachmentService.DeleteAsync(attachmentId);
+        _attachmentMeta = await AttachmentService.GetMetaAsync(_attachmentEntryId!.Value);
+        _attachmentCounts[_attachmentEntryId.Value] = _attachmentMeta.Count;
+        if (_attachmentCounts[_attachmentEntryId.Value] == 0)
+            _attachmentCounts.Remove(_attachmentEntryId.Value);
     }
 }

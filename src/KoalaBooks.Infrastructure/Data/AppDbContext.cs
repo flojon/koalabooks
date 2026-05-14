@@ -11,6 +11,9 @@ public class AppDbContext : DbContext
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
+    public DbSet<BankTransaction> BankTransactions => Set<BankTransaction>();
+    public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
+    public DbSet<JournalEntryAttachment> JournalEntryAttachments => Set<JournalEntryAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +59,56 @@ public class AppDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(l => l.AccountId)
                   .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<SupplierInvoice>(entity =>
+        {
+            entity.Property(s => s.SupplierName).HasMaxLength(200);
+            entity.Property(s => s.InvoiceNumber).HasMaxLength(100);
+            entity.Property(s => s.Notes).HasMaxLength(500);
+            entity.Property(s => s.AmountExclVat).HasPrecision(18, 2);
+            entity.Property(s => s.VatAmount).HasPrecision(18, 2);
+            entity.Property(s => s.TotalAmount).HasPrecision(18, 2);
+            entity.HasOne(s => s.FiscalYear)
+                  .WithMany()
+                  .HasForeignKey(s => s.FiscalYearId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(s => s.JournalEntry)
+                  .WithMany()
+                  .HasForeignKey(s => s.JournalEntryId)
+                  .OnDelete(DeleteBehavior.SetNull)
+                  .IsRequired(false);
+            entity.HasOne(s => s.PaymentJournalEntry)
+                  .WithMany()
+                  .HasForeignKey(s => s.PaymentJournalEntryId)
+                  .OnDelete(DeleteBehavior.SetNull)
+                  .IsRequired(false);
+        });
+
+        modelBuilder.Entity<JournalEntryAttachment>(entity =>
+        {
+            entity.Property(a => a.FileName).HasMaxLength(260);
+            entity.Property(a => a.ContentType).HasMaxLength(100);
+            entity.HasOne<JournalEntry>()
+                  .WithMany()
+                  .HasForeignKey(a => a.JournalEntryId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<BankTransaction>(entity =>
+        {
+            entity.Property(b => b.Amount).HasPrecision(18, 2);
+            entity.Property(b => b.Description).HasMaxLength(500);
+            entity.Property(b => b.Reference).HasMaxLength(200);
+            entity.HasOne(b => b.Account)
+                  .WithMany()
+                  .HasForeignKey(b => b.AccountId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(b => b.JournalEntry)
+                  .WithMany()
+                  .HasForeignKey(b => b.JournalEntryId)
+                  .OnDelete(DeleteBehavior.SetNull)
+                  .IsRequired(false);
         });
     }
 }

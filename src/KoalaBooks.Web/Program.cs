@@ -23,6 +23,9 @@ builder.Services.AddScoped<JournalEntryService>();
 builder.Services.AddScoped<SieExportService>();
 builder.Services.AddScoped<YearEndClosingService>();
 builder.Services.AddScoped<BasImportService>();
+builder.Services.AddScoped<BankImportService>();
+builder.Services.AddScoped<SupplierInvoiceService>();
+builder.Services.AddScoped<AttachmentService>();
 
 builder.Services.AddMudServices(config =>
 {
@@ -39,6 +42,12 @@ builder.Services.AddRazorComponents()
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
+
+app.MapGet("/attachments/{id:int}", async (int id, AttachmentService svc) =>
+{
+    var a = await svc.GetAsync(id);
+    return a is null ? Results.NotFound() : Results.File(a.Data, a.ContentType, a.FileName);
+});
 
 // Auto-migrate on startup (retry for Aspire database creation race)
 using (var scope = app.Services.CreateScope())
@@ -57,6 +66,11 @@ using (var scope = app.Services.CreateScope())
         }
     }
 }
+
+app.UseRequestLocalization(new RequestLocalizationOptions()
+    .SetDefaultCulture("sv-SE")
+    .AddSupportedCultures("sv-SE")
+    .AddSupportedUICultures("sv-SE"));
 
 if (!app.Environment.IsDevelopment())
 {
