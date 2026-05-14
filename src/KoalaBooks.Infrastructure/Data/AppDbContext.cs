@@ -1,9 +1,10 @@
 using KoalaBooks.Domain.Entities;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Infrastructure.Data;
 
-public class AppDbContext : DbContext
+public class AppDbContext : IdentityDbContext<ApplicationUser>
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
@@ -17,6 +18,9 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.UseOpenIddict();
+
         modelBuilder.Entity<Account>(entity =>
         {
             entity.HasIndex(a => new { a.FiscalYearId, a.AccountNumber }).IsUnique();

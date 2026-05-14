@@ -2,6 +2,7 @@ using KoalaBooks.Application.Services;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using KoalaBooks.Web.Components;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
@@ -15,6 +16,48 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 builder.AddNpgsqlDbContext<AppDbContext>("koalabooks");
+
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+{
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 8;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequireUppercase = true;
+    options.Password.RequireLowercase = true;
+    options.SignIn.RequireConfirmedAccount = false;
+})
+.AddEntityFrameworkStores<AppDbContext>()
+.AddDefaultTokenProviders();
+
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.LoginPath = "/account/login";
+    options.LogoutPath = "/account/logout";
+    options.ExpireTimeSpan = TimeSpan.FromDays(30);
+    options.SlidingExpiration = true;
+});
+
+builder.Services.AddOpenIddict()
+    .AddCore(options =>
+    {
+        options.UseEntityFrameworkCore()
+               .UseDbContext<AppDbContext>();
+    })
+    .AddServer(options =>
+    {
+        options.SetTokenEndpointUris("/connect/token");
+        options.AllowPasswordFlow()
+               .AllowRefreshTokenFlow();
+        options.AddDevelopmentEncryptionCertificate()
+               .AddDevelopmentSigningCertificate();
+        options.UseAspNetCore()
+               .EnableTokenEndpointPassthrough();
+    })
+    .AddValidation(options =>
+    {
+        options.UseLocalServer();
+        options.UseAspNetCore();
+    });
 
 builder.Services.AddScoped<SieImportService>();
 builder.Services.AddScoped<AccountService>();
@@ -36,8 +79,11 @@ builder.Services.AddMudServices(config =>
     config.SnackbarConfiguration.ShowTransitionDuration = 300;
 });
 
+builder.Services.AddRazorPages();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -47,9 +93,9 @@ app.MapGet("/attachments/{id:int}", async (int id, AttachmentService svc) =>
 {
     var a = await svc.GetAsync(id);
     return a is null ? Results.NotFound() : Results.File(a.Data, a.ContentType, a.FileName);
-});
+}).RequireAuthorization();
 
-// Auto-migrate on startup (retry for Aspire database creation race)
+// Auto-migrate and seed on startup
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -65,6 +111,21 @@ using (var scope = app.Services.CreateScope())
             await Task.Delay(TimeSpan.FromSeconds(2));
         }
     }
+
+    // Seed a default dev user if none exists
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+    const string devEmail = "admin@koalabooks.local";
+    if (await userManager.FindByEmailAsync(devEmail) is null)
+    {
+        var devUser = new ApplicationUser
+        {
+            UserName = devEmail,
+            Email = devEmail,
+            EmailConfirmed = true,
+            DisplayName = "Admin"
+        };
+        await userManager.CreateAsync(devUser, "Admin123!");
+    }
 }
 
 app.UseRequestLocalization(new RequestLocalizationOptions()
@@ -78,9 +139,12 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapRazorPages();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

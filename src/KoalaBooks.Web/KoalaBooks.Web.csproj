@@ -13,6 +13,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="MudBlazor" Version="9.3.0" />
+    <PackageReference Include="OpenIddict.AspNetCore" Version="7.5.0" />
 
   </ItemGroup>
 

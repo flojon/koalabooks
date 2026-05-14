@@ -1,4 +1,5 @@
 ﻿@inherits LayoutComponentBase
+@inject NavigationManager Navigation
 
 <MudLayout>
     <MudAppBar Elevation="0" Color="Color.Secondary">
@@ -6,6 +7,17 @@
             <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
         </MudHidden>
         <MudText Typo="Typo.h6" Class="ml-2">🐨 KoalaBooks</MudText>
+        <MudSpacer />
+        <AuthorizeView>
+            <Authorized>
+                <MudText Typo="Typo.body2" Class="mr-2" Style="color:#CBD5E1;">@context.User.Identity?.Name</MudText>
+                <form method="post" action="/account/logout" style="display:inline;">
+                    <AntiforgeryToken />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Logout" Color="Color.Inherit" Size="Size.Small"
+                                   title="Logga ut" ButtonType="ButtonType.Submit" />
+                </form>
+            </Authorized>
+        </AuthorizeView>
     </MudAppBar>
 
     <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Breakpoint="Breakpoint.Md"
