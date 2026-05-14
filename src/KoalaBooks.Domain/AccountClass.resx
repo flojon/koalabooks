@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, ...</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, ...</value>
+  </resheader>
+  <data name="AccountClass_Asset" xml:space="preserve">
+    <value>Asset</value>
+  </data>
+  <data name="AccountClass_Liability" xml:space="preserve">
+    <value>Liability</value>
+  </data>
+  <data name="AccountClass_Revenue" xml:space="preserve">
+    <value>Revenue</value>
+  </data>
+  <data name="AccountClass_Expense" xml:space="preserve">
+    <value>Expense</value>
+  </data>
+  <data name="AccountClass_Equity" xml:space="preserve">
+    <value>Equity</value>
+  </data>
+</root>
