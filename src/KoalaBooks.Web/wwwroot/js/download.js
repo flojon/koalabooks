@@ -1,3 +1,7 @@
+window.koala = {
+    focusId: (id) => document.getElementById(id)?.focus()
+};
+
 window.downloadFileFromBase64 = function (base64, fileName) {
     const link = document.createElement('a');
     link.href = 'data:application/octet-stream;base64,' + base64;

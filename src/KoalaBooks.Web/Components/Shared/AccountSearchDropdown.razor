@@ -1,7 +1,8 @@
 @using KoalaBooks.Domain.Entities
 
 <div class="account-search-dropdown" @onfocusout="HandleFocusOut">
-    <input type="text"
+    <input id="@InputId"
+           type="text"
            @bind:get="_searchText"
            @bind:set="OnSearchChanged"
            @bind:event="oninput"
@@ -43,6 +44,12 @@
 
     [Parameter]
     public EventCallback<int> SelectedAccountIdChanged { get; set; }
+
+    [Parameter]
+    public string? InputId { get; set; }
+
+    [Parameter]
+    public EventCallback OnAfterKeyboardSelect { get; set; }
 
     private string _searchText = "";
     private bool _isOpen;
@@ -122,9 +129,15 @@
                 if (_highlightedIndex > 0)
                     _highlightedIndex--;
                 break;
+            case "Tab":
+                _isOpen = false;
+                break;
             case "Enter":
                 if (_highlightedIndex >= 0 && _highlightedIndex < _filtered.Count)
+                {
                     await SelectAccount(_filtered[_highlightedIndex]);
+                    await OnAfterKeyboardSelect.InvokeAsync();
+                }
                 break;
             case "Escape":
                 _isOpen = false;

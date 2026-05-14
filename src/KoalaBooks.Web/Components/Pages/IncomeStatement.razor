@@ -18,10 +18,10 @@
         </select>
 
         <label style="font-weight:600; color:#475569;">Från datum:</label>
-        <input type="date" @bind="FromDate" style="width:150px;" />
+        <input type="date" @bind="FromDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
 
         <label style="font-weight:600; color:#475569;">Till datum:</label>
-        <input type="date" @bind="ToDate" style="width:150px;" />
+        <input type="date" @bind="ToDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
 
         <button class="btn" @onclick="LoadReport">Generera</button>
     </div>

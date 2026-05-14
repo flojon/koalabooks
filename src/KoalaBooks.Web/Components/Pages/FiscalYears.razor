@@ -24,11 +24,11 @@
             </div>
             <div class="form-group">
                 <label>Startdatum</label>
-                <input type="date" @bind="_formStart" />
+                <DateInput @bind-Value="_formStart" />
             </div>
             <div class="form-group">
                 <label>Slutdatum</label>
-                <input type="date" @bind="_formEnd" />
+                <DateInput @bind-Value="_formEnd" />
             </div>
             <button class="btn btn-success" @onclick="Create">Skapa</button>
         </div>

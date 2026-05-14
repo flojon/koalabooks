@@ -1,0 +1,37 @@
+@using System.Globalization
+
+<input type="date" @key="_key" value="@_str" @onchange="OnChange" @attributes="AdditionalAttributes" />
+
+@code {
+    [Parameter] public DateTime Value { get; set; }
+    [Parameter] public EventCallback<DateTime> ValueChanged { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string _str = "";
+    private int _key;
+    private DateTime _lastValue;
+
+    protected override void OnParametersSet()
+    {
+        if (Value != _lastValue)
+        {
+            _lastValue = Value;
+            _str = Value == default ? "" : Value.ToString("yyyy-MM-dd");
+        }
+    }
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        var s = e.Value?.ToString() ?? "";
+        if (DateTime.TryParseExact(s, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+        {
+            _lastValue = d;
+            _str = s;
+            await ValueChanged.InvokeAsync(d);
+        }
+        else
+        {
+            _key++; // force DOM reset to last valid value
+        }
+    }
+}
