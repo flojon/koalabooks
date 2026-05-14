@@ -164,3 +164,31 @@
 - FindRepoRoot() helper walks up directory tree to locate resources/
 
 **Total test count: 163 (149 existing + 14 new)**
+
+### 2026-04-20: Important Coverage Gap Tests (UpdateAsync + FiscalYearService + Loss Closing)
+
+**Files created:**
+- `UpdateAsyncTests.cs` — 4 tests covering JournalEntryService.UpdateAsync guards
+- `FiscalYearServiceTests.cs` — 4 tests covering FiscalYearService CRUD
+- `YearEndClosingLossTests.cs` — 2 tests covering year-end closing with net loss
+
+**UpdateAsync tests (4):**
+1. Zero lines → returns "at least 2 lines" error (ValidateEntry guard)
+2. Debits ≠ credits → returns error (ValidateEntry guard)
+3. Valid draft → updates description, date, and lines successfully
+4. Posted entry → returns "posted" error (cannot modify posted entries)
+
+**FiscalYearService CRUD tests (4):**
+1. CreateAsync → creates fiscal year in DB with correct properties
+2. Overlapping fiscal year → throws InvalidOperationException
+3. GetActiveAsync → returns the non-closed year (skips closed ones)
+4. GetAllAsync → returns all fiscal years
+
+**Year-end closing loss tests (2):**
+1. Loss scenario (revenue 3k, expense 8k = -5k loss) → entry 2 debits 2099, credits 8999 (loss transferred to equity)
+2. Loss scenario → 2099 outgoing balance = -5,000, P&L accounts zeroed
+
+**Key finding:**
+- FiscalYearService.CreateAsync had NO overlap validation — overlapping fiscal years were silently accepted. Added a guard: `AnyAsync(f => f.StartDate <= fy.EndDate && f.EndDate >= fy.StartDate)` → throws InvalidOperationException. This was a missing business rule, not just a test gap. The Blazor FiscalYears.razor page also lacks error handling for this (pre-existing issue).
+
+**Total test count: 169 (all green)**

@@ -23,6 +23,9 @@
 
 <!-- Append learnings below -->
 
+### 2026-04-18: AccountClass Localization
+- Implemented .resx-based localization for AccountClass enum in Domain layer. Resource files: AccountClass.resx (default/English), AccountClass.sv.resx (Swedish). Extension method ToLocalizedString supports culture override and falls back to enum name. Swedish terms: Tillgång, Skuld, Intäkt, Kostnad, Eget kapital. Pattern: ResourceManager + enum key naming. No test or build regressions.
+
 ### 2026-04-18: CSV Import Removal — Replaced by BAS XLS Import
 - Deleted `CsvImportService.cs` from Infrastructure/Services and removed CsvHelper NuGet package from Infrastructure.csproj.
 - Removed CSV DI registration from Program.cs.

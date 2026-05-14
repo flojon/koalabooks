@@ -38,6 +38,16 @@ Reviewed Danny's feature priority roadmap against the actual codebase. Confirmed
 - The BalanceSheetTests.BalanceSheet_AssetsEqualLiabilitiesPlusEquity_WhenBalanced test passes only because test data has no credit transactions on liability accounts — it only checks IB values
 - SIE import correctly handles CP437→Latin-1 transcoding for Swedish characters_
 
+### 2026-07-17 — Swedish Translation Review (Rusty's work)
+- Reviewed all 11 Razor files for Swedish accounting terminology, natural phrasing, consistency, and BAS accuracy.
+- **Overall quality: very good.** Rusty nailed the core accounting terms (verifikation, kontoplan, råbalans, resultaträkning, balansräkning, huvudbok, bokslut, räkenskapsår, debet/kredit, IB/UB).
+- **REJECTED with 4 issues:**
+  1. "BAS Kontoplan" → "BAS-kontoplan" (Accounts.razor line 33) — inconsistent with Home.razor
+  2. "Stängd" → "Stängt" (FiscalYears.razor line 62) — wrong grammatical gender (räkenskapsår is neuter)
+  3. "Öppen" → "Öppet" (FiscalYears.razor line 66) — wrong grammatical gender
+  4. "Utkastverifikation raderad." → "Utkastet raderat." (Journal.razor line 293) — unnatural compound
+- **Noted but not blocking:** Nav says "Journal" but page title says "Verifikationer" (minor mismatch, both valid). AccountClass enum values display in English (Asset, Liability, etc.) — code architecture issue, not translation scope.
+
 ### 2026-04-17 (Session 3) — Business Logic Accounting Correctness Review
 
 Full review of all service files and entity models against Swedish accounting standards. Findings filed to `.squad/decisions/inbox/reuben-review-findings.md`.
