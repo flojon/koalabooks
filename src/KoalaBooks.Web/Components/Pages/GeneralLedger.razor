@@ -22,67 +22,107 @@ else if (_fiscalYears.Any())
             }
         </select>
 
-        <label style="font-weight:600; color:#475569;">Från konto:</label>
-        <input type="text" @bind="FromAccount" placeholder="t.ex. 1000" style="width:100px;" />
-
-        <label style="font-weight:600; color:#475569;">Till konto:</label>
-        <input type="text" @bind="ToAccount" placeholder="t.ex. 1999" style="width:100px;" />
+        <label style="font-weight:600; color:#475569;">Sök konto:</label>
+        <input type="text" @bind="_accountSearch" @bind:event="oninput" placeholder="Nummer eller namn..." style="width:180px;" />
 
         <label style="font-weight:600; color:#475569;">Från datum:</label>
-        <input type="date" @bind="FromDate" style="width:150px;" />
+        <input type="date" @bind="FromDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
 
         <label style="font-weight:600; color:#475569;">Till datum:</label>
-        <input type="date" @bind="ToDate" style="width:150px;" />
+        <input type="date" @bind="ToDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
 
-        <button class="btn" @onclick="LoadReport">Generera</button>
+        <button class="btn" @onclick="ApplyFilters">Uppdatera</button>
     </div>
 
-    @if (_sections is not null)
+    @if (!_accounts.Any())
     {
-        @if (!_sections.Any())
-        {
-            <MudAlert Severity="Severity.Info" Class="mt-4">Inga konton hittades för de valda kriterierna.</MudAlert>
-        }
-
-        @foreach (var acct in _sections)
-        {
-            <div class="card" style="margin-top:1.5rem;">
-                <h3 style="margin:0 0 0.75rem 0;">@acct.AccountNumber @acct.AccountName</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width:110px;">Datum</th>
-                            <th style="width:80px;">Ver.nr</th>
-                            <th>Beskrivning</th>
-                            <th style="width:130px; text-align:right;">Debet</th>
-                            <th style="width:130px; text-align:right;">Kredit</th>
-                            <th style="width:140px; text-align:right;">Saldo</th>
+        <MudAlert Severity="Severity.Info" Class="mt-4">Inga konton hittades för räkenskapsåret.</MudAlert>
+    }
+    else
+    {
+        <div class="card" style="margin-top:1.5rem; padding:0; overflow:hidden;">
+            <table style="margin:0;">
+                <thead>
+                    <tr>
+                        <th style="width:32px;"></th>
+                        <th style="width:90px;">Konto</th>
+                        <th>Namn</th>
+                        <th style="width:130px; text-align:right;">IB</th>
+                        <th style="width:130px; text-align:right;">UB</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var account in FilteredAccounts)
+                    {
+                        var isExpanded = _expandedIds.Contains(account.Id);
+                        var isLoading = _loadingIds.Contains(account.Id);
+                        <tr @onclick="() => ToggleAccount(account)" style="cursor:pointer; user-select:none;">
+                            <td style="text-align:center; color:#94a3b8;">@(isExpanded ? "▼" : "▶")</td>
+                            <td style="font-family:monospace;">@account.AccountNumber</td>
+                            <td>@account.Name</td>
+                            <td style="text-align:right;">@(account.IncomingBalance != 0 ? account.IncomingBalance.ToString("N2") : "—")</td>
+                            <td style="text-align:right;">@(account.OutgoingBalance != 0 ? account.OutgoingBalance.ToString("N2") : "—")</td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        <tr style="background:#f8fafc; font-weight:600;">
-                            <td colspan="5">Ingående saldo</td>
-                            <td style="text-align:right;">@acct.IncomingBalance.ToString("N2")</td>
-                        </tr>
-                        @foreach (var row in acct.Rows)
+                        @if (isExpanded)
                         {
                             <tr>
-                                <td>@row.Date.ToString("yyyy-MM-dd")</td>
-                                <td>@row.EntryNumber</td>
-                                <td>@row.Description</td>
-                                <td style="text-align:right;">@(row.DebitAmount != 0 ? row.DebitAmount.ToString("N2") : "—")</td>
-                                <td style="text-align:right;">@(row.CreditAmount != 0 ? row.CreditAmount.ToString("N2") : "—")</td>
-                                <td style="text-align:right;">@row.RunningBalance.ToString("N2")</td>
+                                <td colspan="5" style="padding:0; background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+                                    @if (isLoading)
+                                    {
+                                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                                    }
+                                    else if (_loadedSections.TryGetValue(account.Id, out var ledger))
+                                    {
+                                        <div style="padding:0.75rem 1rem;">
+                                            @if (!ledger.Rows.Any())
+                                            {
+                                                <span style="color:#94a3b8; font-style:italic;">Inga bokförda transaktioner för detta konto.</span>
+                                            }
+                                            else
+                                            {
+                                                <table style="margin:0; font-size:0.875rem;">
+                                                    <thead>
+                                                        <tr>
+                                                            <th style="width:110px;">Datum</th>
+                                                            <th style="width:70px;">Ver.nr</th>
+                                                            <th>Beskrivning</th>
+                                                            <th style="width:120px; text-align:right;">Debet</th>
+                                                            <th style="width:120px; text-align:right;">Kredit</th>
+                                                            <th style="width:130px; text-align:right;">Saldo</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <tr style="background:#f1f5f9; font-weight:600;">
+                                                            <td colspan="5">Ingående saldo</td>
+                                                            <td style="text-align:right;">@ledger.IncomingBalance.ToString("N2")</td>
+                                                        </tr>
+                                                        @foreach (var row in ledger.Rows)
+                                                        {
+                                                            <tr>
+                                                                <td>@row.Date.ToString("yyyy-MM-dd")</td>
+                                                                <td>@row.EntryNumber</td>
+                                                                <td>@row.Description</td>
+                                                                <td style="text-align:right;">@(row.DebitAmount != 0 ? row.DebitAmount.ToString("N2") : "—")</td>
+                                                                <td style="text-align:right;">@(row.CreditAmount != 0 ? row.CreditAmount.ToString("N2") : "—")</td>
+                                                                <td style="text-align:right;">@row.RunningBalance.ToString("N2")</td>
+                                                            </tr>
+                                                        }
+                                                        <tr style="background:#f1f5f9; font-weight:700;">
+                                                            <td colspan="5">Utgående saldo</td>
+                                                            <td style="text-align:right;">@ledger.ClosingBalance.ToString("N2")</td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            }
+                                        </div>
+                                    }
+                                </td>
                             </tr>
                         }
-                        <tr style="background:#f1f5f9; font-weight:700;">
-                            <td colspan="5">Utgående saldo</td>
-                            <td style="text-align:right;">@acct.ClosingBalance.ToString("N2")</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        }
+                    }
+                </tbody>
+            </table>
+        </div>
     }
 }
 else
@@ -93,15 +133,25 @@ else
 @code {
     [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private AccountService AccountService { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
-    private List<GeneralLedgerAccountSection>? _sections;
+    private List<Account> _accounts = [];
+    private readonly HashSet<int> _expandedIds = [];
+    private readonly HashSet<int> _loadingIds = [];
+    private readonly Dictionary<int, GeneralLedgerAccountSection> _loadedSections = new();
     private bool _isLoading;
+    private string _accountSearch = "";
+
     private int SelectedFiscalYearId { get; set; }
-    private string? FromAccount { get; set; }
-    private string? ToAccount { get; set; }
     private DateOnly? FromDate { get; set; }
     private DateOnly? ToDate { get; set; }
+
+    private IEnumerable<Account> FilteredAccounts => string.IsNullOrWhiteSpace(_accountSearch)
+        ? _accounts
+        : _accounts.Where(a =>
+            a.AccountNumber.Contains(_accountSearch, StringComparison.OrdinalIgnoreCase) ||
+            a.Name.Contains(_accountSearch, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
@@ -111,14 +161,50 @@ else
         if (active is not null)
         {
             SelectedFiscalYearId = active.Id;
-            await LoadReport();
+            await LoadAccountList();
         }
         _isLoading = false;
     }
 
-    private async Task LoadReport()
+    private async Task LoadAccountList()
     {
-        _sections = await JournalEntryService.GetGeneralLedgerAsync(
-            SelectedFiscalYearId, FromAccount, ToAccount, FromDate, ToDate);
+        _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
+        _expandedIds.Clear();
+        _loadingIds.Clear();
+        _loadedSections.Clear();
+    }
+
+    private async Task ApplyFilters()
+    {
+        _loadedSections.Clear();
+        _expandedIds.Clear();
+        _loadingIds.Clear();
+        await LoadAccountList();
+    }
+
+    private async Task ToggleAccount(Account account)
+    {
+        if (_expandedIds.Contains(account.Id))
+        {
+            _expandedIds.Remove(account.Id);
+            return;
+        }
+
+        _expandedIds.Add(account.Id);
+
+        if (_loadedSections.ContainsKey(account.Id))
+            return;
+
+        _loadingIds.Add(account.Id);
+        StateHasChanged();
+
+        var section = await JournalEntryService.GetAccountLedgerAsync(
+            SelectedFiscalYearId, account.Id, FromDate, ToDate);
+
+        _loadingIds.Remove(account.Id);
+        if (section is not null)
+            _loadedSections[account.Id] = section;
+
+        StateHasChanged();
     }
 }
