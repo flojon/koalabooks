@@ -12,6 +12,22 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/koalabooks-web
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Test
+        run: dotnet test --configuration Release --no-restore
+
   build:
     runs-on: ubuntu-latest
     permissions:
@@ -43,6 +59,13 @@ jobs:
             type=semver,pattern={{major}}
             type=sha,prefix=sha-
 
+      - name: Set cache-to target
+        id: cache
+        run: |
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "target=type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -52,4 +75,4 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}/{1}:buildcache,mode=max', env.REGISTRY, env.IMAGE_NAME) || '' }}
+          cache-to: ${{ steps.cache.outputs.target }}
