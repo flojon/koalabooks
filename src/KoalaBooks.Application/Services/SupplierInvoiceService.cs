@@ -34,7 +34,7 @@ public class SupplierInvoiceService
         if (invoice.DueDate < invoice.InvoiceDate)
             return (null, "Förfallodatum kan inte vara före fakturadatum.");
 
-        var fiscalYear = await _db.FiscalYears.FindAsync(invoice.FiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == invoice.FiscalYearId);
         if (fiscalYear is null) return (null, "Räkenskapsår hittades inte.");
         if (fiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
 
@@ -143,7 +143,7 @@ public class SupplierInvoiceService
 
         if (linkBankTransactionId.HasValue)
         {
-            var bankTx = await _db.BankTransactions.FindAsync(linkBankTransactionId.Value);
+            var bankTx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == linkBankTransactionId.Value);
             if (bankTx is not null)
             {
                 bankTx.JournalEntryId = paymentEntry.Id;
@@ -158,7 +158,7 @@ public class SupplierInvoiceService
 
     public async Task<string?> DeleteAsync(int invoiceId)
     {
-        var invoice = await _db.SupplierInvoices.FindAsync(invoiceId);
+        var invoice = await _db.SupplierInvoices.FirstOrDefaultAsync(s => s.Id == invoiceId);
         if (invoice is null) return "Fakturan hittades inte.";
         if (invoice.JournalEntryId.HasValue) return "Bokförda fakturor kan inte raderas.";
         if (invoice.IsPaid) return "Betalda fakturor kan inte raderas.";
@@ -217,10 +217,10 @@ public class SupplierInvoiceService
         if (invoice.DueDate < invoice.InvoiceDate)
             return (null, "Förfallodatum kan inte vara före fakturadatum.");
 
-        var fiscalYear = await _db.FiscalYears.FindAsync(invoice.FiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == invoice.FiscalYearId);
         if (fiscalYear is null) return (null, "Räkenskapsår hittades inte.");
 
-        var entry = await _db.JournalEntries.FindAsync(journalEntryId);
+        var entry = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Id == journalEntryId);
         if (entry is null) return (null, "Verifikationen hittades inte.");
         if (entry.FiscalYearId != invoice.FiscalYearId)
             return (null, "Verifikationen tillhör ett annat räkenskapsår.");

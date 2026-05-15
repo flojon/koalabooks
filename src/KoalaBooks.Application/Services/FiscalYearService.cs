@@ -26,7 +26,7 @@ public class FiscalYearService
 
     public async Task<FiscalYear?> GetByIdAsync(int id)
     {
-        return await _db.FiscalYears.FindAsync(id);
+        return await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == id);
     }
 
     public async Task<FiscalYear?> GetActiveAsync()
@@ -108,7 +108,7 @@ public class FiscalYearService
     /// </summary>
     public async Task PropagateBalancesToNextYearAsync(int fiscalYearId)
     {
-        var sourceYear = await _db.FiscalYears.FindAsync(fiscalYearId);
+        var sourceYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId);
         if (sourceYear is null) return;
 
         var nextYear = await _db.FiscalYears

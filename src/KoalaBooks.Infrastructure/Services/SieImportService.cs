@@ -44,10 +44,12 @@ public record SieImportAllResult(
 public class SieImportService
 {
     private readonly AppDbContext _db;
+    private readonly TenantContext _tenant;
 
-    public SieImportService(AppDbContext db)
+    public SieImportService(AppDbContext db, TenantContext tenant)
     {
         _db = db;
+        _tenant = tenant;
     }
 
     public SieDocument Parse(Stream stream)
@@ -215,7 +217,9 @@ public class SieImportService
                 Name = fyName,
                 StartDate = fyStart,
                 EndDate = fyEnd,
-                IsClosed = false
+                IsClosed = false,
+                OrganisationId = _tenant.OrganisationId
+                    ?? throw new InvalidOperationException("SIE import requires an active organisation context.")
             };
             _db.FiscalYears.Add(fiscalYear);
             await _db.SaveChangesAsync();

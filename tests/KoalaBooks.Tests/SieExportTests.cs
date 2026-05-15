@@ -26,6 +26,7 @@ public class SieExportServiceTests : IDisposable
             Name = name,
             StartDate = start ?? new DateOnly(2026, 1, 1),
             EndDate = end ?? new DateOnly(2026, 12, 31),
+            OrganisationId = _f.TestOrgId
         };
         _f.Db.FiscalYears.Add(fy);
         await _f.Db.SaveChangesAsync();
@@ -215,7 +216,7 @@ public class SieExportServiceTests : IDisposable
         var exportedBytes = await _f.SieExportService.ExportAsync(fy.Id, "Koala AB");
 
         // Parse back using SieImportService
-        var importService = new SieImportService(_f.Db);
+        var importService = new SieImportService(_f.Db, _f.Tenant);
         var stream = new MemoryStream(exportedBytes);
         var doc = importService.Parse(stream);
 

@@ -4,6 +4,7 @@ public class JournalEntryAttachment
 {
     public int Id { get; set; }
     public int JournalEntryId { get; set; }
+    public JournalEntry JournalEntry { get; set; } = null!;
     public string FileName { get; set; } = "";
     public string ContentType { get; set; } = "";
     public long FileSize { get; set; }

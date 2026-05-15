@@ -293,7 +293,7 @@ public class BankImportService
 
     public async Task SetStatusAsync(int bankTransactionId, BankTransactionStatus status)
     {
-        var tx = await _db.BankTransactions.FindAsync(bankTransactionId);
+        var tx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == bankTransactionId);
         if (tx is null) return;
         tx.Status = status;
         if (status != BankTransactionStatus.Matched)
@@ -303,10 +303,10 @@ public class BankImportService
 
     public async Task<string?> MatchToEntryAsync(int bankTransactionId, int journalEntryId)
     {
-        var tx = await _db.BankTransactions.FindAsync(bankTransactionId);
+        var tx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == bankTransactionId);
         if (tx is null) return "Banktransaktion hittades inte.";
 
-        var entry = await _db.JournalEntries.FindAsync(journalEntryId);
+        var entry = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Id == journalEntryId);
         if (entry is null) return "Verifikation hittades inte.";
 
         tx.JournalEntryId = journalEntryId;

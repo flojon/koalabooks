@@ -35,13 +35,26 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         });
 
         modelBuilder.Entity<FiscalYear>()
-            .HasQueryFilter(f => _tenant.OrganisationId == null || f.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(f => _tenant.OrganisationId != null && f.OrganisationId == _tenant.OrganisationId);
 
         modelBuilder.Entity<BankTransaction>()
-            .HasQueryFilter(b => _tenant.OrganisationId == null || b.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(b => _tenant.OrganisationId != null && b.OrganisationId == _tenant.OrganisationId);
+
+        modelBuilder.Entity<JournalEntry>()
+            .HasQueryFilter(j => _tenant.OrganisationId != null && j.FiscalYear.OrganisationId == _tenant.OrganisationId);
+
+        modelBuilder.Entity<JournalEntryLine>()
+            .HasQueryFilter(l => _tenant.OrganisationId != null && l.JournalEntry.FiscalYear.OrganisationId == _tenant.OrganisationId);
+
+        modelBuilder.Entity<SupplierInvoice>()
+            .HasQueryFilter(s => _tenant.OrganisationId != null && s.FiscalYear.OrganisationId == _tenant.OrganisationId);
+
+        modelBuilder.Entity<JournalEntryAttachment>()
+            .HasQueryFilter(a => _tenant.OrganisationId != null && a.JournalEntry.FiscalYear.OrganisationId == _tenant.OrganisationId);
 
         modelBuilder.Entity<Account>(entity =>
         {
+            entity.HasQueryFilter(a => _tenant.OrganisationId != null && a.FiscalYear.OrganisationId == _tenant.OrganisationId);
             entity.HasIndex(a => new { a.FiscalYearId, a.AccountNumber }).IsUnique();
             entity.Property(a => a.AccountNumber).HasMaxLength(10);
             entity.Property(a => a.Name).HasMaxLength(200);
@@ -116,7 +129,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.Property(a => a.FileName).HasMaxLength(260);
             entity.Property(a => a.ContentType).HasMaxLength(100);
-            entity.HasOne<JournalEntry>()
+            entity.HasOne(a => a.JournalEntry)
                   .WithMany()
                   .HasForeignKey(a => a.JournalEntryId)
                   .OnDelete(DeleteBehavior.Cascade);

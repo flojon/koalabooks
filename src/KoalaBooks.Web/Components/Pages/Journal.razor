@@ -654,7 +654,12 @@ else
             using var ms = new MemoryStream();
             await e.File.OpenReadStream(maxBytes).CopyToAsync(ms);
             var contentType = string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
-            await AttachmentService.AddAsync(_attachmentEntryId!.Value, e.File.Name, contentType, ms.ToArray());
+            var added = await AttachmentService.AddAsync(_attachmentEntryId!.Value, e.File.Name, contentType, ms.ToArray());
+            if (added is null)
+            {
+                _attachmentError = "Verifikationen hittades inte.";
+                return;
+            }
             _attachmentMeta = await AttachmentService.GetMetaAsync(_attachmentEntryId.Value);
             _attachmentCounts[_attachmentEntryId.Value] = _attachmentMeta.Count;
             Snackbar.Add($"{e.File.Name} uppladdad.", Severity.Success);

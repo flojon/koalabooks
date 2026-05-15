@@ -6,8 +6,14 @@ namespace KoalaBooks.Application.Services;
 
 public class AttachmentService(AppDbContext db)
 {
-    public async Task<JournalEntryAttachment> AddAsync(int entryId, string fileName, string contentType, byte[] data)
+    public async Task<JournalEntryAttachment?> AddAsync(int entryId, string fileName, string contentType, byte[] data)
     {
+        // Verify the entry belongs to the current tenant (query filter applied).
+        // EF global filters only guard reads; without this check a caller could
+        // write an attachment onto a different tenant's journal entry.
+        var entryExists = await db.JournalEntries.AnyAsync(j => j.Id == entryId);
+        if (!entryExists) return null;
+
         var attachment = new JournalEntryAttachment
         {
             JournalEntryId = entryId,
@@ -46,11 +52,11 @@ public class AttachmentService(AppDbContext db)
     }
 
     public async Task<JournalEntryAttachment?> GetAsync(int id) =>
-        await db.JournalEntryAttachments.FindAsync(id);
+        await db.JournalEntryAttachments.FirstOrDefaultAsync(a => a.Id == id);
 
     public async Task<bool> DeleteAsync(int id)
     {
-        var a = await db.JournalEntryAttachments.FindAsync(id);
+        var a = await db.JournalEntryAttachments.FirstOrDefaultAsync(att => att.Id == id);
         if (a is null) return false;
         db.JournalEntryAttachments.Remove(a);
         await db.SaveChangesAsync();

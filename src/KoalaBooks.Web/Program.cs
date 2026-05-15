@@ -117,24 +117,27 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    // Seed a default org + dev user if none exists
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-    const string devEmail = "admin@koalabooks.local";
-    if (await userManager.FindByEmailAsync(devEmail) is null)
+    if (app.Environment.IsDevelopment())
     {
-        var org = new Organisation { Name = "Dev Organisation", Slug = "dev" };
-        db.Organisations.Add(org);
-        await db.SaveChangesAsync();
-
-        var devUser = new ApplicationUser
+        // Seed a default org + dev user if none exists
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        const string devEmail = "admin@koalabooks.local";
+        if (await userManager.FindByEmailAsync(devEmail) is null)
         {
-            UserName = devEmail,
-            Email = devEmail,
-            EmailConfirmed = true,
-            DisplayName = "Admin",
-            OrganisationId = org.Id
-        };
-        await userManager.CreateAsync(devUser, "Admin123!");
+            var org = new Organisation { Name = "Dev Organisation", Slug = "dev" };
+            db.Organisations.Add(org);
+            await db.SaveChangesAsync();
+
+            var devUser = new ApplicationUser
+            {
+                UserName = devEmail,
+                Email = devEmail,
+                EmailConfirmed = true,
+                DisplayName = "Admin",
+                OrganisationId = org.Id
+            };
+            await userManager.CreateAsync(devUser, "Admin123!");
+        }
     }
 }
 

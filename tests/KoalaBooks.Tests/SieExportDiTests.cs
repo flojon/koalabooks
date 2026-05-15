@@ -1,5 +1,6 @@
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,6 +17,8 @@ public class SieExportDiTests
     public void SieExportService_CanBeResolvedFromDI()
     {
         var services = new ServiceCollection();
+        services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+        services.AddScoped<TenantContext>();
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlite("Data Source=:memory:"));
         services.AddScoped<SieExportService>();
@@ -34,7 +37,8 @@ public class SieExportDiTests
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite("Data Source=:memory:")
             .Options;
-        using var db = new AppDbContext(options);
+        var tenant = TestFixture.MakeTenant(1);
+        using var db = new AppDbContext(options, tenant);
 
         var service = new SieExportService(db);
 

@@ -42,7 +42,7 @@ public class JournalEntryService
         if (validationError is not null)
             return (null, validationError);
 
-        var fiscalYear = await _db.FiscalYears.FindAsync(entry.FiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == entry.FiscalYearId);
         if (fiscalYear is null)
             return (null, "Fiscal year not found.");
         if (fiscalYear.IsClosed)
