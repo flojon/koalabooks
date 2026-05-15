@@ -24,7 +24,7 @@ public class BalancePropagationTests : IDisposable
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.Add(fy2025);
         await _f.Db.SaveChangesAsync();
@@ -90,14 +90,14 @@ public class BalancePropagationTests : IDisposable
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         var fy2026 = new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.AddRange(fy2025, fy2026);
         await _f.Db.SaveChangesAsync();
@@ -132,14 +132,14 @@ public class BalancePropagationTests : IDisposable
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         var fy2026 = new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.AddRange(fy2025, fy2026);
         await _f.Db.SaveChangesAsync();
@@ -169,7 +169,7 @@ public class BalancePropagationTests : IDisposable
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.Add(fy2025);
         await _f.Db.SaveChangesAsync();
@@ -196,14 +196,14 @@ public class BalancePropagationTests : IDisposable
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         var fy2026 = new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.AddRange(fy2025, fy2026);
         await _f.Db.SaveChangesAsync();
@@ -230,7 +230,7 @@ public class BalancePropagationTests : IDisposable
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.Add(fy2025);
         await _f.Db.SaveChangesAsync();
@@ -248,7 +248,7 @@ public class BalancePropagationTests : IDisposable
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.Add(fy2026);
         await _f.Db.SaveChangesAsync();

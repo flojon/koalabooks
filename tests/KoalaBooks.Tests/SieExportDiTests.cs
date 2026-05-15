@@ -17,10 +17,10 @@ public class SieExportDiTests
     public void SieExportService_CanBeResolvedFromDI()
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-        services.AddScoped<TenantContext>();
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlite("Data Source=:memory:"));
+        services.AddHttpContextAccessor();
+        services.AddScoped<TenantContext>();
         services.AddScoped<SieExportService>();
 
         using var provider = services.BuildServiceProvider();

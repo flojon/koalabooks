@@ -14,7 +14,7 @@ public class SieImportServiceTests : IDisposable
     public SieImportServiceTests()
     {
         _f = new TestFixture();
-        _service = new SieImportService(_f.Db, _f.Tenant);
+        _service = _f.SieImportService;
     }
 
     public void Dispose() => _f.Dispose();
@@ -184,7 +184,7 @@ public class SieImportServiceTests : IDisposable
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         };
         _f.Db.FiscalYears.Add(fy);
         await _f.Db.SaveChangesAsync();
@@ -219,7 +219,7 @@ public class SieImportServiceTests : IDisposable
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
-            OrganisationId = _f.TestOrgId
+            OrganisationId = _f.OrganisationId
         });
         await _f.Db.SaveChangesAsync();
 
