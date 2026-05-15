@@ -114,7 +114,8 @@ public class IncomeStatementTests : IDisposable
         {
             Name = "2027",
             StartDate = new DateOnly(2027, 1, 1),
-            EndDate = new DateOnly(2027, 12, 31)
+            EndDate = new DateOnly(2027, 12, 31),
+            OrganisationId = _f.TestOrgId
         };
         _f.Db.FiscalYears.Add(emptyFy);
         await _f.Db.SaveChangesAsync();

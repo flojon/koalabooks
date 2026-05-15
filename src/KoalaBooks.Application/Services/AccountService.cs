@@ -23,7 +23,7 @@ public class AccountService
 
     public async Task<Account?> GetByIdAsync(int id)
     {
-        return await _db.Accounts.FindAsync(id);
+        return await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id);
     }
 
     public async Task<Account> CreateAsync(Account account)
@@ -41,7 +41,7 @@ public class AccountService
 
     public async Task ToggleActiveAsync(int id)
     {
-        var account = await _db.Accounts.FindAsync(id);
+        var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id);
         if (account is not null)
         {
             account.IsActive = !account.IsActive;

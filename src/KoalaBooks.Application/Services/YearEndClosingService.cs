@@ -36,7 +36,7 @@ public class YearEndClosingService
     {
         var errors = new List<string>();
 
-        var fiscalYear = await _db.FiscalYears.FindAsync(fiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId);
         if (fiscalYear is null)
         {
             errors.Add("Fiscal year not found.");
@@ -64,7 +64,7 @@ public class YearEndClosingService
         if (!validation.IsValid)
             return new ClosingPreview(false, validation.Errors, 0, 0, 0, []);
 
-        var fiscalYear = (await _db.FiscalYears.FindAsync(fiscalYearId))!;
+        var fiscalYear = (await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId))!;
 
         var plBalances = await GetPnLAccountBalancesAsync(fiscalYearId);
 
@@ -147,7 +147,7 @@ public class YearEndClosingService
         if (!validation.IsValid)
             return new ClosingResult(false, string.Join("; ", validation.Errors), null, null);
 
-        var fiscalYear = (await _db.FiscalYears.FindAsync(fiscalYearId))!;
+        var fiscalYear = (await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId))!;
 
         using var transaction = await _db.Database.BeginTransactionAsync();
         try

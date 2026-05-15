@@ -3,7 +3,10 @@ using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace KoalaBooks.Tests;
 
@@ -13,28 +16,63 @@ namespace KoalaBooks.Tests;
 /// </summary>
 public class TestFixture : IDisposable
 {
+    public int TestOrgId { get; }
+
     public AppDbContext Db { get; }
+    public TenantContext Tenant { get; private set; } = null!;
     public JournalEntryService JournalEntryService { get; }
     public FiscalYearService FiscalYearService { get; }
     public YearEndClosingService YearEndClosingService { get; }
     public SieExportService SieExportService { get; }
 
+    private readonly SqliteConnection _connection;
+
     public TestFixture()
     {
+        // Keep a single open connection so the in-memory database persists
+        // across multiple AppDbContext instances in the same test.
+        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection.Open();
+
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
+            .UseSqlite(_connection)
             .Options;
-        Db = new AppDbContext(options);
-        Db.Database.OpenConnection();
-        Db.Database.EnsureCreated();
+
+        // Bootstrap: create schema and seed Organisation without a tenant filter.
+        var noTenant = MakeNullTenant();
+        using (var bootstrap = new AppDbContext(options, noTenant))
+        {
+            bootstrap.Database.EnsureCreated();
+            bootstrap.Organisations.Add(new Organisation { Name = "Test Org", Slug = "test" });
+            bootstrap.SaveChanges();
+            TestOrgId = bootstrap.Organisations.First().Id;
+        }
+
+        Tenant = MakeTenant(TestOrgId);
+        Db = new AppDbContext(options, Tenant);
 
         JournalEntryService = new JournalEntryService(Db);
-        FiscalYearService = new FiscalYearService(Db);
+        FiscalYearService = new FiscalYearService(Db, Tenant);
         YearEndClosingService = new YearEndClosingService(Db, FiscalYearService);
         SieExportService = new SieExportService(Db);
     }
 
-    public void Dispose() => Db.Dispose();
+    public static TenantContext MakeTenant(int orgId)
+    {
+        var claims = new[] { new Claim("org_id", orgId.ToString()) };
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
+        var ctx = new DefaultHttpContext { User = principal };
+        return new TenantContext(new HttpContextAccessor { HttpContext = ctx });
+    }
+
+    private static TenantContext MakeNullTenant() =>
+        new TenantContext(new HttpContextAccessor());
+
+    public void Dispose()
+    {
+        Db.Dispose();
+        _connection.Dispose();
+    }
 
     // ── Seed data helpers ──────────────────────────────────────────
 
@@ -42,14 +80,16 @@ public class TestFixture : IDisposable
         string name = "2026",
         DateOnly? start = null,
         DateOnly? end = null,
-        bool isClosed = false)
+        bool isClosed = false,
+        int? organisationId = null)
     {
         var fy = new FiscalYear
         {
             Name = name,
             StartDate = start ?? new DateOnly(2026, 1, 1),
             EndDate = end ?? new DateOnly(2026, 12, 31),
-            IsClosed = isClosed
+            IsClosed = isClosed,
+            OrganisationId = organisationId ?? TestOrgId
         };
         Db.FiscalYears.Add(fy);
         Db.SaveChanges();
