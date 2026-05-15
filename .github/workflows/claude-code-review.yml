@@ -36,11 +36,16 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          allowed_bots: 'claude'
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          claude_args: '--model claude-sonnet-4-6'
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
+          claude_args: '--model claude-sonnet-4-6 --dangerously-skip-permissions'
+          prompt: |
+            You are a code reviewer. Review pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
+
+            Steps:
+            1. Run `gh pr diff ${{ github.event.pull_request.number }}` to see the changes
+            2. Analyze the diff for bugs, security issues, code quality problems, missing tests, and breaking changes
+            3. Post your review with: `gh pr review ${{ github.event.pull_request.number }} --comment --body "<your review>"`
+
+            Be thorough but constructive. Use markdown formatting in your review body.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
