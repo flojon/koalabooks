@@ -20,6 +20,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
     public DbSet<BankTransaction> BankTransactions => Set<BankTransaction>();
     public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<CustomerInvoice> CustomerInvoices => Set<CustomerInvoice>();
+    public DbSet<CustomerInvoiceLine> CustomerInvoiceLines => Set<CustomerInvoiceLine>();
     public DbSet<JournalEntryAttachment> JournalEntryAttachments => Set<JournalEntryAttachment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -39,6 +42,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
         modelBuilder.Entity<BankTransaction>()
             .HasQueryFilter(b => _tenant.OrganisationId == null || b.OrganisationId == _tenant.OrganisationId);
+
+        modelBuilder.Entity<Customer>()
+            .HasQueryFilter(c => _tenant.OrganisationId == null || c.OrganisationId == _tenant.OrganisationId);
 
         modelBuilder.Entity<Account>(entity =>
         {
@@ -110,6 +116,67 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                   .HasForeignKey(s => s.PaymentJournalEntryId)
                   .OnDelete(DeleteBehavior.SetNull)
                   .IsRequired(false);
+        });
+
+        modelBuilder.Entity<Customer>(entity =>
+        {
+            entity.Property(c => c.Name).HasMaxLength(200);
+            entity.Property(c => c.OrgNumber).HasMaxLength(20);
+            entity.Property(c => c.Email).HasMaxLength(200);
+            entity.Property(c => c.Phone).HasMaxLength(50);
+            entity.Property(c => c.Address).HasMaxLength(300);
+            entity.Property(c => c.PostalCode).HasMaxLength(20);
+            entity.Property(c => c.City).HasMaxLength(100);
+            entity.Property(c => c.Country).HasMaxLength(2).HasDefaultValue("SE");
+            entity.HasOne(c => c.Organisation)
+                  .WithMany()
+                  .HasForeignKey(c => c.OrganisationId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<CustomerInvoice>(entity =>
+        {
+            entity.HasIndex(i => new { i.FiscalYearId, i.InvoiceNumber }).IsUnique();
+            entity.Property(i => i.CustomerName).HasMaxLength(200);
+            entity.Property(i => i.OurReference).HasMaxLength(200);
+            entity.Property(i => i.YourReference).HasMaxLength(200);
+            entity.Property(i => i.Notes).HasMaxLength(500);
+            entity.Property(i => i.AmountExclVat).HasPrecision(18, 2);
+            entity.Property(i => i.VatAmount).HasPrecision(18, 2);
+            entity.Property(i => i.TotalAmount).HasPrecision(18, 2);
+            entity.HasOne(i => i.FiscalYear)
+                  .WithMany()
+                  .HasForeignKey(i => i.FiscalYearId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(i => i.Customer)
+                  .WithMany()
+                  .HasForeignKey(i => i.CustomerId)
+                  .OnDelete(DeleteBehavior.SetNull)
+                  .IsRequired(false);
+            entity.HasOne(i => i.JournalEntry)
+                  .WithMany()
+                  .HasForeignKey(i => i.JournalEntryId)
+                  .OnDelete(DeleteBehavior.SetNull)
+                  .IsRequired(false);
+            entity.HasOne(i => i.PaymentJournalEntry)
+                  .WithMany()
+                  .HasForeignKey(i => i.PaymentJournalEntryId)
+                  .OnDelete(DeleteBehavior.SetNull)
+                  .IsRequired(false);
+        });
+
+        modelBuilder.Entity<CustomerInvoiceLine>(entity =>
+        {
+            entity.Property(l => l.Description).HasMaxLength(500);
+            entity.Property(l => l.Quantity).HasPrecision(18, 4);
+            entity.Property(l => l.UnitPrice).HasPrecision(18, 2);
+            entity.Property(l => l.AmountExclVat).HasPrecision(18, 2);
+            entity.Property(l => l.VatAmount).HasPrecision(18, 2);
+            entity.Property(l => l.TotalAmount).HasPrecision(18, 2);
+            entity.HasOne(l => l.CustomerInvoice)
+                  .WithMany(i => i.Lines)
+                  .HasForeignKey(l => l.CustomerInvoiceId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<JournalEntryAttachment>(entity =>
