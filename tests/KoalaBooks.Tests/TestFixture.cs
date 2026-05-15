@@ -15,7 +15,10 @@ namespace KoalaBooks.Tests;
 /// </summary>
 public class TestFixture : IDisposable
 {
+    private readonly HttpContextAccessor _accessor;
+
     public AppDbContext Db { get; }
+    public TenantContext Tenant { get; }
     public JournalEntryService JournalEntryService { get; }
     public FiscalYearService FiscalYearService { get; }
     public YearEndClosingService YearEndClosingService { get; }
@@ -29,12 +32,13 @@ public class TestFixture : IDisposable
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite("Data Source=:memory:")
             .Options;
-        // Start with null HttpContext so the initial SaveChanges (creating the org) has no filter applied.
-        // After the org is created, wire up a real HttpContext with the org_id claim so that
-        // FiscalYearService.CreateAsync and query filters work correctly for all subsequent operations.
-        var accessor = new HttpContextAccessor();
-        var tenant = new TenantContext(accessor);
-        Db = new AppDbContext(options, tenant);
+
+        // HttpContext starts null so the org INSERT runs without a tenant filter.
+        // After the org is created, SetActiveTenant wires up the real claim so all
+        // subsequent service calls and query filters see the correct organisation.
+        _accessor = new HttpContextAccessor();
+        Tenant = new TenantContext(_accessor);
+        Db = new AppDbContext(options, Tenant);
         Db.Database.OpenConnection();
         Db.Database.EnsureCreated();
 
@@ -42,18 +46,26 @@ public class TestFixture : IDisposable
         Db.Organisations.Add(org);
         Db.SaveChanges();
         OrganisationId = org.Id;
-
-        accessor.HttpContext = new DefaultHttpContext
-        {
-            User = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim("org_id", OrganisationId.ToString())]))
-        };
+        SetActiveTenant(OrganisationId);
 
         JournalEntryService = new JournalEntryService(Db);
-        FiscalYearService = new FiscalYearService(Db, tenant);
+        FiscalYearService = new FiscalYearService(Db, Tenant);
         YearEndClosingService = new YearEndClosingService(Db, FiscalYearService);
         SieExportService = new SieExportService(Db);
-        SieImportService = new SieImportService(Db, tenant);
+        SieImportService = new SieImportService(Db, Tenant);
+    }
+
+    /// <summary>
+    /// Switches the active tenant claim. Use in tests that need to simulate
+    /// multi-tenant isolation or tenant switching.
+    /// </summary>
+    public void SetActiveTenant(int orgId)
+    {
+        _accessor.HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("org_id", orgId.ToString())]))
+        };
     }
 
     public void Dispose() => Db.Dispose();
