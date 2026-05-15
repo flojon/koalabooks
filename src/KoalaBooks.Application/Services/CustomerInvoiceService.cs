@@ -1,0 +1,227 @@
+using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
+using KoalaBooks.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace KoalaBooks.Application.Services;
+
+public class CustomerInvoiceService
+{
+    private readonly AppDbContext _db;
+
+    public CustomerInvoiceService(AppDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<List<CustomerInvoice>> GetAllAsync(int fiscalYearId)
+    {
+        return await _db.CustomerInvoices
+            .Include(i => i.Lines)
+            .Include(i => i.Customer)
+            .Include(i => i.JournalEntry)
+            .Include(i => i.PaymentJournalEntry)
+            .Where(i => i.FiscalYearId == fiscalYearId)
+            .OrderByDescending(i => i.InvoiceNumber)
+            .ToListAsync();
+    }
+
+    public async Task<CustomerInvoice?> GetByIdAsync(int id)
+    {
+        return await _db.CustomerInvoices
+            .Include(i => i.Lines)
+            .Include(i => i.Customer)
+            .Include(i => i.FiscalYear).ThenInclude(f => f.Organisation)
+            .FirstOrDefaultAsync(i => i.Id == id);
+    }
+
+    public async Task<(CustomerInvoice? Invoice, string? Error)> CreateAsync(
+        CustomerInvoice invoice, List<CustomerInvoiceLine> lines)
+    {
+        if (string.IsNullOrWhiteSpace(invoice.CustomerName))
+            return (null, "Kundnamn är obligatoriskt.");
+        if (lines.Count == 0)
+            return (null, "Fakturan måste ha minst en rad.");
+        if (invoice.DueDate < invoice.InvoiceDate)
+            return (null, "Förfallodatum kan inte vara före fakturadatum.");
+
+        var fiscalYear = await _db.FiscalYears.FindAsync(invoice.FiscalYearId);
+        if (fiscalYear is null) return (null, "Räkenskapsår hittades inte.");
+        if (fiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
+
+        foreach (var line in lines)
+            RecalcLine(line);
+
+        invoice.Lines = lines;
+        RecalcTotals(invoice);
+        invoice.InvoiceNumber = await NextInvoiceNumberAsync(invoice.FiscalYearId);
+        invoice.CreatedAt = DateTime.UtcNow;
+
+        _db.CustomerInvoices.Add(invoice);
+        await _db.SaveChangesAsync();
+        return (invoice, null);
+    }
+
+    public async Task<(CustomerInvoice? Invoice, string? Error)> PostAsync(
+        int invoiceId, int receivableAccountId, int revenueAccountId, int? vatAccountId)
+    {
+        var invoice = await _db.CustomerInvoices
+            .Include(i => i.Lines)
+            .Include(i => i.FiscalYear)
+            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+
+        if (invoice is null) return (null, "Fakturan hittades inte.");
+        if (invoice.IsPosted) return (null, "Fakturan är redan bokförd.");
+        if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
+
+        var lines = new List<JournalEntryLine>
+        {
+            new() { AccountId = receivableAccountId, DebitAmount = invoice.TotalAmount, CreditAmount = 0 }
+        };
+
+        if (invoice.VatAmount != 0 && vatAccountId.HasValue)
+            lines.Add(new() { AccountId = vatAccountId.Value, DebitAmount = 0, CreditAmount = invoice.VatAmount });
+
+        lines.Add(new() { AccountId = revenueAccountId, DebitAmount = 0, CreditAmount = invoice.AmountExclVat });
+
+        var entryNumber = await NextEntryNumberAsync(invoice.FiscalYearId);
+        var journalEntry = new JournalEntry
+        {
+            EntryNumber = entryNumber,
+            Date = invoice.InvoiceDate,
+            Description = $"Kundfaktura {invoice.CustomerName} #{invoice.InvoiceNumber}",
+            FiscalYearId = invoice.FiscalYearId,
+            IsPosted = true,
+            CreatedAt = DateTime.UtcNow,
+            Lines = lines
+        };
+
+        _db.JournalEntries.Add(journalEntry);
+        await _db.SaveChangesAsync();
+
+        invoice.IsPosted = true;
+        invoice.JournalEntryId = journalEntry.Id;
+        await _db.SaveChangesAsync();
+
+        return (invoice, null);
+    }
+
+    public async Task<List<BankTransaction>> FindMatchingBankTransactionsAsync(
+        int fiscalYearId, decimal invoiceTotal, DateOnly invoiceDate, DateOnly dueDate)
+    {
+        var minDate = invoiceDate;
+        var maxDate = dueDate.AddDays(60);
+
+        return await _db.BankTransactions
+            .Include(b => b.Account)
+            .Where(b => b.Account.FiscalYearId == fiscalYearId)
+            .Where(b => b.Status == BankTransactionStatus.Unmatched)
+            .Where(b => b.Date >= minDate && b.Date <= maxDate)
+            .Where(b => b.Amount >= invoiceTotal - 0.01m && b.Amount <= invoiceTotal + 0.01m)
+            .OrderBy(b => b.Date)
+            .ToListAsync();
+    }
+
+    public async Task<(CustomerInvoice? Invoice, string? Error)> MarkAsPaidAsync(
+        int invoiceId,
+        DateOnly paidDate,
+        int bankAccountId,
+        int receivableAccountId,
+        int? linkBankTransactionId = null)
+    {
+        var invoice = await _db.CustomerInvoices
+            .Include(i => i.FiscalYear)
+            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+
+        if (invoice is null) return (null, "Fakturan hittades inte.");
+        if (invoice.IsPaid) return (null, "Fakturan är redan betald.");
+        if (!invoice.IsPosted) return (null, "Fakturan måste bokföras innan betalning registreras.");
+        if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
+
+        var entryNumber = await NextEntryNumberAsync(invoice.FiscalYearId);
+        var paymentEntry = new JournalEntry
+        {
+            EntryNumber = entryNumber,
+            Date = paidDate,
+            Description = $"Inbetalning {invoice.CustomerName} #{invoice.InvoiceNumber}",
+            FiscalYearId = invoice.FiscalYearId,
+            IsPosted = true,
+            CreatedAt = DateTime.UtcNow,
+            Lines =
+            [
+                new() { AccountId = bankAccountId,        DebitAmount = invoice.TotalAmount, CreditAmount = 0 },
+                new() { AccountId = receivableAccountId,  DebitAmount = 0, CreditAmount = invoice.TotalAmount }
+            ]
+        };
+
+        _db.JournalEntries.Add(paymentEntry);
+        invoice.IsPaid = true;
+        invoice.PaidDate = paidDate;
+        await _db.SaveChangesAsync();
+
+        invoice.PaymentJournalEntryId = paymentEntry.Id;
+
+        if (linkBankTransactionId.HasValue)
+        {
+            var bankTx = await _db.BankTransactions.FindAsync(linkBankTransactionId.Value);
+            if (bankTx is not null)
+            {
+                bankTx.JournalEntryId = paymentEntry.Id;
+                bankTx.Status = BankTransactionStatus.Matched;
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        return (invoice, null);
+    }
+
+    public async Task<string?> DeleteAsync(int invoiceId)
+    {
+        var invoice = await _db.CustomerInvoices
+            .Include(i => i.Lines)
+            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+        if (invoice is null) return "Fakturan hittades inte.";
+        if (invoice.IsPosted) return "Bokförda fakturor kan inte raderas.";
+        if (invoice.IsPaid) return "Betalda fakturor kan inte raderas.";
+
+        _db.CustomerInvoices.Remove(invoice);
+        await _db.SaveChangesAsync();
+        return null;
+    }
+
+    public async Task<Account?> FindAccountByPrefixAsync(int fiscalYearId, string prefix)
+    {
+        return await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId && a.AccountNumber.StartsWith(prefix))
+            .OrderBy(a => a.AccountNumber)
+            .FirstOrDefaultAsync();
+    }
+
+    private static void RecalcLine(CustomerInvoiceLine line)
+    {
+        line.AmountExclVat = Math.Round(line.Quantity * line.UnitPrice, 2);
+        line.VatAmount = Math.Round(line.AmountExclVat * line.VatRate / 100m, 2);
+        line.TotalAmount = line.AmountExclVat + line.VatAmount;
+    }
+
+    private static void RecalcTotals(CustomerInvoice invoice)
+    {
+        invoice.AmountExclVat = invoice.Lines.Sum(l => l.AmountExclVat);
+        invoice.VatAmount = invoice.Lines.Sum(l => l.VatAmount);
+        invoice.TotalAmount = invoice.Lines.Sum(l => l.TotalAmount);
+    }
+
+    private async Task<int> NextInvoiceNumberAsync(int fiscalYearId)
+    {
+        return (await _db.CustomerInvoices
+            .Where(i => i.FiscalYearId == fiscalYearId)
+            .MaxAsync(i => (int?)i.InvoiceNumber) ?? 0) + 1;
+    }
+
+    private async Task<int> NextEntryNumberAsync(int fiscalYearId)
+    {
+        return (await _db.JournalEntries
+            .Where(j => j.FiscalYearId == fiscalYearId)
+            .MaxAsync(j => (int?)j.EntryNumber) ?? 0) + 1;
+    }
+}
