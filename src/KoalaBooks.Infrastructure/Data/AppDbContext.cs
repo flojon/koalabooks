@@ -40,9 +40,6 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<BankTransaction>()
             .HasQueryFilter(b => _tenant.OrganisationId != null && b.OrganisationId == _tenant.OrganisationId);
 
-        modelBuilder.Entity<Account>()
-            .HasQueryFilter(a => _tenant.OrganisationId != null && a.FiscalYear.OrganisationId == _tenant.OrganisationId);
-
         modelBuilder.Entity<JournalEntry>()
             .HasQueryFilter(j => _tenant.OrganisationId != null && j.FiscalYear.OrganisationId == _tenant.OrganisationId);
 
@@ -57,6 +54,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
         modelBuilder.Entity<Account>(entity =>
         {
+            entity.HasQueryFilter(a => _tenant.OrganisationId != null && a.FiscalYear.OrganisationId == _tenant.OrganisationId);
             entity.HasIndex(a => new { a.FiscalYearId, a.AccountNumber }).IsUnique();
             entity.Property(a => a.AccountNumber).HasMaxLength(10);
             entity.Property(a => a.Name).HasMaxLength(200);
