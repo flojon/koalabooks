@@ -11,6 +11,9 @@ updates:
         patterns:
           - "Microsoft.*"
           - "Aspire.*"
+      opentelemetry:
+        patterns:
+          - "OpenTelemetry.*"
 
   - package-ecosystem: docker
     directory: /
