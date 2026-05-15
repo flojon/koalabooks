@@ -21,7 +21,6 @@ public class BalancePropagationTests : IDisposable
         // Setup: previous year with accounts that have outgoing balances
         var fy2025 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
@@ -46,7 +45,6 @@ public class BalancePropagationTests : IDisposable
         // Act: create new fiscal year
         var fy2026 = await _f.FiscalYearService.CreateAsync(new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31)
@@ -74,7 +72,6 @@ public class BalancePropagationTests : IDisposable
     {
         var fy = await _f.FiscalYearService.CreateAsync(new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31)
@@ -90,7 +87,6 @@ public class BalancePropagationTests : IDisposable
         // Setup: two consecutive fiscal years
         var fy2025 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
@@ -98,7 +94,6 @@ public class BalancePropagationTests : IDisposable
         };
         var fy2026 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
@@ -134,7 +129,6 @@ public class BalancePropagationTests : IDisposable
     {
         var fy2025 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
@@ -142,7 +136,6 @@ public class BalancePropagationTests : IDisposable
         };
         var fy2026 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
@@ -173,7 +166,6 @@ public class BalancePropagationTests : IDisposable
     {
         var fy2025 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
@@ -201,7 +193,6 @@ public class BalancePropagationTests : IDisposable
     {
         var fy2025 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
@@ -209,7 +200,6 @@ public class BalancePropagationTests : IDisposable
         };
         var fy2026 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
@@ -237,7 +227,6 @@ public class BalancePropagationTests : IDisposable
         // Setup: previous year
         var fy2025 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2025",
             StartDate = new DateOnly(2025, 1, 1),
             EndDate = new DateOnly(2025, 12, 31),
@@ -256,7 +245,6 @@ public class BalancePropagationTests : IDisposable
         // Create 2026 and pre-populate an account (e.g., from SIE import)
         var fy2026 = new FiscalYear
         {
-            OrganisationId = _f.DefaultOrg.Id,
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
