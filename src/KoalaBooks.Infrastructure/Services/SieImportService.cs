@@ -219,7 +219,7 @@ public class SieImportService
                 EndDate = fyEnd,
                 IsClosed = false,
                 OrganisationId = _tenant.OrganisationId
-                    ?? throw new InvalidOperationException("No active tenant.")
+                    ?? throw new InvalidOperationException("SIE import requires an active organisation context.")
             };
             _db.FiscalYears.Add(fiscalYear);
             await _db.SaveChangesAsync();
