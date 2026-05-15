@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
 using System.Text;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 // Register CP437 encoding provider early so JsiSie uses it for SIE file parsing
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
@@ -29,6 +31,9 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     options.Password.RequireUppercase = true;
     options.Password.RequireLowercase = true;
     options.SignIn.RequireConfirmedAccount = false;
+    options.Lockout.MaxFailedAccessAttempts = 5;
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+    options.Lockout.AllowedForNewUsers = true;
 })
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders()
@@ -53,8 +58,17 @@ builder.Services.AddOpenIddict()
         options.SetTokenEndpointUris("/connect/token");
         options.AllowPasswordFlow()
                .AllowRefreshTokenFlow();
-        options.AddDevelopmentEncryptionCertificate()
-               .AddDevelopmentSigningCertificate();
+        if (builder.Environment.IsDevelopment())
+        {
+            options.AddDevelopmentEncryptionCertificate()
+                   .AddDevelopmentSigningCertificate();
+        }
+        else
+        {
+            // TODO: replace with certificates loaded from Key Vault / environment
+            options.AddEphemeralEncryptionKey()
+                   .AddEphemeralSigningKey();
+        }
         options.UseAspNetCore()
                .EnableTokenEndpointPassthrough();
     })
@@ -89,6 +103,16 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddRateLimiter(limiter =>
+{
+    limiter.AddFixedWindowLimiter("auth", policy =>
+    {
+        policy.Window = TimeSpan.FromMinutes(1);
+        policy.PermitLimit = 10;
+        policy.QueueLimit = 0;
+    });
+});
 
 var app = builder.Build();
 
@@ -152,6 +176,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
