@@ -50,7 +50,7 @@ public class AttachmentService(AppDbContext db)
 
     public async Task<bool> DeleteAsync(int id)
     {
-        var a = await db.JournalEntryAttachments.FirstOrDefaultAsync(a => a.Id == id);
+        var a = await db.JournalEntryAttachments.FirstOrDefaultAsync(att => att.Id == id);
         if (a is null) return false;
         db.JournalEntryAttachments.Remove(a);
         await db.SaveChangesAsync();
