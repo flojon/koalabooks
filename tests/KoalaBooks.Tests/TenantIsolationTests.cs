@@ -133,6 +133,60 @@ public class TenantIsolationTests : IDisposable
         Assert.Null(result);
     }
 
+    // ── BankTransaction ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetBankTransaction_AsOtherTenant_ReturnsNull()
+    {
+        var fyA = SeedFiscalYear(_orgAId, "2026");
+        var accountA = SeedAccount(fyA.Id, "1910", "Kassa");
+        var txnA = SeedBankTransaction(_orgAId, accountA.Id);
+
+        using var dbB = DbFor(_orgBId);
+        var result = await dbB.BankTransactions.FirstOrDefaultAsync(b => b.Id == txnA.Id);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetAllBankTransactions_AsOtherTenant_ReturnsEmpty()
+    {
+        var fyA = SeedFiscalYear(_orgAId, "2026");
+        var accountA = SeedAccount(fyA.Id, "1910", "Kassa");
+        SeedBankTransaction(_orgAId, accountA.Id);
+
+        using var dbB = DbFor(_orgBId);
+        var results = await dbB.BankTransactions.ToListAsync();
+
+        Assert.Empty(results);
+    }
+
+    // ── SupplierInvoice ────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetSupplierInvoice_AsOtherTenant_ReturnsNull()
+    {
+        var fyA = SeedFiscalYear(_orgAId, "2026");
+        var invoiceA = SeedSupplierInvoice(fyA.Id);
+
+        using var dbB = DbFor(_orgBId);
+        var result = await dbB.SupplierInvoices.FirstOrDefaultAsync(s => s.Id == invoiceA.Id);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetAllSupplierInvoices_AsOtherTenant_ReturnsEmpty()
+    {
+        var fyA = SeedFiscalYear(_orgAId, "2026");
+        SeedSupplierInvoice(fyA.Id);
+
+        using var dbB = DbFor(_orgBId);
+        var results = await dbB.SupplierInvoices.ToListAsync();
+
+        Assert.Empty(results);
+    }
+
     // ── Attachment ─────────────────────────────────────────────────
 
     [Fact]
@@ -262,6 +316,47 @@ public class TenantIsolationTests : IDisposable
         db.JournalEntries.Add(entry);
         db.SaveChanges();
         return entry;
+    }
+
+    private BankTransaction SeedBankTransaction(int orgId, int accountId)
+    {
+        using var db = DbFor(orgId);
+        var txn = new BankTransaction
+        {
+            OrganisationId = orgId,
+            AccountId = accountId,
+            Date = new DateOnly(2026, 6, 1),
+            Amount = 500m,
+            Description = "Test transaction"
+        };
+        db.BankTransactions.Add(txn);
+        db.SaveChanges();
+        return txn;
+    }
+
+    private SupplierInvoice SeedSupplierInvoice(int fiscalYearId)
+    {
+        using var bootstrap = new AppDbContext(_options, NoTenant());
+        var orgId = bootstrap.FiscalYears
+            .IgnoreQueryFilters()
+            .Where(f => f.Id == fiscalYearId)
+            .Select(f => f.OrganisationId)
+            .First();
+
+        using var db = DbFor(orgId);
+        var invoice = new SupplierInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            SupplierName = "Test Supplier",
+            InvoiceDate = new DateOnly(2026, 6, 1),
+            DueDate = new DateOnly(2026, 7, 1),
+            AmountExclVat = 800m,
+            VatAmount = 200m,
+            TotalAmount = 1000m
+        };
+        db.SupplierInvoices.Add(invoice);
+        db.SaveChanges();
+        return invoice;
     }
 
     private JournalEntryAttachment SeedAttachment(int journalEntryId)
