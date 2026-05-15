@@ -378,6 +378,7 @@ public class YearEndClosingServiceTests : IDisposable
         // Create next fiscal year with a cash account
         var nextYear = new FiscalYear
         {
+            OrganisationId = _f.DefaultOrg.Id,
             Name = "2027",
             StartDate = new DateOnly(2027, 1, 1),
             EndDate = new DateOnly(2027, 12, 31),

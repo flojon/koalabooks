@@ -23,6 +23,7 @@ public class SieExportServiceTests : IDisposable
     {
         var fy = new FiscalYear
         {
+            OrganisationId = _f.DefaultOrg.Id,
             Name = name,
             StartDate = start ?? new DateOnly(2026, 1, 1),
             EndDate = end ?? new DateOnly(2026, 12, 31),

@@ -65,7 +65,8 @@ builder.Services.AddOpenIddict()
         }
         else
         {
-            // TODO: replace with certificates loaded from Key Vault / environment
+            // Ephemeral keys invalidate all tokens on restart and cannot be shared across
+            // instances. Replace with Key Vault / environment certificates before production.
             options.AddEphemeralEncryptionKey()
                    .AddEphemeralSigningKey();
         }
@@ -106,15 +107,25 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddRateLimiter(limiter =>
 {
-    limiter.AddFixedWindowLimiter("auth", policy =>
-    {
-        policy.Window = TimeSpan.FromMinutes(1);
-        policy.PermitLimit = 10;
-        policy.QueueLimit = 0;
-    });
+    limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    limiter.AddPolicy("auth", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 10,
+                QueueLimit = 0
+            }));
 });
 
 var app = builder.Build();
+
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
+    app.Logger.LogWarning(
+        "OpenIddict is using ephemeral encryption/signing keys. " +
+        "Tokens will be invalidated on restart and cannot be shared across instances. " +
+        "Configure persistent Key Vault certificates before production.");
 
 app.MapDefaultEndpoints();
 
@@ -128,39 +139,46 @@ app.MapGet("/attachments/{id:int}", async (int id, AttachmentService svc) =>
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    for (var attempt = 0; attempt < 10; attempt++)
+    if (app.Environment.IsEnvironment("Testing"))
     {
-        try
-        {
-            await db.Database.MigrateAsync();
-            break;
-        }
-        catch (Exception) when (attempt < 9)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(2));
-        }
+        db.Database.EnsureCreated();
     }
-
-    if (app.Environment.IsDevelopment())
+    else
     {
-        // Seed a default org + dev user if none exists
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        const string devEmail = "admin@koalabooks.local";
-        if (await userManager.FindByEmailAsync(devEmail) is null)
+        for (var attempt = 0; attempt < 10; attempt++)
         {
-            var org = new Organisation { Name = "Dev Organisation", Slug = "dev" };
-            db.Organisations.Add(org);
-            await db.SaveChangesAsync();
-
-            var devUser = new ApplicationUser
+            try
             {
-                UserName = devEmail,
-                Email = devEmail,
-                EmailConfirmed = true,
-                DisplayName = "Admin",
-                OrganisationId = org.Id
-            };
-            await userManager.CreateAsync(devUser, "Admin123!");
+                await db.Database.MigrateAsync();
+                break;
+            }
+            catch (Exception) when (attempt < 9)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2));
+            }
+        }
+
+        if (app.Environment.IsDevelopment())
+        {
+            // Seed a default org + dev user if none exists
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            const string devEmail = "admin@koalabooks.local";
+            if (await userManager.FindByEmailAsync(devEmail) is null)
+            {
+                var org = new Organisation { Name = "Dev Organisation", Slug = "dev" };
+                db.Organisations.Add(org);
+                await db.SaveChangesAsync();
+
+                var devUser = new ApplicationUser
+                {
+                    UserName = devEmail,
+                    Email = devEmail,
+                    EmailConfirmed = true,
+                    DisplayName = "Admin",
+                    OrganisationId = org.Id
+                };
+                await userManager.CreateAsync(devUser, "Admin123!");
+            }
         }
     }
 }
@@ -187,3 +205,5 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+public partial class Program { }

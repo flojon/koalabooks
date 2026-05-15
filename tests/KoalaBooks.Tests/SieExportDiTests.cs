@@ -37,8 +37,7 @@ public class SieExportDiTests
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite("Data Source=:memory:")
             .Options;
-        var tenant = TestFixture.MakeTenant(1);
-        using var db = new AppDbContext(options, tenant);
+        using var db = new AppDbContext(options, TestFixture.NullTenant());
 
         var service = new SieExportService(db);
 

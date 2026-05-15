@@ -214,6 +214,8 @@ public class SieImportService
         {
             fiscalYear = new FiscalYear
             {
+                OrganisationId = _tenant.OrganisationId
+                    ?? throw new InvalidOperationException("No active tenant."),
                 Name = fyName,
                 StartDate = fyStart,
                 EndDate = fyEnd,

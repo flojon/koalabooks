@@ -181,6 +181,7 @@ public class SieImportServiceTests : IDisposable
         // Pre-create the fiscal year matching the SIE file's dates
         var fy = new FiscalYear
         {
+            OrganisationId = _f.DefaultOrg.Id,
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
@@ -216,6 +217,7 @@ public class SieImportServiceTests : IDisposable
     {
         _f.Db.FiscalYears.Add(new FiscalYear
         {
+            OrganisationId = _f.DefaultOrg.Id,
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
