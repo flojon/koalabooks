@@ -19,7 +19,7 @@ builder.AddServiceDefaults();
 builder.AddNpgsqlDbContext<AppDbContext>("koalabooks");
 
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<TenantContext>();
+builder.Services.AddSingleton<TenantContext>();
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
