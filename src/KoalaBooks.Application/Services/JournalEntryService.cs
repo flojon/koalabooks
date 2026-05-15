@@ -42,7 +42,7 @@ public class JournalEntryService
         if (validationError is not null)
             return (null, validationError);
 
-        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == entry.FiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FindAsync(entry.FiscalYearId);
         if (fiscalYear is null)
             return (null, "Fiscal year not found.");
         if (fiscalYear.IsClosed)
@@ -534,7 +534,7 @@ public class JournalEntryService
     {
         var vatAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .Where(a => string.Compare(a.AccountNumber, "2610") >= 0 && string.Compare(a.AccountNumber, "2649") <= 0)
+            .Where(a => a.AccountNumber.CompareTo("2610") >= 0 && a.AccountNumber.CompareTo("2649") <= 0)
             .OrderBy(a => a.AccountNumber)
             .ToListAsync();
 
@@ -576,7 +576,7 @@ public class JournalEntryService
                 Credit = credit
             };
 
-            if (string.Compare(account.AccountNumber, "2640") >= 0)
+            if (account.AccountNumber.CompareTo("2640") >= 0)
                 inputRows.Add(row);
             else
                 outputRows.Add(row);

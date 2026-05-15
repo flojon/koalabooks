@@ -1,6 +1,7 @@
 @page "/reports/vat"
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
+@using static KoalaBooks.Application.Services.VatQuarterHelper
 
 <PageTitle>Momsredovisning — KoalaBooks</PageTitle>
 
@@ -23,11 +24,11 @@
         <label style="font-weight:600; color:#475569;">Till datum:</label>
         <input type="date" @bind="ToDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
 
-        <button class="btn" @onclick="() => SetQuarter(1)">K1</button>
-        <button class="btn" @onclick="() => SetQuarter(2)">K2</button>
-        <button class="btn" @onclick="() => SetQuarter(3)">K3</button>
-        <button class="btn" @onclick="() => SetQuarter(4)">K4</button>
-        <button class="btn" @onclick="LoadReport">Generera</button>
+        <button class="btn" @onclick="() => SetQuarter(1)" disabled="@_loading">K1</button>
+        <button class="btn" @onclick="() => SetQuarter(2)" disabled="@_loading">K2</button>
+        <button class="btn" @onclick="() => SetQuarter(3)" disabled="@_loading">K3</button>
+        <button class="btn" @onclick="() => SetQuarter(4)" disabled="@_loading">K4</button>
+        <button class="btn" @onclick="LoadReport" disabled="@_loading">@(_loading ? "Laddar…" : "Generera")</button>
     </div>
 
     @if (_data is not null)
@@ -140,6 +141,7 @@ else
 
     private List<FiscalYear> _fiscalYears = [];
     private VatReportData? _data;
+    private bool _loading;
     private int SelectedFiscalYearId { get; set; }
     private DateOnly? FromDate { get; set; }
     private DateOnly? ToDate { get; set; }
@@ -167,15 +169,20 @@ else
         var fy = _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
         if (fy is null) return;
 
-        FromDate = fy.StartDate.AddMonths((quarter - 1) * 3);
-        ToDate = fy.StartDate.AddMonths(quarter * 3).AddDays(-1);
-        if (ToDate > fy.EndDate) ToDate = fy.EndDate;
-
+        (FromDate, ToDate) = ComputeRange(fy, quarter);
         await LoadReport();
     }
 
     private async Task LoadReport()
     {
-        _data = await JournalEntryService.GetVatReportAsync(SelectedFiscalYearId, FromDate, ToDate);
+        _loading = true;
+        try
+        {
+            _data = await JournalEntryService.GetVatReportAsync(SelectedFiscalYearId, FromDate, ToDate);
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 }
