@@ -179,6 +179,12 @@ public class CustomerInvoiceService
         if (!invoice.IsPosted) return (null, "Fakturan måste bokföras innan betalning registreras.");
         if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
 
+        var validCount = await _db.Accounts
+            .CountAsync(a => (a.Id == bankAccountId || a.Id == receivableAccountId)
+                          && a.FiscalYearId == invoice.FiscalYearId);
+        if (validCount < 2)
+            return (null, "Ett eller flera konton tillhör inte detta räkenskapsår.");
+
         var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
         var paymentEntry = new JournalEntry
         {
@@ -195,6 +201,7 @@ public class CustomerInvoiceService
             ]
         };
 
+        _db.JournalEntries.Add(paymentEntry);
         invoice.IsPaid = true;
         invoice.PaidDate = paidDate;
         invoice.PaymentJournalEntry = paymentEntry;
