@@ -7,10 +7,12 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
+using QuestPDF.Infrastructure;
 using System.Text;
 
 // Register CP437 encoding provider early so JsiSie uses it for SIE file parsing
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 

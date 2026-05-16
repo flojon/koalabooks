@@ -138,6 +138,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.HasIndex(i => new { i.FiscalYearId, i.InvoiceNumber }).IsUnique();
             entity.Property(i => i.CustomerName).HasMaxLength(200);
+            entity.Property(i => i.CustomerAddress).HasMaxLength(300);
+            entity.Property(i => i.CustomerPostalCode).HasMaxLength(20);
+            entity.Property(i => i.CustomerCity).HasMaxLength(100);
             entity.Property(i => i.OurReference).HasMaxLength(200);
             entity.Property(i => i.YourReference).HasMaxLength(200);
             entity.Property(i => i.Notes).HasMaxLength(500);
