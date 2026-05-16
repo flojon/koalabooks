@@ -117,6 +117,28 @@ public class TestFixture : IDisposable
         return account;
     }
 
+    public async Task<Account> CreateAccountAsync(
+        int fiscalYearId,
+        string number,
+        string name,
+        AccountClass accountClass = AccountClass.Asset,
+        decimal incomingBalance = 0,
+        decimal outgoingBalance = 0)
+    {
+        var account = new Account
+        {
+            AccountNumber = number,
+            Name = name,
+            AccountClass = accountClass,
+            FiscalYearId = fiscalYearId,
+            IncomingBalance = incomingBalance,
+            OutgoingBalance = outgoingBalance
+        };
+        Db.Accounts.Add(account);
+        await Db.SaveChangesAsync();
+        return account;
+    }
+
     /// <summary>
     /// Creates a balanced journal entry with two lines (debit/credit).
     /// </summary>
