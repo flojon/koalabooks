@@ -1,12 +1,11 @@
+using System.Security.Claims;
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Claims;
 
 namespace KoalaBooks.Tests;
 
@@ -16,7 +15,7 @@ namespace KoalaBooks.Tests;
 /// </summary>
 public class TestFixture : IDisposable
 {
-    public int TestOrgId { get; }
+    private readonly HttpContextAccessor _accessor;
 
     public AppDbContext Db { get; }
     public TenantContext Tenant { get; }
@@ -25,58 +24,53 @@ public class TestFixture : IDisposable
     public YearEndClosingService YearEndClosingService { get; }
     public SieExportService SieExportService { get; }
     public Organisation DefaultOrg { get; }
+    public SieImportService SieImportService { get; }
 
-    private readonly SqliteConnection _connection;
+    public int OrganisationId { get; private set; }
 
     public TestFixture()
     {
-        // Keep a single open connection so the in-memory database persists
-        // across multiple AppDbContext instances in the same test.
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
-
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(_connection)
+            .UseSqlite("Data Source=:memory:")
             .Options;
 
-        // Bootstrap: create schema and seed Organisation without a tenant filter.
-        Organisation bootstrapOrg;
-        var noTenant = MakeNullTenant();
-        using (var bootstrap = new AppDbContext(options, noTenant))
-        {
-            bootstrap.Database.EnsureCreated();
-            bootstrapOrg = new Organisation { Name = "Test Org", Slug = "test-org" };
-            bootstrap.Organisations.Add(bootstrapOrg);
-            bootstrap.SaveChanges();
-            TestOrgId = bootstrapOrg.Id;
-        }
-
-        DefaultOrg = bootstrapOrg;
-        Tenant = MakeTenant(TestOrgId);
+        // HttpContext starts null so the org INSERT runs without a tenant filter.
+        // After the org is created, SetActiveTenant wires up the real claim so all
+        // subsequent service calls and query filters see the correct organisation.
+        _accessor = new HttpContextAccessor();
+        Tenant = new TenantContext(_accessor);
         Db = new AppDbContext(options, Tenant);
+        Db.Database.OpenConnection();
+        Db.Database.EnsureCreated();
+
+        var org = new Organisation { Name = "Test Org", Slug = "test-org" };
+        Db.Organisations.Add(org);
+        Db.SaveChanges();
+        OrganisationId = org.Id;
+        DefaultOrg = org;
+        SetActiveTenant(OrganisationId);
 
         JournalEntryService = new JournalEntryService(Db);
         FiscalYearService = new FiscalYearService(Db, Tenant);
         YearEndClosingService = new YearEndClosingService(Db, FiscalYearService);
         SieExportService = new SieExportService(Db);
+        SieImportService = new SieImportService(Db, Tenant);
     }
 
-    public static TenantContext MakeTenant(int orgId)
+    /// <summary>
+    /// Switches the active tenant claim. Use in tests that need to simulate
+    /// multi-tenant isolation or tenant switching.
+    /// </summary>
+    public void SetActiveTenant(int orgId)
     {
-        var claims = new[] { new Claim("org_id", orgId.ToString()) };
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "test"));
-        var ctx = new DefaultHttpContext { User = principal };
-        return new TenantContext(new HttpContextAccessor { HttpContext = ctx });
+        _accessor.HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("org_id", orgId.ToString())], "Test"))
+        };
     }
 
-    private static TenantContext MakeNullTenant() =>
-        new TenantContext(new HttpContextAccessor());
-
-    public void Dispose()
-    {
-        Db.Dispose();
-        _connection.Dispose();
-    }
+    public void Dispose() => Db.Dispose();
 
     internal static TenantContext NullTenant() => new TenantContext(new HttpContextAccessor());
 
@@ -86,8 +80,7 @@ public class TestFixture : IDisposable
         string name = "2026",
         DateOnly? start = null,
         DateOnly? end = null,
-        bool isClosed = false,
-        int? organisationId = null)
+        bool isClosed = false)
     {
         var fy = new FiscalYear
         {
@@ -95,7 +88,7 @@ public class TestFixture : IDisposable
             StartDate = start ?? new DateOnly(2026, 1, 1),
             EndDate = end ?? new DateOnly(2026, 12, 31),
             IsClosed = isClosed,
-            OrganisationId = organisationId ?? TestOrgId
+            OrganisationId = OrganisationId
         };
         Db.FiscalYears.Add(fy);
         Db.SaveChanges();
@@ -121,6 +114,28 @@ public class TestFixture : IDisposable
         };
         Db.Accounts.Add(account);
         Db.SaveChanges();
+        return account;
+    }
+
+    public async Task<Account> CreateAccountAsync(
+        int fiscalYearId,
+        string number,
+        string name,
+        AccountClass accountClass = AccountClass.Asset,
+        decimal incomingBalance = 0,
+        decimal outgoingBalance = 0)
+    {
+        var account = new Account
+        {
+            AccountNumber = number,
+            Name = name,
+            AccountClass = accountClass,
+            FiscalYearId = fiscalYearId,
+            IncomingBalance = incomingBalance,
+            OutgoingBalance = outgoingBalance
+        };
+        Db.Accounts.Add(account);
+        await Db.SaveChangesAsync();
         return account;
     }
 

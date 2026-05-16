@@ -16,45 +16,6 @@ public class SieExportServiceTests : IDisposable
 
     public void Dispose() => _f.Dispose();
 
-    private async Task<FiscalYear> CreateFiscalYearAsync(
-        string name = "2026",
-        DateOnly? start = null,
-        DateOnly? end = null)
-    {
-        var fy = new FiscalYear
-        {
-            Name = name,
-            StartDate = start ?? new DateOnly(2026, 1, 1),
-            EndDate = end ?? new DateOnly(2026, 12, 31),
-            OrganisationId = _f.TestOrgId
-        };
-        _f.Db.FiscalYears.Add(fy);
-        await _f.Db.SaveChangesAsync();
-        return fy;
-    }
-
-    private async Task<Account> CreateAccountAsync(
-        int fiscalYearId,
-        string number,
-        string name,
-        AccountClass accountClass = AccountClass.Asset,
-        decimal incomingBalance = 0,
-        decimal outgoingBalance = 0)
-    {
-        var account = new Account
-        {
-            AccountNumber = number,
-            Name = name,
-            AccountClass = accountClass,
-            FiscalYearId = fiscalYearId,
-            IncomingBalance = incomingBalance,
-            OutgoingBalance = outgoingBalance,
-        };
-        _f.Db.Accounts.Add(account);
-        await _f.Db.SaveChangesAsync();
-        return account;
-    }
-
     private async Task<JournalEntry> CreateJournalEntryAsync(
         int fiscalYearId,
         int entryNumber,
@@ -96,8 +57,8 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_ContainsHeaderTags()
     {
-        var fy = await CreateFiscalYearAsync();
-        await CreateAccountAsync(fy.Id, "1910", "Kassa");
+        var fy = _f.CreateFiscalYear();
+        await _f.CreateAccountAsync(fy.Id, "1910", "Kassa");
 
         var bytes = await _f.SieExportService.ExportAsync(fy.Id);
         var text = DecodeExport(bytes);
@@ -114,8 +75,8 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_UsesCompanyNameWhenProvided()
     {
-        var fy = await CreateFiscalYearAsync();
-        await CreateAccountAsync(fy.Id, "1910", "Kassa");
+        var fy = _f.CreateFiscalYear();
+        await _f.CreateAccountAsync(fy.Id, "1910", "Kassa");
 
         var bytes = await _f.SieExportService.ExportAsync(fy.Id, "Koala AB");
         var text = DecodeExport(bytes);
@@ -126,10 +87,10 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_ContainsAccounts()
     {
-        var fy = await CreateFiscalYearAsync();
-        await CreateAccountAsync(fy.Id, "1910", "Kassa");
-        await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
-        await CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
+        var fy = _f.CreateFiscalYear();
+        await _f.CreateAccountAsync(fy.Id, "1910", "Kassa");
+        await _f.CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
+        await _f.CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
 
         var bytes = await _f.SieExportService.ExportAsync(fy.Id);
         var text = DecodeExport(bytes);
@@ -142,10 +103,10 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_ContainsBalances()
     {
-        var fy = await CreateFiscalYearAsync();
-        await CreateAccountAsync(fy.Id, "1910", "Kassa", incomingBalance: 50000m);
-        await CreateAccountAsync(fy.Id, "2440", "Leverantörsskuld", AccountClass.Liability, outgoingBalance: 15000m);
-        await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
+        var fy = _f.CreateFiscalYear();
+        await _f.CreateAccountAsync(fy.Id, "1910", "Kassa", incomingBalance: 50000m);
+        await _f.CreateAccountAsync(fy.Id, "2440", "Leverantörsskuld", AccountClass.Liability, outgoingBalance: 15000m);
+        await _f.CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
 
         var bytes = await _f.SieExportService.ExportAsync(fy.Id);
         var text = DecodeExport(bytes);
@@ -159,9 +120,9 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_ContainsVouchers()
     {
-        var fy = await CreateFiscalYearAsync();
-        var kassa = await CreateAccountAsync(fy.Id, "1910", "Kassa");
-        var hyra = await CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
+        var fy = _f.CreateFiscalYear();
+        var kassa = await _f.CreateAccountAsync(fy.Id, "1910", "Kassa");
+        var hyra = await _f.CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
 
         await CreateJournalEntryAsync(fy.Id, 1, new DateOnly(2026, 1, 15), "Hyra januari",
             (hyra.Id, 10000m, 0m),
@@ -178,9 +139,9 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_AmountSignConvention()
     {
-        var fy = await CreateFiscalYearAsync();
-        var bank = await CreateAccountAsync(fy.Id, "1930", "Bank");
-        var revenue = await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
+        var fy = _f.CreateFiscalYear();
+        var bank = await _f.CreateAccountAsync(fy.Id, "1930", "Bank");
+        var revenue = await _f.CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
 
         await CreateJournalEntryAsync(fy.Id, 1, new DateOnly(2026, 3, 1), "Inbetalning",
             (bank.Id, 5000m, 0m),
@@ -200,10 +161,10 @@ public class SieExportServiceTests : IDisposable
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-        var fy = await CreateFiscalYearAsync();
-        var kassa = await CreateAccountAsync(fy.Id, "1910", "Kassa", incomingBalance: 25000m);
-        var hyra = await CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
-        var bank = await CreateAccountAsync(fy.Id, "1930", "Bank", incomingBalance: 100000m);
+        var fy = _f.CreateFiscalYear();
+        var kassa = await _f.CreateAccountAsync(fy.Id, "1910", "Kassa", incomingBalance: 25000m);
+        var hyra = await _f.CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
+        var bank = await _f.CreateAccountAsync(fy.Id, "1930", "Bank", incomingBalance: 100000m);
 
         await CreateJournalEntryAsync(fy.Id, 1, new DateOnly(2026, 1, 15), "Hyra januari",
             (hyra.Id, 10000m, 0m),
@@ -216,7 +177,7 @@ public class SieExportServiceTests : IDisposable
         var exportedBytes = await _f.SieExportService.ExportAsync(fy.Id, "Koala AB");
 
         // Parse back using SieImportService
-        var importService = new SieImportService(_f.Db, _f.Tenant);
+        var importService = _f.SieImportService;
         var stream = new MemoryStream(exportedBytes);
         var doc = importService.Parse(stream);
 
