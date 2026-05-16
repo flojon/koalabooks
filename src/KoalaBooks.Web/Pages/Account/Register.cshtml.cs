@@ -61,6 +61,12 @@ public class RegisterModel : PageModel
             return Page();
         }
 
+        if (string.IsNullOrWhiteSpace(Password))
+        {
+            Errors.Add("Lösenord får inte vara tomt.");
+            return Page();
+        }
+
         if (Password != ConfirmPassword)
         {
             Errors.Add("Lösenorden matchar inte.");
