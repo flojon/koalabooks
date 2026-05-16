@@ -1,0 +1,592 @@
+@page "/customer-invoices"
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using MudBlazor
+
+<PageTitle>Kundfakturor — KoalaBooks</PageTitle>
+
+<h1>🧾 Kundfakturor</h1>
+
+@if (_isLoading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_fiscalYear is null)
+{
+    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
+}
+else
+{
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => _error = null">@_error</MudAlert>
+}
+
+<div class="toolbar" style="margin-bottom:1rem;">
+    <button class="btn btn-primary" @onclick="ShowAddForm">+ Ny faktura</button>
+
+    <div style="display:flex; gap:0.25rem;">
+        @foreach (var (label, val) in Filters)
+        {
+            <button class="btn btn-sm @(_filter == val ? "btn-primary" : "btn-secondary")"
+                    @onclick="() => { _filter = val; _expandedId = null; }">
+                @label
+            </button>
+        }
+    </div>
+</div>
+
+@if (_showForm)
+{
+    <div class="card" style="margin-bottom:1.5rem;">
+        <h3 style="margin:0 0 1rem 0;">Ny kundfaktura</h3>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem 1.5rem; margin-bottom:1rem;">
+
+            <div class="form-group">
+                <label>Kund <span style="color:#ef4444;">*</span></label>
+                <select @bind="_fCustomerId" @bind:after="OnCustomerSelected" style="width:100%;">
+                    <option value="0">— Välj kund —</option>
+                    @foreach (var c in _customers)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                    <option value="-1">+ Ange fritext</option>
+                </select>
+            </div>
+
+            @if (_fCustomerId == -1)
+            {
+                <div class="form-group">
+                    <label>Kundnamn (fritext) <span style="color:#ef4444;">*</span></label>
+                    <input type="text" @bind="_fCustomerName" placeholder="Kundens namn" />
+                </div>
+            }
+            else
+            {
+                <div></div>
+            }
+
+            <div class="form-group">
+                <label>Fakturadatum <span style="color:#ef4444;">*</span></label>
+                <DateInput @bind-Value="_fInvoiceDate" />
+            </div>
+            <div class="form-group">
+                <label>Förfallodatum <span style="color:#ef4444;">*</span></label>
+                <DateInput @bind-Value="_fDueDate" />
+            </div>
+            <div class="form-group">
+                <label>Vår referens</label>
+                <input type="text" @bind="_fOurReference" placeholder="t.ex. Jonas F." />
+            </div>
+            <div class="form-group">
+                <label>Er referens</label>
+                <input type="text" @bind="_fYourReference" placeholder="t.ex. Inköpsnr" />
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+                <label>Anteckningar</label>
+                <input type="text" @bind="_fNotes" placeholder="Valfri kommentar på fakturan" />
+            </div>
+        </div>
+
+        <h4 style="margin:0 0 0.5rem 0;">Rader</h4>
+        <table style="margin-bottom:0.75rem; font-size:0.9rem;">
+            <thead>
+                <tr>
+                    <th style="width:40%;">Beskrivning</th>
+                    <th style="width:80px; text-align:right;">Antal</th>
+                    <th style="width:100px; text-align:right;">À-pris</th>
+                    <th style="width:80px; text-align:right;">Moms %</th>
+                    <th style="width:100px; text-align:right;">Exkl. moms</th>
+                    <th style="width:100px; text-align:right;">Inkl. moms</th>
+                    <th style="width:40px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < _fLines.Count; i++)
+                {
+                    var line = _fLines[i];
+                    var idx = i;
+                    <tr>
+                        <td><input type="text" @bind="line.Description" style="width:100%;" /></td>
+                        <td><input type="number" step="0.001" @bind="line.Quantity" @bind:after="() => RecalcLine(idx)" style="width:100%; text-align:right;" /></td>
+                        <td><input type="number" step="0.01" @bind="line.UnitPrice" @bind:after="() => RecalcLine(idx)" style="width:100%; text-align:right;" /></td>
+                        <td>
+                            <select @bind="line.VatRate" @bind:after="() => RecalcLine(idx)" style="width:100%;">
+                                <option value="0">0 %</option>
+                                <option value="6">6 %</option>
+                                <option value="12">12 %</option>
+                                <option value="25">25 %</option>
+                            </select>
+                        </td>
+                        <td style="text-align:right; font-family:monospace; color:#64748b;">@line.AmountExclVat.ToString("N2")</td>
+                        <td style="text-align:right; font-family:monospace; font-weight:600;">@line.TotalAmount.ToString("N2")</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(idx)" style="padding:0 0.4rem;">✕</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4" style="text-align:right; font-weight:600; padding-right:0.5rem;">Totalt:</td>
+                    <td style="text-align:right; font-family:monospace; font-weight:600;">@_fLines.Sum(l => l.AmountExclVat).ToString("N2")</td>
+                    <td style="text-align:right; font-family:monospace; font-weight:600; color:#16a34a;">@_fLines.Sum(l => l.TotalAmount).ToString("N2")</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+        <button class="btn btn-sm btn-secondary" @onclick="AddLine" style="margin-bottom:1rem;">+ Lägg till rad</button>
+
+        <div style="display:flex; gap:0.5rem; align-items:center;">
+            <button class="btn btn-success" @onclick="SaveInvoice" disabled="@_saving">
+                @(_saving ? "Sparar..." : "Spara faktura")
+            </button>
+            <button class="btn btn-secondary" @onclick="CancelForm">Avbryt</button>
+        </div>
+    </div>
+}
+
+@if (!Filtered.Any())
+{
+    <p style="color:#94a3b8; font-style:italic;">Inga fakturor matchar filtret.</p>
+}
+else
+{
+    <div class="card" style="padding:0; overflow:hidden;">
+        <table style="margin:0;">
+            <thead>
+                <tr>
+                    <th style="width:50px;">Nr</th>
+                    <th style="width:150px;">Kund</th>
+                    <th style="width:110px;">Datum</th>
+                    <th style="width:110px;">Förfaller</th>
+                    <th style="width:130px; text-align:right;">Exkl. moms</th>
+                    <th style="width:100px; text-align:right;">Moms</th>
+                    <th style="width:130px; text-align:right;">Totalt</th>
+                    <th style="width:110px;">Status</th>
+                    <th style="width:200px;">Åtgärder</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var inv in Filtered)
+                {
+                    var isOverdue = !inv.IsPaid && inv.DueDate < DateOnly.FromDateTime(DateTime.Today);
+                    var isExpanded = _expandedId == inv.Id;
+
+                    <tr style="@(isOverdue ? "background:#fff7ed;" : "")">
+                        <td style="font-family:monospace; color:#64748b;">@inv.InvoiceNumber</td>
+                        <td style="font-weight:600;">@inv.CustomerName</td>
+                        <td>@inv.InvoiceDate.ToString("yyyy-MM-dd")</td>
+                        <td style="@(isOverdue ? "color:#ea580c; font-weight:600;" : "")">
+                            @inv.DueDate.ToString("yyyy-MM-dd")
+                            @if (isOverdue) { <span style="font-size:0.75rem;"> ⚠</span> }
+                        </td>
+                        <td style="text-align:right; font-family:monospace;">@inv.AmountExclVat.ToString("N2")</td>
+                        <td style="text-align:right; font-family:monospace; color:#64748b;">
+                            @(inv.VatAmount != 0 ? inv.VatAmount.ToString("N2") : "—")
+                        </td>
+                        <td style="text-align:right; font-family:monospace; font-weight:600;">@inv.TotalAmount.ToString("N2")</td>
+                        <td>
+                            @if (inv.IsPaid)
+                            {
+                                <span style="color:#16a34a; font-size:0.875rem;">✅ Betald</span>
+                            }
+                            else if (!inv.IsPosted)
+                            {
+                                <span style="color:#ef4444; font-size:0.875rem;">Obokförd</span>
+                            }
+                            else if (isOverdue)
+                            {
+                                <span style="color:#ea580c; font-weight:600; font-size:0.875rem;">Förfallen</span>
+                            }
+                            else
+                            {
+                                <span style="color:#f59e0b; font-size:0.875rem;">Obetald</span>
+                            }
+                        </td>
+                        <td style="display:flex; gap:0.25rem; flex-wrap:wrap; align-items:center;">
+                            <a href="/customer-invoices/@inv.Id/pdf" target="_blank"
+                               class="btn btn-sm btn-secondary" title="Ladda ner PDF">PDF</a>
+
+                            @if (!inv.IsPosted)
+                            {
+                                <button class="btn btn-sm btn-primary"
+                                        @onclick="() => ToggleExpand(inv.Id, InvoiceExpandMode.Post)">
+                                    @(isExpanded && _expandMode == InvoiceExpandMode.Post ? "Avbryt" : "Bokför")
+                                </button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteInvoice(inv.Id)">🗑</button>
+                            }
+                            else if (!inv.IsPaid)
+                            {
+                                <button class="btn btn-sm btn-success"
+                                        @onclick="() => ToggleExpand(inv.Id, InvoiceExpandMode.Pay)">
+                                    @(isExpanded && _expandMode == InvoiceExpandMode.Pay ? "Avbryt" : "Markera betald")
+                                </button>
+                            }
+                            else
+                            {
+                                <span style="color:#94a3b8; font-size:0.8rem;">@inv.PaidDate?.ToString("yyyy-MM-dd")</span>
+                            }
+                        </td>
+                    </tr>
+
+                    @if (isExpanded && _expandMode == InvoiceExpandMode.Post)
+                    {
+                        <tr style="background:#f8fafc;">
+                            <td colspan="9" style="padding:1rem;">
+                                <div style="max-width:480px;">
+                                    <p style="margin:0 0 0.75rem; font-weight:600;">Bokför kundfaktura</p>
+                                    <div style="display:grid; grid-template-columns:160px 1fr; gap:0.4rem 0.75rem; align-items:center; margin-bottom:0.75rem;">
+                                        <label style="font-weight:600;">Kundfordringar <span style="color:#ef4444;">*</span></label>
+                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postReceivableAccountId" />
+                                        <label style="font-weight:600;">Intäktskonto <span style="color:#ef4444;">*</span></label>
+                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postRevenueAccountId" />
+                                        @foreach (var rate in _postVatAccountIds.Keys.OrderBy(r => r))
+                                        {
+                                            var r = rate;
+                                            <label style="font-weight:600;">Moms @r% <span style="color:#ef4444;">*</span></label>
+                                            <AccountSearchDropdown Accounts="_allAccounts"
+                                                SelectedAccountId="_postVatAccountIds.GetValueOrDefault(r)"
+                                                SelectedAccountIdChanged="@(id => _postVatAccountIds[r] = id)" />
+                                        }
+                                    </div>
+                                    <button class="btn btn-success" @onclick="() => ConfirmPost(inv)"
+                                            disabled="@(_posting || _postReceivableAccountId == 0 || _postRevenueAccountId == 0 || _postVatAccountIds.Any(kv => kv.Value == 0))">
+                                        @(_posting ? "Sparar..." : $"Bokför {inv.TotalAmount:N2}")
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+
+                    @if (isExpanded && _expandMode == InvoiceExpandMode.Pay)
+                    {
+                        <tr style="background:#f8fafc;">
+                            <td colspan="9" style="padding:1rem;">
+                                <div style="max-width:680px;">
+                                    <p style="margin:0 0 0.75rem; font-weight:600;">Registrera inbetalning</p>
+
+                                    @if (_matchingSuggestions.Any())
+                                    {
+                                        <p style="font-size:0.8rem; color:#64748b; margin:0 0 0.4rem 0;">
+                                            Matchande banktransaktioner — klicka för att koppla:
+                                        </p>
+                                        <table style="font-size:0.85rem; margin-bottom:1rem;">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:110px;">Datum</th>
+                                                    <th style="width:110px;">Konto</th>
+                                                    <th>Beskrivning</th>
+                                                    <th style="width:110px; text-align:right;">Belopp</th>
+                                                    <th style="width:40px;"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var bt in _matchingSuggestions)
+                                                {
+                                                    var isSelected = _linkedBankTransactionId == bt.Id;
+                                                    <tr style="cursor:pointer; @(isSelected ? "background:#dcfce7;" : "background:white;")"
+                                                        @onclick="() => SelectBankTransaction(bt)">
+                                                        <td>@bt.Date.ToString("yyyy-MM-dd")</td>
+                                                        <td style="font-family:monospace; font-size:0.8rem;">@bt.Account.AccountNumber</td>
+                                                        <td style="color:#475569;">@bt.Description</td>
+                                                        <td style="text-align:right; font-family:monospace; color:#16a34a;">
+                                                            @bt.Amount.ToString("N2")
+                                                        </td>
+                                                        <td style="text-align:center;">@(isSelected ? "✅" : "")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+
+                                    <div style="display:grid; grid-template-columns:130px 1fr; gap:0.5rem 1rem; align-items:center; margin-bottom:0.75rem;">
+                                        <label style="font-weight:600;">Betalningsdatum</label>
+                                        <DateInput @bind-Value="_payDate" style="width:100%;" />
+
+                                        <label style="font-weight:600;">Bankkonto</label>
+                                        <AccountSearchDropdown Accounts="_bankAccounts" @bind-SelectedAccountId="_payBankAccountId" />
+
+                                        <label style="font-weight:600;">Kundfordringar</label>
+                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_payReceivableAccountId" />
+                                    </div>
+
+                                    @if (_linkedBankTransactionId.HasValue)
+                                    {
+                                        <p style="font-size:0.8rem; color:#16a34a; margin:0 0 0.5rem 0;">
+                                            ✅ Kopplar till vald banktransaktion.
+                                            <button class="btn btn-sm btn-secondary" style="margin-left:0.5rem; padding:0 0.4rem;"
+                                                    @onclick="() => _linkedBankTransactionId = null">Lossa</button>
+                                        </p>
+                                    }
+
+                                    <button class="btn btn-success" @onclick="() => ConfirmPayment(inv)"
+                                            disabled="@(_paying || _payBankAccountId == 0 || _payReceivableAccountId == 0)">
+                                        @(_paying ? "Sparar..." : $"Bokför inbetalning {inv.TotalAmount:N2}")
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+}
+
+@code {
+    [Inject] private CustomerInvoiceService InvoiceService { get; set; } = default!;
+    [Inject] private CustomerService CustomerSvc { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private FiscalYear? _fiscalYear;
+    private List<CustomerInvoice> _invoices = [];
+    private List<Customer> _customers = [];
+    private List<Account> _allAccounts = [];
+    private List<Account> _bankAccounts = [];
+    private bool _isLoading;
+    private bool _showForm;
+    private bool _saving;
+    private bool _paying;
+    private bool _posting;
+    private string? _error;
+    private string _filter = "unposted";
+    private int? _expandedId;
+    private enum InvoiceExpandMode { Post, Pay }
+    private InvoiceExpandMode _expandMode;
+
+    // Add form
+    private int _fCustomerId;
+    private string _fCustomerName = "";
+    private DateTime _fInvoiceDate = DateTime.Today;
+    private DateTime _fDueDate = DateTime.Today.AddDays(30);
+    private string _fOurReference = "";
+    private string _fYourReference = "";
+    private string _fNotes = "";
+    private List<CustomerInvoiceLine> _fLines = [];
+
+    // Post form — keyed by VAT rate (6, 12, 25) → AccountId
+    private int _postReceivableAccountId;
+    private int _postRevenueAccountId;
+    private Dictionary<int, int> _postVatAccountIds = new();
+
+    // Pay form
+    private DateTime _payDate = DateTime.Today;
+    private int _payBankAccountId;
+    private int _payReceivableAccountId;
+    private List<BankTransaction> _matchingSuggestions = [];
+    private int? _linkedBankTransactionId;
+
+    private static (string Label, string Value)[] Filters =>
+    [
+        ("Alla", "all"),
+        ("Obokförda", "unposted"),
+        ("Obetalda", "unpaid"),
+        ("Förfallna", "overdue"),
+        ("Betalda", "paid"),
+    ];
+
+    private IEnumerable<CustomerInvoice> Filtered => _filter switch
+    {
+        "unposted" => _invoices.Where(i => !i.IsPosted),
+        "unpaid"   => _invoices.Where(i => i.IsPosted && !i.IsPaid),
+        "overdue"  => _invoices.Where(i => !i.IsPaid && i.DueDate < DateOnly.FromDateTime(DateTime.Today)),
+        "paid"     => _invoices.Where(i => i.IsPaid),
+        _          => _invoices
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        _fiscalYear = await FiscalYearService.GetActiveAsync();
+        if (_fiscalYear is not null)
+        {
+            _allAccounts = await AccountService.GetAllAsync(_fiscalYear.Id);
+            _bankAccounts = _allAccounts.Where(a => a.AccountNumber.StartsWith("19")).ToList();
+            _customers = await CustomerSvc.GetAllAsync(_fiscalYear.OrganisationId);
+            await LoadInvoices();
+        }
+        _isLoading = false;
+    }
+
+    private async Task LoadInvoices()
+    {
+        _invoices = await InvoiceService.GetAllAsync(_fiscalYear!.Id);
+    }
+
+    private void ShowAddForm()
+    {
+        _showForm = true;
+        _expandedId = null;
+        _fCustomerId = 0;
+        _fCustomerName = "";
+        _fInvoiceDate = DateTime.Today;
+        _fDueDate = DateTime.Today.AddDays(30);
+        _fOurReference = _fYourReference = _fNotes = "";
+        _fLines = [new CustomerInvoiceLine { Quantity = 1, VatRate = 25 }];
+    }
+
+    private void OnCustomerSelected()
+    {
+        if (_fCustomerId > 0)
+        {
+            var c = _customers.FirstOrDefault(c => c.Id == _fCustomerId);
+            if (c is not null) _fCustomerName = c.Name;
+        }
+        else if (_fCustomerId == 0)
+        {
+            _fCustomerName = "";
+        }
+    }
+
+    private void CancelForm() => _showForm = false;
+
+    private void AddLine()
+    {
+        _fLines.Add(new CustomerInvoiceLine { Quantity = 1, VatRate = 25 });
+    }
+
+    private void RemoveLine(int index)
+    {
+        if (_fLines.Count > 1) _fLines.RemoveAt(index);
+    }
+
+    private void RecalcLine(int index)
+    {
+        CustomerInvoiceService.RecalcLine(_fLines[index]);
+    }
+
+    private async Task SaveInvoice()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            var customerName = _fCustomerId > 0
+                ? (_customers.FirstOrDefault(c => c.Id == _fCustomerId)?.Name ?? _fCustomerName)
+                : _fCustomerName;
+
+            var invoice = new CustomerInvoice
+            {
+                FiscalYearId = _fiscalYear!.Id,
+                CustomerId = _fCustomerId > 0 ? _fCustomerId : null,
+                CustomerName = customerName.Trim(),
+                InvoiceDate = DateOnly.FromDateTime(_fInvoiceDate),
+                DueDate = DateOnly.FromDateTime(_fDueDate),
+                OurReference = string.IsNullOrWhiteSpace(_fOurReference) ? null : _fOurReference.Trim(),
+                YourReference = string.IsNullOrWhiteSpace(_fYourReference) ? null : _fYourReference.Trim(),
+                Notes = string.IsNullOrWhiteSpace(_fNotes) ? null : _fNotes.Trim(),
+            };
+
+            var (result, error) = await InvoiceService.CreateAsync(invoice, _fLines);
+            if (error is not null) { _error = error; return; }
+
+            Snackbar.Add($"Faktura #{result!.InvoiceNumber} till {result.CustomerName} skapad.", Severity.Success);
+            _showForm = false;
+            await LoadInvoices();
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task ToggleExpand(int invoiceId, InvoiceExpandMode mode)
+    {
+        if (_expandedId == invoiceId && _expandMode == mode) { _expandedId = null; return; }
+        _expandedId = invoiceId;
+        _expandMode = mode;
+
+        if (mode == InvoiceExpandMode.Post)
+        {
+            var inv = _invoices.First(i => i.Id == invoiceId);
+            _postReceivableAccountId = _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith("1510"))?.Id ?? 0;
+            _postRevenueAccountId = _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith("30"))?.Id ?? 0;
+            _postVatAccountIds = inv.Lines
+                .Where(l => l.VatRate > 0)
+                .Select(l => l.VatRate)
+                .Distinct()
+                .ToDictionary(rate => rate, rate =>
+                {
+                    var prefix = rate switch { 25 => "2610", 12 => "2620", 6 => "2625", _ => "2610" };
+                    return _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith(prefix))?.Id ?? 0;
+                });
+        }
+        else
+        {
+            _payDate = DateTime.Today;
+            _payBankAccountId = _bankAccounts.FirstOrDefault()?.Id ?? 0;
+            _payReceivableAccountId = _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith("1510"))?.Id ?? 0;
+            _linkedBankTransactionId = null;
+
+            var inv = _invoices.First(i => i.Id == invoiceId);
+            _matchingSuggestions = await InvoiceService.FindMatchingBankTransactionsAsync(
+                _fiscalYear!.Id, inv.TotalAmount, inv.InvoiceDate, inv.DueDate);
+        }
+    }
+
+    private async Task ConfirmPost(CustomerInvoice inv)
+    {
+        _posting = true;
+        _error = null;
+        try
+        {
+            var (_, error) = await InvoiceService.PostAsync(
+                inv.Id, _postReceivableAccountId, _postRevenueAccountId, _postVatAccountIds);
+
+            if (error is not null) { _error = error; return; }
+
+            _expandedId = null;
+            Snackbar.Add($"Faktura #{inv.InvoiceNumber} bokförd.", Severity.Success);
+            await LoadInvoices();
+        }
+        finally { _posting = false; }
+    }
+
+    private void SelectBankTransaction(BankTransaction bt)
+    {
+        if (_linkedBankTransactionId == bt.Id) { _linkedBankTransactionId = null; return; }
+        _linkedBankTransactionId = bt.Id;
+        _payDate = bt.Date.ToDateTime(TimeOnly.MinValue);
+        _payBankAccountId = _allAccounts.FirstOrDefault(a => a.Id == bt.AccountId)?.Id
+                         ?? _bankAccounts.FirstOrDefault()?.Id ?? 0;
+    }
+
+    private async Task ConfirmPayment(CustomerInvoice inv)
+    {
+        _paying = true;
+        _error = null;
+        try
+        {
+            var (_, error) = await InvoiceService.MarkAsPaidAsync(
+                inv.Id,
+                DateOnly.FromDateTime(_payDate),
+                _payBankAccountId,
+                _payReceivableAccountId,
+                _linkedBankTransactionId);
+
+            if (error is not null) { _error = error; return; }
+
+            Snackbar.Add($"Inbetalning bokförd för faktura #{inv.InvoiceNumber}.", Severity.Success);
+            _expandedId = null;
+            _linkedBankTransactionId = null;
+            _matchingSuggestions = [];
+            await LoadInvoices();
+        }
+        finally { _paying = false; }
+    }
+
+    private async Task DeleteInvoice(int invoiceId)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Ta bort fakturan? Åtgärden kan inte ångras."))
+            return;
+        var error = await InvoiceService.DeleteAsync(invoiceId);
+        if (error is not null) { _error = error; return; }
+        Snackbar.Add("Fakturan raderad.", Severity.Success);
+        await LoadInvoices();
+    }
+}

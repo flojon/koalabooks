@@ -9,12 +9,14 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
+using QuestPDF.Infrastructure;
 using System.Net;
 using System.Text;
 using System.Threading.RateLimiting;
 
 // Register CP437 encoding provider early so JsiSie uses it for SIE file parsing
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+QuestPDF.Settings.License = LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -90,6 +92,9 @@ builder.Services.AddScoped<YearEndClosingService>();
 builder.Services.AddScoped<BasImportService>();
 builder.Services.AddScoped<BankImportService>();
 builder.Services.AddScoped<SupplierInvoiceService>();
+builder.Services.AddScoped<CustomerService>();
+builder.Services.AddScoped<CustomerInvoiceService>();
+builder.Services.AddScoped<OrganisationService>();
 builder.Services.AddScoped<AttachmentService>();
 
 builder.Services.AddMudServices(config =>
@@ -146,6 +151,15 @@ app.MapGet("/attachments/{id:int}", async (int id, AttachmentService svc) =>
 {
     var a = await svc.GetAsync(id);
     return a is null ? Results.NotFound() : Results.File(a.Data, a.ContentType, a.FileName);
+}).RequireAuthorization();
+
+app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, CustomerInvoiceService svc) =>
+{
+    var invoice = await svc.GetByIdAsync(id);
+    if (invoice is null) return Results.NotFound();
+    var bytes = KoalaBooks.Web.Services.CustomerInvoicePdfGenerator.Generate(invoice);
+    var filename = $"Faktura-{invoice.InvoiceNumber}.pdf";
+    return Results.File(bytes, "application/pdf", filename);
 }).RequireAuthorization();
 
 // Auto-migrate and seed on startup

@@ -1,0 +1,68 @@
+@page "/settings"
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using MudBlazor
+
+<PageTitle>Inställningar — KoalaBooks</PageTitle>
+
+<h1>Inställningar</h1>
+
+@if (_org is null)
+{
+    <p>Laddar...</p>
+}
+else
+{
+    <div class="card" style="max-width:480px;">
+        <h3>Organisation</h3>
+        <div class="form-group">
+            <label>Namn</label>
+            <input type="text" @bind="_name" />
+        </div>
+        <div class="form-group">
+            <label>Organisationsnummer</label>
+            <input type="text" @bind="_orgNumber" placeholder="t.ex. 556000-0000" />
+            <small style="color:#64748b;">Visas på kundfakturor (krävs av Fakturalagen).</small>
+        </div>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_error</MudAlert>
+        }
+        @if (_saved)
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-2">Sparad.</MudAlert>
+        }
+        <div style="margin-top:1rem;">
+            <button class="btn btn-primary" @onclick="Save">Spara</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Inject] private OrganisationService OrganisationService { get; set; } = default!;
+
+    private Organisation? _org;
+    private string _name = "";
+    private string? _orgNumber;
+    private string? _error;
+    private bool _saved;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _org = await OrganisationService.GetCurrentAsync();
+        if (_org is not null)
+        {
+            _name = _org.Name;
+            _orgNumber = _org.OrgNumber;
+        }
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        _saved = false;
+        _error = await OrganisationService.UpdateAsync(_name, _orgNumber);
+        if (_error is null)
+            _saved = true;
+    }
+}

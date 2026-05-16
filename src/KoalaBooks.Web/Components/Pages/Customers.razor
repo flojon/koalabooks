@@ -1,0 +1,228 @@
+@page "/customers"
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using MudBlazor
+
+<PageTitle>Kunder — KoalaBooks</PageTitle>
+
+<h1>👥 Kunder</h1>
+
+@if (_isLoading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else if (_noFiscalYear)
+{
+    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
+}
+else
+{
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => _error = null">@_error</MudAlert>
+}
+
+<div class="toolbar" style="margin-bottom:1rem;">
+    <button class="btn btn-primary" @onclick="ShowAddForm">+ Ny kund</button>
+</div>
+
+@if (_showForm)
+{
+    <div class="card" style="margin-bottom:1.5rem;">
+        <h3 style="margin:0 0 1rem 0;">@(_editId.HasValue ? "Redigera kund" : "Ny kund")</h3>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem 1.5rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label>Namn <span style="color:#ef4444;">*</span></label>
+                <input type="text" @bind="_fName" placeholder="Företagsnamn eller namn" />
+            </div>
+            <div class="form-group">
+                <label>Org.nr / personnr</label>
+                <input type="text" @bind="_fOrgNumber" placeholder="556123-1234" />
+            </div>
+            <div class="form-group">
+                <label>E-post</label>
+                <input type="email" @bind="_fEmail" placeholder="faktura@kund.se" />
+            </div>
+            <div class="form-group">
+                <label>Telefon</label>
+                <input type="tel" @bind="_fPhone" placeholder="08-123 456" />
+            </div>
+            <div class="form-group">
+                <label>Adress</label>
+                <input type="text" @bind="_fAddress" placeholder="Storgatan 1" />
+            </div>
+            <div class="form-group" style="display:grid; grid-template-columns:100px 1fr; gap:0.5rem;">
+                <div>
+                    <label>Postnr</label>
+                    <input type="text" @bind="_fPostalCode" placeholder="12345" />
+                </div>
+                <div>
+                    <label>Ort</label>
+                    <input type="text" @bind="_fCity" placeholder="Stockholm" />
+                </div>
+            </div>
+        </div>
+
+        <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-success" @onclick="SaveCustomer" disabled="@_saving">
+                @(_saving ? "Sparar..." : "Spara")
+            </button>
+            <button class="btn btn-secondary" @onclick="CancelForm">Avbryt</button>
+        </div>
+    </div>
+}
+
+@if (!_customers.Any())
+{
+    <p style="color:#94a3b8; font-style:italic;">Inga kunder skapade ännu.</p>
+}
+else
+{
+    <div class="card" style="padding:0; overflow:hidden;">
+        <table style="margin:0;">
+            <thead>
+                <tr>
+                    <th>Namn</th>
+                    <th style="width:140px;">Org.nr</th>
+                    <th style="width:200px;">E-post</th>
+                    <th style="width:130px;">Telefon</th>
+                    <th style="width:200px;">Adress</th>
+                    <th style="width:80px;">Åtgärder</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _customers)
+                {
+                    <tr>
+                        <td style="font-weight:600;">@c.Name</td>
+                        <td style="color:#64748b; font-size:0.875rem;">@(c.OrgNumber ?? "—")</td>
+                        <td style="color:#64748b; font-size:0.875rem;">@(c.Email ?? "—")</td>
+                        <td style="color:#64748b; font-size:0.875rem;">@(c.Phone ?? "—")</td>
+                        <td style="color:#64748b; font-size:0.875rem;">
+                            @if (c.City is not null)
+                            {
+                                @($"{c.PostalCode} {c.City}".Trim())
+                            }
+                            else { <span>—</span> }
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditCustomer(c)">✏️</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteCustomer(c.Id)">🗑</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+}
+
+@code {
+    [Inject] private CustomerService CustomerService { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private List<Customer> _customers = [];
+    private bool _isLoading;
+    private bool _showForm;
+    private bool _saving;
+    private string? _error;
+    private int? _editId;
+    private int _organisationId;
+
+    private string _fName = "";
+    private string _fOrgNumber = "";
+    private string _fEmail = "";
+    private string _fPhone = "";
+    private string _fAddress = "";
+    private string _fPostalCode = "";
+    private string _fCity = "";
+
+    private bool _noFiscalYear;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        var fy = await FiscalYearService.GetActiveAsync();
+        if (fy is not null)
+        {
+            _organisationId = fy.OrganisationId;
+            _customers = await CustomerService.GetAllAsync(_organisationId);
+        }
+        else
+        {
+            _noFiscalYear = true;
+        }
+        _isLoading = false;
+    }
+
+    private void ShowAddForm()
+    {
+        _editId = null;
+        _fName = _fOrgNumber = _fEmail = _fPhone = _fAddress = _fPostalCode = _fCity = "";
+        _showForm = true;
+    }
+
+    private void EditCustomer(Customer c)
+    {
+        _editId = c.Id;
+        _fName = c.Name;
+        _fOrgNumber = c.OrgNumber ?? "";
+        _fEmail = c.Email ?? "";
+        _fPhone = c.Phone ?? "";
+        _fAddress = c.Address ?? "";
+        _fPostalCode = c.PostalCode ?? "";
+        _fCity = c.City ?? "";
+        _showForm = true;
+    }
+
+    private void CancelForm() => _showForm = false;
+
+    private async Task SaveCustomer()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            var customer = new Customer
+            {
+                Id = _editId ?? 0,
+                OrganisationId = _organisationId,
+                Name = _fName.Trim(),
+                OrgNumber = string.IsNullOrWhiteSpace(_fOrgNumber) ? null : _fOrgNumber.Trim(),
+                Email = string.IsNullOrWhiteSpace(_fEmail) ? null : _fEmail.Trim(),
+                Phone = string.IsNullOrWhiteSpace(_fPhone) ? null : _fPhone.Trim(),
+                Address = string.IsNullOrWhiteSpace(_fAddress) ? null : _fAddress.Trim(),
+                PostalCode = string.IsNullOrWhiteSpace(_fPostalCode) ? null : _fPostalCode.Trim(),
+                City = string.IsNullOrWhiteSpace(_fCity) ? null : _fCity.Trim(),
+            };
+
+            string? error;
+            if (_editId.HasValue)
+                (_, error) = await CustomerService.UpdateAsync(customer);
+            else
+                (_, error) = await CustomerService.CreateAsync(customer);
+
+            if (error is not null) { _error = error; return; }
+
+            Snackbar.Add(_editId.HasValue ? $"{customer.Name} uppdaterad." : $"{customer.Name} skapad.", Severity.Success);
+            _showForm = false;
+            _customers = await CustomerService.GetAllAsync(_organisationId);
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task DeleteCustomer(int id)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Inaktivera kunden?"))
+            return;
+        var error = await CustomerService.DeactivateAsync(id);
+        if (error is not null) { _error = error; return; }
+        Snackbar.Add("Kunden inaktiverad.", Severity.Success);
+        _customers = await CustomerService.GetAllAsync(_organisationId);
+    }
+}
