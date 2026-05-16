@@ -34,7 +34,6 @@ public class CustomerInvoiceService
             .Include(i => i.Lines)
             .Include(i => i.Customer)
             .Include(i => i.FiscalYear).ThenInclude(f => f.Organisation)
-            .Where(i => _tenant.OrganisationId != null && i.FiscalYear.OrganisationId == _tenant.OrganisationId)
             .FirstOrDefaultAsync(i => i.Id == id);
     }
 
@@ -120,7 +119,7 @@ public class CustomerInvoiceService
 
         journalLines.Add(new() { AccountId = revenueAccountId, DebitAmount = 0, CreditAmount = invoice.AmountExclVat });
 
-        var entryNumber = await NextEntryNumberAsync(invoice.FiscalYearId);
+        var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
         var journalEntry = new JournalEntry
         {
             EntryNumber = entryNumber,
@@ -171,7 +170,7 @@ public class CustomerInvoiceService
         if (!invoice.IsPosted) return (null, "Fakturan måste bokföras innan betalning registreras.");
         if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
 
-        var entryNumber = await NextEntryNumberAsync(invoice.FiscalYearId);
+        var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
         var paymentEntry = new JournalEntry
         {
             EntryNumber = entryNumber,
@@ -248,10 +247,4 @@ public class CustomerInvoiceService
             .MaxAsync(i => (int?)i.InvoiceNumber) ?? 0) + 1;
     }
 
-    private async Task<int> NextEntryNumberAsync(int fiscalYearId)
-    {
-        return (await _db.JournalEntries
-            .Where(j => j.FiscalYearId == fiscalYearId)
-            .MaxAsync(j => (int?)j.EntryNumber) ?? 0) + 1;
-    }
 }

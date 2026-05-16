@@ -344,6 +344,7 @@ else
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private AccountService AccountService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private IJSRuntime JS { get; set; } = default!;
 
     private FiscalYear? _fiscalYear;
     private List<CustomerInvoice> _invoices = [];
@@ -581,6 +582,8 @@ else
 
     private async Task DeleteInvoice(int invoiceId)
     {
+        if (!await JS.InvokeAsync<bool>("confirm", "Ta bort fakturan? Åtgärden kan inte ångras."))
+            return;
         var error = await InvoiceService.DeleteAsync(invoiceId);
         if (error is not null) { _error = error; return; }
         Snackbar.Add("Fakturan raderad.", Severity.Success);
