@@ -41,6 +41,8 @@ public static class CustomerInvoicePdfGenerator
                         {
                             c.Item().Text("Kund").Bold();
                             c.Item().Text(invoice.CustomerName);
+                            if (invoice.CustomerOrgNumber is not null)
+                                c.Item().Text($"Org.nr: {invoice.CustomerOrgNumber}");
                             if (invoice.CustomerAddress is not null)
                                 c.Item().Text(invoice.CustomerAddress);
                             if (invoice.CustomerPostalCode is not null || invoice.CustomerCity is not null)
@@ -110,7 +112,7 @@ public static class CustomerInvoicePdfGenerator
                         foreach (var line in invoice.Lines)
                         {
                             table.Cell().Element(DataCell).Text(line.Description);
-                            table.Cell().Element(DataCell).AlignRight().Text(line.Quantity.ToString("G29"));
+                            table.Cell().Element(DataCell).AlignRight().Text(line.Quantity.ToString("0.####"));
                             table.Cell().Element(DataCell).AlignRight().Text(line.UnitPrice.ToString("N2"));
                             table.Cell().Element(DataCell).AlignRight().Text($"{line.VatRate} %");
                             table.Cell().Element(DataCell).AlignRight().Text(line.AmountExclVat.ToString("N2"));

@@ -56,7 +56,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             .HasQueryFilter(a => _tenant.OrganisationId != null && a.JournalEntry.FiscalYear.OrganisationId == _tenant.OrganisationId);
 
         modelBuilder.Entity<Customer>()
-            .HasQueryFilter(c => _tenant.OrganisationId == null || c.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(c => _tenant.OrganisationId != null && c.OrganisationId == _tenant.OrganisationId);
+
+        modelBuilder.Entity<CustomerInvoice>()
+            .HasQueryFilter(i => _tenant.OrganisationId != null && i.FiscalYear.OrganisationId == _tenant.OrganisationId);
 
         modelBuilder.Entity<Account>(entity =>
         {
@@ -151,6 +154,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.HasIndex(i => new { i.FiscalYearId, i.InvoiceNumber }).IsUnique();
             entity.Property(i => i.CustomerName).HasMaxLength(200);
+            entity.Property(i => i.CustomerOrgNumber).HasMaxLength(20);
             entity.Property(i => i.CustomerAddress).HasMaxLength(300);
             entity.Property(i => i.CustomerPostalCode).HasMaxLength(20);
             entity.Property(i => i.CustomerCity).HasMaxLength(100);

@@ -37,7 +37,7 @@ public class CustomerService
         if (string.IsNullOrWhiteSpace(customer.Name))
             return (null, "Kundnamn är obligatoriskt.");
 
-        var existing = await _db.Customers.FindAsync(customer.Id);
+        var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customer.Id);
         if (existing is null) return (null, "Kunden hittades inte.");
 
         existing.Name = customer.Name;
@@ -55,7 +55,7 @@ public class CustomerService
 
     public async Task<string?> DeactivateAsync(int customerId)
     {
-        var customer = await _db.Customers.FindAsync(customerId);
+        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
         if (customer is null) return "Kunden hittades inte.";
 
         var hasInvoices = await _db.CustomerInvoices.AnyAsync(i => i.CustomerId == customerId);

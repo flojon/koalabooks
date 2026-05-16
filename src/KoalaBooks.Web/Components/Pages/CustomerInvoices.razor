@@ -243,14 +243,17 @@ else
                                         <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postReceivableAccountId" />
                                         <label style="font-weight:600;">Intäktskonto <span style="color:#ef4444;">*</span></label>
                                         <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postRevenueAccountId" />
-                                        @if (inv.VatAmount != 0)
+                                        @foreach (var rate in _postVatAccountIds.Keys.OrderBy(r => r))
                                         {
-                                            <label style="font-weight:600;">Utgående moms <span style="color:#ef4444;">*</span></label>
-                                            <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postVatAccountId" />
+                                            var r = rate;
+                                            <label style="font-weight:600;">Moms @r% <span style="color:#ef4444;">*</span></label>
+                                            <AccountSearchDropdown Accounts="_allAccounts"
+                                                SelectedAccountId="_postVatAccountIds.GetValueOrDefault(r)"
+                                                SelectedAccountIdChanged="@(id => _postVatAccountIds[r] = id)" />
                                         }
                                     </div>
                                     <button class="btn btn-success" @onclick="() => ConfirmPost(inv)"
-                                            disabled="@(_posting || _postReceivableAccountId == 0 || _postRevenueAccountId == 0 || (inv.VatAmount != 0 && _postVatAccountId == 0))">
+                                            disabled="@(_posting || _postReceivableAccountId == 0 || _postRevenueAccountId == 0 || _postVatAccountIds.Any(kv => kv.Value == 0))">
                                         @(_posting ? "Sparar..." : $"Bokför {inv.TotalAmount:N2}")
                                     </button>
                                 </div>
@@ -368,10 +371,10 @@ else
     private string _fNotes = "";
     private List<CustomerInvoiceLine> _fLines = [];
 
-    // Post form
+    // Post form — keyed by VAT rate (6, 12, 25) → AccountId
     private int _postReceivableAccountId;
     private int _postRevenueAccountId;
-    private int _postVatAccountId;
+    private Dictionary<int, int> _postVatAccountIds = new();
 
     // Pay form
     private DateTime _payDate = DateTime.Today;
@@ -499,9 +502,18 @@ else
 
         if (mode == InvoiceExpandMode.Post)
         {
+            var inv = _invoices.First(i => i.Id == invoiceId);
             _postReceivableAccountId = _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith("1510"))?.Id ?? 0;
             _postRevenueAccountId = _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith("30"))?.Id ?? 0;
-            _postVatAccountId = _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith("2610"))?.Id ?? 0;
+            _postVatAccountIds = inv.Lines
+                .Where(l => l.VatRate > 0)
+                .Select(l => l.VatRate)
+                .Distinct()
+                .ToDictionary(rate => rate, rate =>
+                {
+                    var prefix = rate switch { 25 => "2610", 12 => "2620", 6 => "2625", _ => "2610" };
+                    return _allAccounts.FirstOrDefault(a => a.AccountNumber.StartsWith(prefix))?.Id ?? 0;
+                });
         }
         else
         {
@@ -523,8 +535,7 @@ else
         try
         {
             var (_, error) = await InvoiceService.PostAsync(
-                inv.Id, _postReceivableAccountId, _postRevenueAccountId,
-                inv.VatAmount != 0 ? _postVatAccountId : null);
+                inv.Id, _postReceivableAccountId, _postRevenueAccountId, _postVatAccountIds);
 
             if (error is not null) { _error = error; return; }
 

@@ -34,7 +34,7 @@ public class CustomerInvoiceService
             .Include(i => i.Lines)
             .Include(i => i.Customer)
             .Include(i => i.FiscalYear).ThenInclude(f => f.Organisation)
-            .Where(i => _tenant.OrganisationId == null || i.FiscalYear.OrganisationId == _tenant.OrganisationId)
+            .Where(i => _tenant.OrganisationId != null && i.FiscalYear.OrganisationId == _tenant.OrganisationId)
             .FirstOrDefaultAsync(i => i.Id == id);
     }
 
@@ -48,15 +48,17 @@ public class CustomerInvoiceService
         if (invoice.DueDate < invoice.InvoiceDate)
             return (null, "Förfallodatum kan inte vara före fakturadatum.");
 
-        var fiscalYear = await _db.FiscalYears.FindAsync(invoice.FiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == invoice.FiscalYearId);
         if (fiscalYear is null) return (null, "Räkenskapsår hittades inte.");
         if (fiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
 
         if (invoice.CustomerId.HasValue)
         {
-            var customer = await _db.Customers.FindAsync(invoice.CustomerId.Value);
+            var customer = await _db.Customers
+                .FirstOrDefaultAsync(c => c.Id == invoice.CustomerId.Value);
             if (customer is not null)
             {
+                invoice.CustomerOrgNumber = customer.OrgNumber;
                 invoice.CustomerAddress = customer.Address;
                 invoice.CustomerPostalCode = customer.PostalCode;
                 invoice.CustomerCity = customer.City;
@@ -68,16 +70,27 @@ public class CustomerInvoiceService
 
         invoice.Lines = lines;
         RecalcTotals(invoice);
-        invoice.InvoiceNumber = await NextInvoiceNumberAsync(invoice.FiscalYearId);
         invoice.CreatedAt = DateTime.UtcNow;
+
+        // Advisory lock per fiscal year to serialize invoice number generation,
+        // preventing duplicate invoice numbers under concurrent creates.
+        using var tx = await _db.Database.BeginTransactionAsync();
+        await _db.Database.ExecuteSqlRawAsync(
+            "SELECT pg_advisory_xact_lock(42000 + {0})", invoice.FiscalYearId);
+        invoice.InvoiceNumber = await NextInvoiceNumberAsync(invoice.FiscalYearId);
 
         _db.CustomerInvoices.Add(invoice);
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+
         return (invoice, null);
     }
 
     public async Task<(CustomerInvoice? Invoice, string? Error)> PostAsync(
-        int invoiceId, int receivableAccountId, int revenueAccountId, int? vatAccountId)
+        int invoiceId,
+        int receivableAccountId,
+        int revenueAccountId,
+        IReadOnlyDictionary<int, int> vatRateAccountIds)
     {
         var invoice = await _db.CustomerInvoices
             .Include(i => i.Lines)
@@ -88,15 +101,24 @@ public class CustomerInvoiceService
         if (invoice.IsPosted) return (null, "Fakturan är redan bokförd.");
         if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
 
-        var lines = new List<JournalEntryLine>
+        var journalLines = new List<JournalEntryLine>
         {
             new() { AccountId = receivableAccountId, DebitAmount = invoice.TotalAmount, CreditAmount = 0 }
         };
 
-        if (invoice.VatAmount != 0 && vatAccountId.HasValue)
-            lines.Add(new() { AccountId = vatAccountId.Value, DebitAmount = 0, CreditAmount = invoice.VatAmount });
+        // One credit line per VAT rate so each maps to its BAS account (2610/2620/2625).
+        var vatByRate = invoice.Lines
+            .Where(l => l.VatRate > 0)
+            .GroupBy(l => l.VatRate)
+            .ToDictionary(g => g.Key, g => g.Sum(l => l.VatAmount));
 
-        lines.Add(new() { AccountId = revenueAccountId, DebitAmount = 0, CreditAmount = invoice.AmountExclVat });
+        foreach (var (rate, amount) in vatByRate)
+        {
+            if (vatRateAccountIds.TryGetValue(rate, out var vatAccountId) && vatAccountId != 0)
+                journalLines.Add(new() { AccountId = vatAccountId, DebitAmount = 0, CreditAmount = amount });
+        }
+
+        journalLines.Add(new() { AccountId = revenueAccountId, DebitAmount = 0, CreditAmount = invoice.AmountExclVat });
 
         var entryNumber = await NextEntryNumberAsync(invoice.FiscalYearId);
         var journalEntry = new JournalEntry
@@ -107,7 +129,7 @@ public class CustomerInvoiceService
             FiscalYearId = invoice.FiscalYearId,
             IsPosted = true,
             CreatedAt = DateTime.UtcNow,
-            Lines = lines
+            Lines = journalLines
         };
 
         invoice.IsPosted = true;
