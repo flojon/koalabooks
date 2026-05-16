@@ -31,6 +31,11 @@
         <button class="btn" @onclick="LoadReport" disabled="@_loading">@(_loading ? "Laddar…" : "Generera")</button>
     </div>
 
+    @if (_quarterWarning is not null)
+    {
+        <div class="alert alert-warning" style="margin-top:0.75rem;">@_quarterWarning</div>
+    }
+
     @if (_data is not null)
     {
         @if (!_data.OutputVat.Rows.Any() && !_data.InputVat.Rows.Any())
@@ -142,6 +147,7 @@ else
     private List<FiscalYear> _fiscalYears = [];
     private VatReportData? _data;
     private bool _loading;
+    private string? _quarterWarning;
     private int SelectedFiscalYearId { get; set; }
     private DateOnly? FromDate { get; set; }
     private DateOnly? ToDate { get; set; }
@@ -161,6 +167,7 @@ else
     {
         FromDate = null;
         ToDate = null;
+        _quarterWarning = null;
         await LoadReport();
     }
 
@@ -169,10 +176,15 @@ else
         var fy = _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
         if (fy is null) return;
 
-        var (from, to) = ComputeRange(fy, quarter);
-        if (from == to) return; // quarter is outside this fiscal year
+        var range = ComputeRange(fy, quarter);
+        if (range is null)
+        {
+            _quarterWarning = $"K{quarter} ingår inte i det valda räkenskapsåret ({fy.StartDate}–{fy.EndDate}).";
+            return;
+        }
 
-        (FromDate, ToDate) = (from, to);
+        _quarterWarning = null;
+        (FromDate, ToDate) = range.Value;
         await LoadReport();
     }
 

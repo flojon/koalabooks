@@ -10,9 +10,9 @@ public static class VatQuarterHelper
     ///
     /// For broken fiscal years spanning two calendar years (e.g. Jul 2025–Jun 2026),
     /// the quarter is looked up in whichever year it actually falls inside the FY.
-    /// If a quarter is entirely outside the fiscal year, From == To (empty range).
+    /// Returns null if the quarter is entirely outside the fiscal year.
     /// </summary>
-    public static (DateOnly From, DateOnly To) ComputeRange(FiscalYear fy, int quarter)
+    public static (DateOnly From, DateOnly To)? ComputeRange(FiscalYear fy, int quarter)
     {
         if (quarter is < 1 or > 4)
             throw new ArgumentOutOfRangeException(nameof(quarter), "Quarter must be 1–4.");
@@ -25,8 +25,7 @@ public static class VatQuarterHelper
 
         var from = qFrom < fy.StartDate ? fy.StartDate : qFrom;
         var to   = qTo   > fy.EndDate   ? fy.EndDate   : qTo;
-        if (to < from) to = from; // quarter is entirely outside this FY
-        return (from, to);
+        return to < from ? null : (from, to);
     }
 
     private static (DateOnly From, DateOnly To) CalendarQuarter(int year, int quarter)

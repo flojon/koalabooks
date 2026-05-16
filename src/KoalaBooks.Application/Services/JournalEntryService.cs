@@ -317,9 +317,9 @@ public class JournalEntryService
             .Where(a => a.FiscalYearId == fiscalYearId);
 
         if (!string.IsNullOrWhiteSpace(fromAccount))
-            accountQuery = accountQuery.Where(a => a.AccountNumber.CompareTo(fromAccount) >= 0);
+            accountQuery = accountQuery.Where(a => string.Compare(a.AccountNumber, fromAccount, StringComparison.Ordinal) >= 0);
         if (!string.IsNullOrWhiteSpace(toAccount))
-            accountQuery = accountQuery.Where(a => a.AccountNumber.CompareTo(toAccount) <= 0);
+            accountQuery = accountQuery.Where(a => string.Compare(a.AccountNumber, toAccount, StringComparison.Ordinal) <= 0);
 
         var accounts = await accountQuery.OrderBy(a => a.AccountNumber).ToListAsync();
 
@@ -534,7 +534,8 @@ public class JournalEntryService
     {
         var vatAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .Where(a => a.AccountNumber.CompareTo("2610") >= 0 && a.AccountNumber.CompareTo("2649") <= 0)
+            .Where(a => string.Compare(a.AccountNumber, "2610", StringComparison.Ordinal) >= 0
+                     && string.Compare(a.AccountNumber, "2649", StringComparison.Ordinal) <= 0)
             .OrderBy(a => a.AccountNumber)
             .ToListAsync();
 
@@ -576,7 +577,7 @@ public class JournalEntryService
                 Credit = credit
             };
 
-            if (account.AccountNumber.CompareTo("2640") >= 0)
+            if (string.Compare(account.AccountNumber, "2640", StringComparison.Ordinal) >= 0)
                 inputRows.Add(row);
             else
                 outputRows.Add(row);
