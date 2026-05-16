@@ -74,6 +74,15 @@ public class TestFixture : IDisposable
 
     internal static TenantContext NullTenant() => new TenantContext(new HttpContextAccessor());
 
+    public static TenantContext MakeTenant(int orgId) => new TenantContext(new HttpContextAccessor
+    {
+        HttpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("org_id", orgId.ToString())], "Test"))
+        }
+    });
+
     // ── Seed data helpers ──────────────────────────────────────────
 
     public FiscalYear CreateFiscalYear(
