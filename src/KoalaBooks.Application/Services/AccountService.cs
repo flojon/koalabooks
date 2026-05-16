@@ -28,6 +28,9 @@ public class AccountService
 
     public async Task<Account> CreateAsync(Account account)
     {
+        var fiscalYearExists = await _db.FiscalYears.AnyAsync(f => f.Id == account.FiscalYearId);
+        if (!fiscalYearExists) throw new InvalidOperationException("Fiscal year not found.");
+
         _db.Accounts.Add(account);
         await _db.SaveChangesAsync();
         return account;
@@ -64,6 +67,9 @@ public class AccountService
 
     public async Task<int> CopyAccountsAsync(int targetFiscalYearId, List<int> sourceAccountIds)
     {
+        if (!await _db.FiscalYears.AnyAsync(f => f.Id == targetFiscalYearId))
+            return 0;
+
         var sources = await _db.Accounts
             .Where(a => sourceAccountIds.Contains(a.Id))
             .ToListAsync();

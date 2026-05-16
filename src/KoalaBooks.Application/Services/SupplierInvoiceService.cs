@@ -55,6 +55,13 @@ public class SupplierInvoiceService
         if (invoice.JournalEntryId.HasValue) return (null, "Fakturan är redan bokförd.");
         if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
 
+        if (!await _db.Accounts.AnyAsync(a => a.Id == expenseAccountId && a.FiscalYearId == invoice.FiscalYearId))
+            return (null, "Kostnadskonto hittades inte.");
+        if (!await _db.Accounts.AnyAsync(a => a.Id == payableAccountId && a.FiscalYearId == invoice.FiscalYearId))
+            return (null, "Skuldkonto hittades inte.");
+        if (vatAccountId.HasValue && !await _db.Accounts.AnyAsync(a => a.Id == vatAccountId.Value && a.FiscalYearId == invoice.FiscalYearId))
+            return (null, "Momskonto hittades inte.");
+
         var lines = new List<JournalEntryLine>
         {
             new() { AccountId = expenseAccountId, DebitAmount = invoice.AmountExclVat, CreditAmount = 0 }
@@ -117,6 +124,11 @@ public class SupplierInvoiceService
         if (invoice is null) return (null, "Fakturan hittades inte.");
         if (invoice.IsPaid) return (null, "Fakturan är redan betald.");
         if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
+
+        if (!await _db.Accounts.AnyAsync(a => a.Id == bankAccountId && a.FiscalYearId == invoice.FiscalYearId))
+            return (null, "Bankkonto hittades inte.");
+        if (!await _db.Accounts.AnyAsync(a => a.Id == payableAccountId && a.FiscalYearId == invoice.FiscalYearId))
+            return (null, "Skuldkonto hittades inte.");
 
         var entryNumber = await NextEntryNumberAsync(invoice.FiscalYearId);
         var paymentEntry = new JournalEntry
