@@ -66,7 +66,7 @@ public class TestFixture : IDisposable
         _accessor.HttpContext = new DefaultHttpContext
         {
             User = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim("org_id", orgId.ToString())]))
+                [new Claim("org_id", orgId.ToString())], "Test"))
         };
     }
 

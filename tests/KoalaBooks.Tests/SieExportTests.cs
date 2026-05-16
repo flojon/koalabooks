@@ -16,23 +16,6 @@ public class SieExportServiceTests : IDisposable
 
     public void Dispose() => _f.Dispose();
 
-    private async Task<FiscalYear> CreateFiscalYearAsync(
-        string name = "2026",
-        DateOnly? start = null,
-        DateOnly? end = null)
-    {
-        var fy = new FiscalYear
-        {
-            Name = name,
-            StartDate = start ?? new DateOnly(2026, 1, 1),
-            EndDate = end ?? new DateOnly(2026, 12, 31),
-            OrganisationId = _f.OrganisationId
-        };
-        _f.Db.FiscalYears.Add(fy);
-        await _f.Db.SaveChangesAsync();
-        return fy;
-    }
-
     private async Task<Account> CreateAccountAsync(
         int fiscalYearId,
         string number,
@@ -96,7 +79,7 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_ContainsHeaderTags()
     {
-        var fy = await CreateFiscalYearAsync();
+        var fy = _f.CreateFiscalYear();
         await CreateAccountAsync(fy.Id, "1910", "Kassa");
 
         var bytes = await _f.SieExportService.ExportAsync(fy.Id);
@@ -114,7 +97,7 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_UsesCompanyNameWhenProvided()
     {
-        var fy = await CreateFiscalYearAsync();
+        var fy = _f.CreateFiscalYear();
         await CreateAccountAsync(fy.Id, "1910", "Kassa");
 
         var bytes = await _f.SieExportService.ExportAsync(fy.Id, "Koala AB");
@@ -126,7 +109,7 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_ContainsAccounts()
     {
-        var fy = await CreateFiscalYearAsync();
+        var fy = _f.CreateFiscalYear();
         await CreateAccountAsync(fy.Id, "1910", "Kassa");
         await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
         await CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
@@ -142,7 +125,7 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_ContainsBalances()
     {
-        var fy = await CreateFiscalYearAsync();
+        var fy = _f.CreateFiscalYear();
         await CreateAccountAsync(fy.Id, "1910", "Kassa", incomingBalance: 50000m);
         await CreateAccountAsync(fy.Id, "2440", "Leverantörsskuld", AccountClass.Liability, outgoingBalance: 15000m);
         await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
@@ -159,7 +142,7 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_ContainsVouchers()
     {
-        var fy = await CreateFiscalYearAsync();
+        var fy = _f.CreateFiscalYear();
         var kassa = await CreateAccountAsync(fy.Id, "1910", "Kassa");
         var hyra = await CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
 
@@ -178,7 +161,7 @@ public class SieExportServiceTests : IDisposable
     [Fact]
     public async Task Export_AmountSignConvention()
     {
-        var fy = await CreateFiscalYearAsync();
+        var fy = _f.CreateFiscalYear();
         var bank = await CreateAccountAsync(fy.Id, "1930", "Bank");
         var revenue = await CreateAccountAsync(fy.Id, "3010", "Försäljning", AccountClass.Revenue);
 
@@ -200,7 +183,7 @@ public class SieExportServiceTests : IDisposable
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-        var fy = await CreateFiscalYearAsync();
+        var fy = _f.CreateFiscalYear();
         var kassa = await CreateAccountAsync(fy.Id, "1910", "Kassa", incomingBalance: 25000m);
         var hyra = await CreateAccountAsync(fy.Id, "5010", "Lokalhyra", AccountClass.Expense);
         var bank = await CreateAccountAsync(fy.Id, "1930", "Bank", incomingBalance: 100000m);
