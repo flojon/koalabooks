@@ -29,6 +29,8 @@ public class RegisterModel : PageModel
         _config = config;
     }
 
+    private const string RegistrationEnabledKey = "Features:RegistrationEnabled";
+
     [BindProperty] public string OrgName { get; set; } = "";
     [BindProperty] public string Email { get; set; } = "";
     [BindProperty] public string Password { get; set; } = "";
@@ -37,19 +39,25 @@ public class RegisterModel : PageModel
 
     public IActionResult OnGet()
     {
-        if (!_config.GetValue<bool>("Features:RegistrationEnabled", true))
+        if (!_config.GetValue<bool>(RegistrationEnabledKey, true))
             return NotFound();
         return Page();
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
-        if (!_config.GetValue<bool>("Features:RegistrationEnabled", true))
+        if (!_config.GetValue<bool>(RegistrationEnabledKey, true))
             return NotFound();
 
         if (string.IsNullOrWhiteSpace(OrgName))
         {
             Errors.Add("Organisationsnamn får inte vara tomt.");
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(Email))
+        {
+            Errors.Add("E-postadress får inte vara tom.");
             return Page();
         }
 
@@ -59,9 +67,10 @@ public class RegisterModel : PageModel
             return Page();
         }
 
-        var slug = GenerateSlug(OrgName);
+        var orgName = OrgName.Trim();
+        var slug = GenerateSlug(orgName);
 
-        var org = new Organisation { Name = OrgName.Trim(), Slug = slug };
+        var org = new Organisation { Name = orgName, Slug = slug };
         _db.Organisations.Add(org);
         await _db.SaveChangesAsync();
 
