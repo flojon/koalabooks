@@ -75,3 +75,20 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
     .blazor-error-boundary::after { content: "An error has occurred." }
 /* Monospace utility for monetary amounts */
 .mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+
+/* Print-only content is hidden on screen */
+.print-only { display: none; }
+
+@media print {
+    .mud-appbar, .mud-drawer, .no-print { display: none !important; }
+    .mud-main-content, main, body, html { padding: 0 !important; margin: 0 !important; background: white !important; }
+
+    .print-only { display: block; }
+
+    .card { box-shadow: none !important; border: 1px solid #cbd5e1; page-break-inside: avoid; }
+    table { box-shadow: none !important; }
+    th { background: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body, h1, h2, h3, td, th { color: black !important; }
+
+    @page { margin: 1.5cm; }
+}
