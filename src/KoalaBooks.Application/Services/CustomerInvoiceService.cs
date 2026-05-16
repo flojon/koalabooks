@@ -127,6 +127,7 @@ public class CustomerInvoiceService
 
         journalLines.Add(new() { AccountId = revenueAccountId, DebitAmount = 0, CreditAmount = invoice.AmountExclVat });
 
+        using var tx = await _db.Database.BeginTransactionAsync();
         var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
         var journalEntry = new JournalEntry
         {
@@ -143,6 +144,7 @@ public class CustomerInvoiceService
         invoice.IsPosted = true;
         invoice.JournalEntry = journalEntry;
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return (invoice, null);
     }
@@ -185,6 +187,7 @@ public class CustomerInvoiceService
         if (validCount < 2)
             return (null, "Ett eller flera konton tillhör inte detta räkenskapsår.");
 
+        using var tx = await _db.Database.BeginTransactionAsync();
         var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
         var paymentEntry = new JournalEntry
         {
@@ -217,6 +220,7 @@ public class CustomerInvoiceService
         }
 
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
         return (invoice, null);
     }
 

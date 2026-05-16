@@ -72,6 +72,7 @@ public class SupplierInvoiceService
 
         lines.Add(new() { AccountId = payableAccountId, DebitAmount = 0, CreditAmount = invoice.TotalAmount });
 
+        using var tx = await _db.Database.BeginTransactionAsync();
         var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
         var journalEntry = new JournalEntry
         {
@@ -89,6 +90,7 @@ public class SupplierInvoiceService
 
         invoice.JournalEntryId = journalEntry.Id;
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return (invoice, null);
     }
@@ -130,6 +132,7 @@ public class SupplierInvoiceService
         if (!await _db.Accounts.AnyAsync(a => a.Id == payableAccountId && a.FiscalYearId == invoice.FiscalYearId))
             return (null, "Skuldkonto hittades inte.");
 
+        using var tx = await _db.Database.BeginTransactionAsync();
         var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
         var paymentEntry = new JournalEntry
         {
@@ -164,6 +167,7 @@ public class SupplierInvoiceService
         }
 
         await _db.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return (invoice, null);
     }
