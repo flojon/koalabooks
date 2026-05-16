@@ -1,5 +1,6 @@
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -7,22 +8,28 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace KoalaBooks.Web.Pages.Account;
 
+[AllowAnonymous]
 [EnableRateLimiting("auth")]
 public class RegisterModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly AppDbContext _db;
+    private readonly IConfiguration _config;
 
     public RegisterModel(
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
-        AppDbContext db)
+        AppDbContext db,
+        IConfiguration config)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _db = db;
+        _config = config;
     }
+
+    private const string RegistrationEnabledKey = "Features:RegistrationEnabled";
 
     [BindProperty] public string OrgName { get; set; } = "";
     [BindProperty] public string Email { get; set; } = "";
@@ -30,19 +37,46 @@ public class RegisterModel : PageModel
     [BindProperty] public string ConfirmPassword { get; set; } = "";
     public List<string> Errors { get; set; } = [];
 
-    public void OnGet() { }
+    public IActionResult OnGet()
+    {
+        if (!_config.GetValue<bool>(RegistrationEnabledKey, true))
+            return NotFound();
+        return Page();
+    }
 
     public async Task<IActionResult> OnPostAsync()
     {
+        if (!_config.GetValue<bool>(RegistrationEnabledKey, true))
+            return NotFound();
+
+        if (string.IsNullOrWhiteSpace(OrgName))
+        {
+            Errors.Add("Organisationsnamn får inte vara tomt.");
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(Email))
+        {
+            Errors.Add("E-postadress får inte vara tom.");
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(Password))
+        {
+            Errors.Add("Lösenord får inte vara tomt.");
+            return Page();
+        }
+
         if (Password != ConfirmPassword)
         {
             Errors.Add("Lösenorden matchar inte.");
             return Page();
         }
 
-        var slug = GenerateSlug(OrgName);
+        var orgName = OrgName.Trim();
+        var slug = GenerateSlug(orgName);
 
-        var org = new Organisation { Name = OrgName.Trim(), Slug = slug };
+        var org = new Organisation { Name = orgName, Slug = slug };
         _db.Organisations.Add(org);
         await _db.SaveChangesAsync();
 
