@@ -21,6 +21,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<BankTransaction> BankTransactions => Set<BankTransaction>();
     public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
     public DbSet<JournalEntryAttachment> JournalEntryAttachments => Set<JournalEntryAttachment>();
+    public DbSet<SruMappingRule> SruMappingRules => Set<SruMappingRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +33,14 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(o => o.Name).HasMaxLength(200);
             entity.Property(o => o.Slug).HasMaxLength(100);
             entity.HasIndex(o => o.Slug).IsUnique();
+        });
+
+        modelBuilder.Entity<SruMappingRule>(entity =>
+        {
+            entity.HasIndex(s => new { s.LegalForm, s.SruCode }).IsUnique();
+            entity.Property(s => s.Description).HasMaxLength(300);
+            entity.Property(s => s.RadLabel).HasMaxLength(20);
+            entity.Property(s => s.AccountPatterns).HasMaxLength(500);
         });
 
         modelBuilder.Entity<FiscalYear>()

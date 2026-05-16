@@ -171,6 +171,8 @@ using (var scope = app.Services.CreateScope())
             }
         }
 
+        await KoalaBooks.Infrastructure.Data.DatabaseSeeder.SeedSruMappingsAsync(db);
+
         if (app.Environment.IsDevelopment())
         {
             // Seed a default org + dev user if none exists
