@@ -67,6 +67,9 @@ public class AccountService
 
     public async Task<int> CopyAccountsAsync(int targetFiscalYearId, List<int> sourceAccountIds)
     {
+        if (!await _db.FiscalYears.AnyAsync(f => f.Id == targetFiscalYearId))
+            return 0;
+
         var sources = await _db.Accounts
             .Where(a => sourceAccountIds.Contains(a.Id))
             .ToListAsync();
