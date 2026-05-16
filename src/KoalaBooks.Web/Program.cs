@@ -1,5 +1,6 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using KoalaBooks.Web.Components;
@@ -192,7 +193,7 @@ using (var scope = app.Services.CreateScope())
             const string devEmail = "admin@koalabooks.local";
             if (await userManager.FindByEmailAsync(devEmail) is null)
             {
-                var org = new Organisation { Name = "Dev Organisation", Slug = "dev" };
+                var org = new Organisation { Name = "Dev Organisation", Slug = "dev", LegalForm = LegalForm.Aktiebolag };
                 db.Organisations.Add(org);
                 await db.SaveChangesAsync();
 

@@ -3,6 +3,7 @@ using System;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace KoalaBooks.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260516185903_AddLegalFormToOrganisation")]
+    partial class AddLegalFormToOrganisation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -113,212 +116,6 @@ namespace KoalaBooks.Infrastructure.Migrations
                     b.HasIndex("OrganisationId");
 
                     b.ToTable("BankTransactions");
-                });
-
-            modelBuilder.Entity("KoalaBooks.Domain.Entities.Customer", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Address")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("City")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Country")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(2)
-                        .HasColumnType("character varying(2)")
-                        .HasDefaultValue("SE");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("OrgNumber")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<int>("OrganisationId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Phone")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("PostalCode")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OrganisationId");
-
-                    b.ToTable("Customers");
-                });
-
-            modelBuilder.Entity("KoalaBooks.Domain.Entities.CustomerInvoice", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("AmountExclVat")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CustomerAddress")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("CustomerCity")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int?>("CustomerId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("CustomerName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("CustomerOrgNumber")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("CustomerPostalCode")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<DateOnly>("DueDate")
-                        .HasColumnType("date");
-
-                    b.Property<int>("FiscalYearId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateOnly>("InvoiceDate")
-                        .HasColumnType("date");
-
-                    b.Property<int>("InvoiceNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsPaid")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsPosted")
-                        .HasColumnType("boolean");
-
-                    b.Property<int?>("JournalEntryId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("OurReference")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateOnly?>("PaidDate")
-                        .HasColumnType("date");
-
-                    b.Property<int?>("PaymentJournalEntryId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("VatAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<string>("YourReference")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomerId");
-
-                    b.HasIndex("JournalEntryId");
-
-                    b.HasIndex("PaymentJournalEntryId");
-
-                    b.HasIndex("FiscalYearId", "InvoiceNumber")
-                        .IsUnique();
-
-                    b.ToTable("CustomerInvoices");
-                });
-
-            modelBuilder.Entity("KoalaBooks.Domain.Entities.CustomerInvoiceLine", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<decimal>("AmountExclVat")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<int>("CustomerInvoiceId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<decimal>("Quantity")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("numeric(18,4)");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("UnitPrice")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<decimal>("VatAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<int>("VatRate")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomerInvoiceId");
-
-                    b.ToTable("CustomerInvoiceLines");
                 });
 
             modelBuilder.Entity("KoalaBooks.Domain.Entities.FiscalYear", b =>
@@ -484,10 +281,6 @@ namespace KoalaBooks.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
-
-                    b.Property<string>("OrgNumber")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Slug")
                         .IsRequired()
@@ -1019,60 +812,6 @@ namespace KoalaBooks.Infrastructure.Migrations
                     b.Navigation("Organisation");
                 });
 
-            modelBuilder.Entity("KoalaBooks.Domain.Entities.Customer", b =>
-                {
-                    b.HasOne("KoalaBooks.Domain.Entities.Organisation", "Organisation")
-                        .WithMany()
-                        .HasForeignKey("OrganisationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Organisation");
-                });
-
-            modelBuilder.Entity("KoalaBooks.Domain.Entities.CustomerInvoice", b =>
-                {
-                    b.HasOne("KoalaBooks.Domain.Entities.Customer", "Customer")
-                        .WithMany()
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("KoalaBooks.Domain.Entities.FiscalYear", "FiscalYear")
-                        .WithMany()
-                        .HasForeignKey("FiscalYearId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("KoalaBooks.Domain.Entities.JournalEntry", "JournalEntry")
-                        .WithMany()
-                        .HasForeignKey("JournalEntryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("KoalaBooks.Domain.Entities.JournalEntry", "PaymentJournalEntry")
-                        .WithMany()
-                        .HasForeignKey("PaymentJournalEntryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Customer");
-
-                    b.Navigation("FiscalYear");
-
-                    b.Navigation("JournalEntry");
-
-                    b.Navigation("PaymentJournalEntry");
-                });
-
-            modelBuilder.Entity("KoalaBooks.Domain.Entities.CustomerInvoiceLine", b =>
-                {
-                    b.HasOne("KoalaBooks.Domain.Entities.CustomerInvoice", "CustomerInvoice")
-                        .WithMany("Lines")
-                        .HasForeignKey("CustomerInvoiceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CustomerInvoice");
-                });
-
             modelBuilder.Entity("KoalaBooks.Domain.Entities.FiscalYear", b =>
                 {
                     b.HasOne("KoalaBooks.Domain.Entities.Organisation", "Organisation")
@@ -1232,11 +971,6 @@ namespace KoalaBooks.Infrastructure.Migrations
                     b.Navigation("Application");
 
                     b.Navigation("Authorization");
-                });
-
-            modelBuilder.Entity("KoalaBooks.Domain.Entities.CustomerInvoice", b =>
-                {
-                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("KoalaBooks.Domain.Entities.FiscalYear", b =>
