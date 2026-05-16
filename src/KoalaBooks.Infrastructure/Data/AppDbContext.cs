@@ -34,6 +34,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.Property(o => o.Name).HasMaxLength(200);
             entity.Property(o => o.Slug).HasMaxLength(100);
+            entity.Property(o => o.OrgNumber).HasMaxLength(20);
             entity.HasIndex(o => o.Slug).IsUnique();
         });
 

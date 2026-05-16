@@ -9,7 +9,9 @@ public static class CustomerInvoicePdfGenerator
 {
     public static byte[] Generate(CustomerInvoice invoice)
     {
-        var orgName = invoice.FiscalYear?.Organisation?.Name ?? "KoalaBooks";
+        var org = invoice.FiscalYear?.Organisation;
+        var orgName = org?.Name ?? "KoalaBooks";
+        var orgNumber = org?.OrgNumber;
 
         return Document.Create(container =>
         {
@@ -24,6 +26,8 @@ public static class CustomerInvoicePdfGenerator
                     row.RelativeItem().Column(col =>
                     {
                         col.Item().Text(orgName).Bold().FontSize(18);
+                        if (orgNumber is not null)
+                            col.Item().Text($"Org.nr: {orgNumber}").FontSize(9);
                     });
                     row.ConstantItem(160).AlignRight().Column(col =>
                     {
@@ -123,6 +127,13 @@ public static class CustomerInvoicePdfGenerator
                     col.Item().PaddingTop(6).LineHorizontal(1);
 
                     // Totals
+                    var vatByRate = invoice.Lines
+                        .Where(l => l.VatRate > 0)
+                        .GroupBy(l => l.VatRate)
+                        .OrderBy(g => g.Key)
+                        .Select(g => (Rate: g.Key, Amount: g.Sum(l => l.VatAmount)))
+                        .ToList();
+
                     col.Item().PaddingTop(6).AlignRight().Column(c =>
                     {
                         c.Item().Row(r =>
@@ -130,11 +141,22 @@ public static class CustomerInvoicePdfGenerator
                             r.ConstantItem(120).Text("Summa exkl. moms:").Bold();
                             r.ConstantItem(80).AlignRight().Text(invoice.AmountExclVat.ToString("N2"));
                         });
-                        c.Item().Row(r =>
+                        foreach (var (rate, amount) in vatByRate)
                         {
-                            r.ConstantItem(120).Text("Moms:").Bold();
-                            r.ConstantItem(80).AlignRight().Text(invoice.VatAmount.ToString("N2"));
-                        });
+                            c.Item().Row(r =>
+                            {
+                                r.ConstantItem(120).Text($"Moms {rate}%:").Bold();
+                                r.ConstantItem(80).AlignRight().Text(amount.ToString("N2"));
+                            });
+                        }
+                        if (vatByRate.Count == 0)
+                        {
+                            c.Item().Row(r =>
+                            {
+                                r.ConstantItem(120).Text("Moms:").Bold();
+                                r.ConstantItem(80).AlignRight().Text("0,00");
+                            });
+                        }
                         c.Item().PaddingTop(4).Row(r =>
                         {
                             r.ConstantItem(120).Text("ATT BETALA:").Bold().FontSize(12);

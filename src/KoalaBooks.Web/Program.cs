@@ -94,6 +94,7 @@ builder.Services.AddScoped<BankImportService>();
 builder.Services.AddScoped<SupplierInvoiceService>();
 builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<CustomerInvoiceService>();
+builder.Services.AddScoped<OrganisationService>();
 builder.Services.AddScoped<AttachmentService>();
 
 builder.Services.AddMudServices(config =>

@@ -100,6 +100,14 @@ public class CustomerInvoiceService
         if (invoice.IsPosted) return (null, "Fakturan är redan bokförd.");
         if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
 
+        // Validate that all account IDs belong to this invoice's fiscal year to prevent cross-tenant writes.
+        var accountIds = new List<int> { receivableAccountId, revenueAccountId };
+        accountIds.AddRange(vatRateAccountIds.Values.Where(id => id != 0));
+        var validCount = await _db.Accounts
+            .CountAsync(a => accountIds.Contains(a.Id) && a.FiscalYearId == invoice.FiscalYearId);
+        if (validCount != accountIds.Distinct().Count())
+            return (null, "Ett eller flera konton tillhör inte detta räkenskapsår.");
+
         var journalLines = new List<JournalEntryLine>
         {
             new() { AccountId = receivableAccountId, DebitAmount = invoice.TotalAmount, CreditAmount = 0 }
@@ -131,6 +139,7 @@ public class CustomerInvoiceService
             Lines = journalLines
         };
 
+        _db.JournalEntries.Add(journalEntry);
         invoice.IsPosted = true;
         invoice.JournalEntry = journalEntry;
         await _db.SaveChangesAsync();
@@ -141,7 +150,7 @@ public class CustomerInvoiceService
     public async Task<List<BankTransaction>> FindMatchingBankTransactionsAsync(
         int fiscalYearId, decimal invoiceTotal, DateOnly invoiceDate, DateOnly dueDate)
     {
-        var minDate = invoiceDate;
+        var minDate = invoiceDate.AddDays(-3);
         var maxDate = dueDate.AddDays(60);
 
         return await _db.BankTransactions
