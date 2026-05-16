@@ -19,11 +19,12 @@ public class TestFixture : IDisposable
     public int TestOrgId { get; }
 
     public AppDbContext Db { get; }
-    public TenantContext Tenant { get; private set; } = null!;
+    public TenantContext Tenant { get; }
     public JournalEntryService JournalEntryService { get; }
     public FiscalYearService FiscalYearService { get; }
     public YearEndClosingService YearEndClosingService { get; }
     public SieExportService SieExportService { get; }
+    public Organisation DefaultOrg { get; }
 
     private readonly SqliteConnection _connection;
 
@@ -39,15 +40,18 @@ public class TestFixture : IDisposable
             .Options;
 
         // Bootstrap: create schema and seed Organisation without a tenant filter.
+        Organisation bootstrapOrg;
         var noTenant = MakeNullTenant();
         using (var bootstrap = new AppDbContext(options, noTenant))
         {
             bootstrap.Database.EnsureCreated();
-            bootstrap.Organisations.Add(new Organisation { Name = "Test Org", Slug = "test" });
+            bootstrapOrg = new Organisation { Name = "Test Org", Slug = "test-org" };
+            bootstrap.Organisations.Add(bootstrapOrg);
             bootstrap.SaveChanges();
-            TestOrgId = bootstrap.Organisations.First().Id;
+            TestOrgId = bootstrapOrg.Id;
         }
 
+        DefaultOrg = bootstrapOrg;
         Tenant = MakeTenant(TestOrgId);
         Db = new AppDbContext(options, Tenant);
 
@@ -73,6 +77,8 @@ public class TestFixture : IDisposable
         Db.Dispose();
         _connection.Dispose();
     }
+
+    internal static TenantContext NullTenant() => new TenantContext(new HttpContextAccessor());
 
     // ── Seed data helpers ──────────────────────────────────────────
 

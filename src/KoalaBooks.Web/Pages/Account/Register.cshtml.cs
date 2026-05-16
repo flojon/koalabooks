@@ -3,9 +3,11 @@ using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace KoalaBooks.Web.Pages.Account;
 
+[EnableRateLimiting("auth")]
 public class RegisterModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
@@ -48,7 +50,6 @@ public class RegisterModel : PageModel
         {
             UserName = Email,
             Email = Email,
-            EmailConfirmed = true,
             OrganisationId = org.Id
         };
 

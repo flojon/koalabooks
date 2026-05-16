@@ -214,12 +214,12 @@ public class SieImportService
         {
             fiscalYear = new FiscalYear
             {
+                OrganisationId = _tenant.OrganisationId
+                    ?? throw new InvalidOperationException("SIE import requires an active organisation context."),
                 Name = fyName,
                 StartDate = fyStart,
                 EndDate = fyEnd,
-                IsClosed = false,
-                OrganisationId = _tenant.OrganisationId
-                    ?? throw new InvalidOperationException("SIE import requires an active organisation context.")
+                IsClosed = false
             };
             _db.FiscalYears.Add(fiscalYear);
             await _db.SaveChangesAsync();

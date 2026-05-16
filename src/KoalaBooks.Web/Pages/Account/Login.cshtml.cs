@@ -2,9 +2,11 @@ using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace KoalaBooks.Web.Pages.Account;
 
+[EnableRateLimiting("auth")]
 public class LoginModel : PageModel
 {
     private readonly SignInManager<ApplicationUser> _signInManager;
@@ -24,11 +26,13 @@ public class LoginModel : PageModel
 
     public async Task<IActionResult> OnPostAsync()
     {
-        var result = await _signInManager.PasswordSignInAsync(Email, Password, RememberMe, lockoutOnFailure: false);
+        var result = await _signInManager.PasswordSignInAsync(Email, Password, RememberMe, lockoutOnFailure: true);
         if (result.Succeeded)
             return LocalRedirect(ReturnUrl ?? "/");
 
-        ErrorMessage = "Felaktig e-postadress eller lösenord.";
+        ErrorMessage = result.IsLockedOut
+            ? "Kontot är tillfälligt låst. Försök igen om 15 minuter."
+            : "Felaktig e-postadress eller lösenord.";
         return Page();
     }
 }

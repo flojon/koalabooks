@@ -263,6 +263,7 @@ public class BalancePropagationTests : IDisposable
         // Create another year — should pick 2026 as previous (newest before 2027)
         var fy2027 = await _f.FiscalYearService.CreateAsync(new FiscalYear
         {
+            OrganisationId = _f.DefaultOrg.Id,
             Name = "2027",
             StartDate = new DateOnly(2027, 1, 1),
             EndDate = new DateOnly(2027, 12, 31)
