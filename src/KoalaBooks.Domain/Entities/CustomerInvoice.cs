@@ -9,6 +9,9 @@ public class CustomerInvoice
     public int? CustomerId { get; set; }
     public Customer? Customer { get; set; }
     public string CustomerName { get; set; } = "";
+    public string? CustomerAddress { get; set; }
+    public string? CustomerPostalCode { get; set; }
+    public string? CustomerCity { get; set; }
 
     public int InvoiceNumber { get; set; }
     public DateOnly InvoiceDate { get; set; }

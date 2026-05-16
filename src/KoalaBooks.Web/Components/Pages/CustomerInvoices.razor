@@ -456,10 +456,7 @@ else
 
     private void RecalcLine(int index)
     {
-        var line = _fLines[index];
-        line.AmountExclVat = Math.Round(line.Quantity * line.UnitPrice, 2);
-        line.VatAmount = Math.Round(line.AmountExclVat * line.VatRate / 100m, 2);
-        line.TotalAmount = line.AmountExclVat + line.VatAmount;
+        CustomerInvoiceService.RecalcLine(_fLines[index]);
     }
 
     private async Task SaveInvoice()

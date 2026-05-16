@@ -9,8 +9,6 @@ public static class CustomerInvoicePdfGenerator
 {
     public static byte[] Generate(CustomerInvoice invoice)
     {
-        QuestPDF.Settings.License = LicenseType.Community;
-
         var orgName = invoice.FiscalYear?.Organisation?.Name ?? "KoalaBooks";
 
         return Document.Create(container =>
@@ -43,10 +41,10 @@ public static class CustomerInvoicePdfGenerator
                         {
                             c.Item().Text("Kund").Bold();
                             c.Item().Text(invoice.CustomerName);
-                            if (invoice.Customer?.Address is not null)
-                                c.Item().Text(invoice.Customer.Address);
-                            if (invoice.Customer?.PostalCode is not null || invoice.Customer?.City is not null)
-                                c.Item().Text($"{invoice.Customer?.PostalCode} {invoice.Customer?.City}".Trim());
+                            if (invoice.CustomerAddress is not null)
+                                c.Item().Text(invoice.CustomerAddress);
+                            if (invoice.CustomerPostalCode is not null || invoice.CustomerCity is not null)
+                                c.Item().Text($"{invoice.CustomerPostalCode} {invoice.CustomerCity}".Trim());
                         });
 
                         row.ConstantItem(200).AlignRight().Column(c =>

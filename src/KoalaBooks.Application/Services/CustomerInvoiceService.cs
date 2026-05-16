@@ -8,10 +8,12 @@ namespace KoalaBooks.Application.Services;
 public class CustomerInvoiceService
 {
     private readonly AppDbContext _db;
+    private readonly TenantContext _tenant;
 
-    public CustomerInvoiceService(AppDbContext db)
+    public CustomerInvoiceService(AppDbContext db, TenantContext tenant)
     {
         _db = db;
+        _tenant = tenant;
     }
 
     public async Task<List<CustomerInvoice>> GetAllAsync(int fiscalYearId)
@@ -32,6 +34,7 @@ public class CustomerInvoiceService
             .Include(i => i.Lines)
             .Include(i => i.Customer)
             .Include(i => i.FiscalYear).ThenInclude(f => f.Organisation)
+            .Where(i => _tenant.OrganisationId == null || i.FiscalYear.OrganisationId == _tenant.OrganisationId)
             .FirstOrDefaultAsync(i => i.Id == id);
     }
 
@@ -48,6 +51,17 @@ public class CustomerInvoiceService
         var fiscalYear = await _db.FiscalYears.FindAsync(invoice.FiscalYearId);
         if (fiscalYear is null) return (null, "Räkenskapsår hittades inte.");
         if (fiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
+
+        if (invoice.CustomerId.HasValue)
+        {
+            var customer = await _db.Customers.FindAsync(invoice.CustomerId.Value);
+            if (customer is not null)
+            {
+                invoice.CustomerAddress = customer.Address;
+                invoice.CustomerPostalCode = customer.PostalCode;
+                invoice.CustomerCity = customer.City;
+            }
+        }
 
         foreach (var line in lines)
             RecalcLine(line);
@@ -96,11 +110,8 @@ public class CustomerInvoiceService
             Lines = lines
         };
 
-        _db.JournalEntries.Add(journalEntry);
-        await _db.SaveChangesAsync();
-
         invoice.IsPosted = true;
-        invoice.JournalEntryId = journalEntry.Id;
+        invoice.JournalEntry = journalEntry;
         await _db.SaveChangesAsync();
 
         return (invoice, null);
@@ -154,19 +165,16 @@ public class CustomerInvoiceService
             ]
         };
 
-        _db.JournalEntries.Add(paymentEntry);
         invoice.IsPaid = true;
         invoice.PaidDate = paidDate;
-        await _db.SaveChangesAsync();
-
-        invoice.PaymentJournalEntryId = paymentEntry.Id;
+        invoice.PaymentJournalEntry = paymentEntry;
 
         if (linkBankTransactionId.HasValue)
         {
             var bankTx = await _db.BankTransactions.FindAsync(linkBankTransactionId.Value);
             if (bankTx is not null)
             {
-                bankTx.JournalEntryId = paymentEntry.Id;
+                bankTx.JournalEntry = paymentEntry;
                 bankTx.Status = BankTransactionStatus.Matched;
             }
         }
@@ -197,7 +205,7 @@ public class CustomerInvoiceService
             .FirstOrDefaultAsync();
     }
 
-    private static void RecalcLine(CustomerInvoiceLine line)
+    public static void RecalcLine(CustomerInvoiceLine line)
     {
         line.AmountExclVat = Math.Round(line.Quantity * line.UnitPrice, 2);
         line.VatAmount = Math.Round(line.AmountExclVat * line.VatRate / 100m, 2);
