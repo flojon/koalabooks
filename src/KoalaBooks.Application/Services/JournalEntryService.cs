@@ -317,9 +317,9 @@ public class JournalEntryService
             .Where(a => a.FiscalYearId == fiscalYearId);
 
         if (!string.IsNullOrWhiteSpace(fromAccount))
-            accountQuery = accountQuery.Where(a => string.Compare(a.AccountNumber, fromAccount) >= 0);
+            accountQuery = accountQuery.Where(a => a.AccountNumber.CompareTo(fromAccount) >= 0);
         if (!string.IsNullOrWhiteSpace(toAccount))
-            accountQuery = accountQuery.Where(a => string.Compare(a.AccountNumber, toAccount) <= 0);
+            accountQuery = accountQuery.Where(a => a.AccountNumber.CompareTo(toAccount) <= 0);
 
         var accounts = await accountQuery.OrderBy(a => a.AccountNumber).ToListAsync();
 

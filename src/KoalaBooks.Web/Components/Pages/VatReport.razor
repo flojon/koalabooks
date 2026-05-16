@@ -169,7 +169,10 @@ else
         var fy = _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
         if (fy is null) return;
 
-        (FromDate, ToDate) = ComputeRange(fy, quarter);
+        var (from, to) = ComputeRange(fy, quarter);
+        if (from == to) return; // quarter is outside this fiscal year
+
+        (FromDate, ToDate) = (from, to);
         await LoadReport();
     }
 

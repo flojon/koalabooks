@@ -14,6 +14,9 @@ public static class VatQuarterHelper
     /// </summary>
     public static (DateOnly From, DateOnly To) ComputeRange(FiscalYear fy, int quarter)
     {
+        if (quarter is < 1 or > 4)
+            throw new ArgumentOutOfRangeException(nameof(quarter), "Quarter must be 1–4.");
+
         var (qFrom, qTo) = CalendarQuarter(fy.StartDate.Year, quarter);
 
         // For broken fiscal years, the quarter may belong to the end year instead.
