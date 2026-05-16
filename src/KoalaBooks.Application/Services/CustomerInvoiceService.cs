@@ -193,7 +193,7 @@ public class CustomerInvoiceService
 
         if (linkBankTransactionId.HasValue)
         {
-            var bankTx = await _db.BankTransactions.FindAsync(linkBankTransactionId.Value);
+            var bankTx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == linkBankTransactionId.Value);
             if (bankTx is not null)
             {
                 bankTx.JournalEntry = paymentEntry;
