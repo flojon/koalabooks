@@ -1,5 +1,6 @@
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -7,21 +8,25 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace KoalaBooks.Web.Pages.Account;
 
+[AllowAnonymous]
 [EnableRateLimiting("auth")]
 public class RegisterModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly AppDbContext _db;
+    private readonly IConfiguration _config;
 
     public RegisterModel(
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
-        AppDbContext db)
+        AppDbContext db,
+        IConfiguration config)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _db = db;
+        _config = config;
     }
 
     [BindProperty] public string OrgName { get; set; } = "";
@@ -30,10 +35,24 @@ public class RegisterModel : PageModel
     [BindProperty] public string ConfirmPassword { get; set; } = "";
     public List<string> Errors { get; set; } = [];
 
-    public void OnGet() { }
+    public IActionResult OnGet()
+    {
+        if (!_config.GetValue<bool>("Features:RegistrationEnabled", true))
+            return NotFound();
+        return Page();
+    }
 
     public async Task<IActionResult> OnPostAsync()
     {
+        if (!_config.GetValue<bool>("Features:RegistrationEnabled", true))
+            return NotFound();
+
+        if (string.IsNullOrWhiteSpace(OrgName))
+        {
+            Errors.Add("Organisationsnamn får inte vara tomt.");
+            return Page();
+        }
+
         if (Password != ConfirmPassword)
         {
             Errors.Add("Lösenorden matchar inte.");
