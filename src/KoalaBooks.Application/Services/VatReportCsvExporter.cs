@@ -1,14 +1,16 @@
 using System.Globalization;
+using System.IO;
 using System.Text;
 
 namespace KoalaBooks.Application.Services;
 
-public static class VatReportCsvExporter
+public class VatReportCsvExporter
 {
-    private static readonly CultureInfo SvSe = CultureInfo.GetCultureInfo("sv-SE");
+    private static readonly CultureInfo SvSe = new CultureInfo("sv-SE");
+    private static readonly UTF8Encoding Utf8Bom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
     private const string Separator = ";";
 
-    public static byte[] Build(VatReportData data, string fiscalYearName, DateOnly? from, DateOnly? to)
+    public byte[] Build(VatReportData data, string fiscalYearName, DateOnly? from, DateOnly? to)
     {
         var sb = new StringBuilder();
 
@@ -31,13 +33,10 @@ public static class VatReportCsvExporter
           .Append(Separator)
           .AppendLine(Math.Abs(data.NetPayable).ToString("0.00", SvSe));
 
-        var csv = sb.ToString();
-        var preamble = Encoding.UTF8.GetPreamble();
-        var body = Encoding.UTF8.GetBytes(csv);
-        var output = new byte[preamble.Length + body.Length];
-        Buffer.BlockCopy(preamble, 0, output, 0, preamble.Length);
-        Buffer.BlockCopy(body, 0, output, preamble.Length, body.Length);
-        return output;
+        var ms = new MemoryStream();
+        using (var writer = new StreamWriter(ms, Utf8Bom, leaveOpen: true))
+            writer.Write(sb.ToString());
+        return ms.ToArray();
     }
 
     private static void AppendSection(StringBuilder sb, VatReportSection section, bool isInput)

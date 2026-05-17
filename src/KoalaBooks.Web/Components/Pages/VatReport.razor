@@ -4,6 +4,7 @@
 @using KoalaBooks.Domain.Entities
 @using static KoalaBooks.Application.Services.VatQuarterHelper
 @inject IJSRuntime JS
+@inject VatReportCsvExporter CsvExporter
 
 <PageTitle>Momsredovisning — KoalaBooks</PageTitle>
 
@@ -35,13 +36,12 @@
         <button class="btn btn-secondary" @onclick="ExportCsv" disabled="@(_data is null || _loading)">Exportera CSV</button>
     </div>
 
-    var selectedFy = _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
-    @if (selectedFy is not null)
+    @if (SelectedFy is not null)
     {
         <p class="print-only" style="color:#475569; margin:0 0 1rem;">
-            @selectedFy.Name &nbsp;·&nbsp;
-            Period: @(FromDate?.ToString("yyyy-MM-dd") ?? selectedFy.StartDate.ToString("yyyy-MM-dd"))
-            — @(ToDate?.ToString("yyyy-MM-dd") ?? selectedFy.EndDate.ToString("yyyy-MM-dd"))
+            @SelectedFy.Name &nbsp;·&nbsp;
+            Period: @(FromDate?.ToString("yyyy-MM-dd") ?? SelectedFy.StartDate.ToString("yyyy-MM-dd"))
+            — @(ToDate?.ToString("yyyy-MM-dd") ?? SelectedFy.EndDate.ToString("yyyy-MM-dd"))
         </p>
     }
 
@@ -165,6 +165,7 @@ else
     private int SelectedFiscalYearId { get; set; }
     private DateOnly? FromDate { get; set; }
     private DateOnly? ToDate { get; set; }
+    private FiscalYear? SelectedFy => _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
 
     protected override async Task OnInitializedAsync()
     {
@@ -179,6 +180,7 @@ else
 
     private async Task OnFiscalYearChanged()
     {
+        _data = null;
         FromDate = null;
         ToDate = null;
         _quarterWarning = null;
@@ -223,9 +225,8 @@ else
     private async Task ExportCsv()
     {
         if (_data is null) return;
-        var fy = _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
-        var fyName = string.Concat((fy?.Name ?? "").Split(Path.GetInvalidFileNameChars()));
-        var bytes = VatReportCsvExporter.Build(_data, fyName, FromDate, ToDate);
+        var fyName = string.Concat((SelectedFy?.Name ?? "").Split(Path.GetInvalidFileNameChars()));
+        var bytes = CsvExporter.Build(_data, fyName, FromDate, ToDate);
         var base64 = Convert.ToBase64String(bytes);
         var period = (FromDate, ToDate) switch
         {

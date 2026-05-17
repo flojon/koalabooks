@@ -72,7 +72,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
     padding: 1rem 1rem 1rem 3.7rem;
     color: white;
 }
-    .blazor-error-boundary::after { content: "An error has occurred." }
+.blazor-error-boundary::after { content: "An error has occurred." }
 /* Monospace utility for monetary amounts */
 .mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
 

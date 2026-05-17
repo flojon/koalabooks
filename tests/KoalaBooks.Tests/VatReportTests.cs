@@ -200,7 +200,7 @@ public class VatReportTests : IDisposable
         await PostEntry(_inputVat.Id, _cash.Id, 500m);
 
         var data = await _f.JournalEntryService.GetVatReportAsync(_fy.Id);
-        var bytes = VatReportCsvExporter.Build(
+        var bytes = new VatReportCsvExporter().Build(
             data, _fy.Name,
             new DateOnly(2026, 1, 1), new DateOnly(2026, 3, 31));
 
@@ -226,7 +226,7 @@ public class VatReportTests : IDisposable
         await PostEntry(_inputVat.Id, _cash.Id, 2000m);
 
         var data = await _f.JournalEntryService.GetVatReportAsync(_fy.Id);
-        var bytes = VatReportCsvExporter.Build(data, _fy.Name, null, null);
+        var bytes = new VatReportCsvExporter().Build(data, _fy.Name, null, null);
         var csv = DecodeUtf8(bytes);
 
         Assert.Contains("Moms att återfå;1500,00", csv);
@@ -257,7 +257,7 @@ public class VatReportTests : IDisposable
             NetPayable = 100m
         };
 
-        var bytes = VatReportCsvExporter.Build(data, "2026", null, null);
+        var bytes = new VatReportCsvExporter().Build(data, "2026", null, null);
         var csv = DecodeUtf8(bytes);
 
         Assert.Contains("\"Namn med ; semikolon\"", csv);
@@ -273,7 +273,7 @@ public class VatReportTests : IDisposable
             NetPayable = 0m
         };
 
-        var bytes = VatReportCsvExporter.Build(data, "2026", null, null);
+        var bytes = new VatReportCsvExporter().Build(data, "2026", null, null);
 
         Assert.True(bytes.Length >= 3);
         Assert.Equal(0xEF, bytes[0]);
