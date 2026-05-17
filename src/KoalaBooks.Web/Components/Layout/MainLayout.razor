@@ -2,10 +2,12 @@
 @implements IDisposable
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Infrastructure.Services
+@using Microsoft.Extensions.Logging
 @inject NavigationManager Navigation
 @inject FiscalYearService FiscalYearService
 @inject BankImportService BankImportService
 @inject SupplierInvoiceService SupplierInvoiceService
+@inject ILogger<MainLayout> Logger
 
 <MudLayout>
     <MudAppBar Elevation="0" Color="Color.Secondary">
@@ -36,7 +38,7 @@
                     Att göra
                     @if (_todoCount > 0)
                     {
-                        <span style="margin-left:auto; background:var(--mud-palette-error); color:var(--mud-palette-error-text); border-radius:9999px; padding:1px 7px; font-size:0.7rem; font-weight:700; line-height:1.6;">@_todoCount</span>
+                        <span style="display:inline-flex; align-items:center; margin-left:auto; background:var(--mud-palette-error); color:var(--mud-palette-error-text); border-radius:9999px; padding:1px 7px; font-size:0.7rem; font-weight:700; line-height:1.6;">@_todoCount</span>
                     }
                 </MudNavLink>
                 <MudNavLink Href="/journal" Icon="@Icons.Material.Outlined.MenuBook">Journal</MudNavLink>
@@ -96,9 +98,10 @@
     private bool _drawerOpen = true;
     private ErrorBoundary? _errorBoundary;
     private int _todoCount;
-    private int? _fiscalYearId;
+    private bool _loadingTodoCount;
 
     // Collapse state — persists across badge refreshes within the session
+    // Transaktioner and Rapporter start expanded; Inställningar and Data collapsed (lower-frequency)
     private bool _transactionsExpanded = true;
     private bool _reportsExpanded = true;
     private bool _settingsExpanded = false;
@@ -106,14 +109,13 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var fy = await FiscalYearService.GetActiveAsync();
-        _fiscalYearId = fy?.Id;
         Navigation.LocationChanged += OnLocationChanged;
         await LoadTodoCountAsync();
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
+        if (_loadingTodoCount) return;
         _ = InvokeAsync(async () =>
         {
             await LoadTodoCountAsync();
@@ -123,17 +125,25 @@
 
     private async Task LoadTodoCountAsync()
     {
+        if (_loadingTodoCount) return;
+        _loadingTodoCount = true;
         try
         {
-            if (_fiscalYearId is null) { _todoCount = 0; return; }
+            var fy = await FiscalYearService.GetActiveAsync();
+            if (fy is null) { _todoCount = 0; return; }
 
-            var unmatched = await BankImportService.CountUnmatchedAsync(_fiscalYearId.Value);
-            var unpaid = await SupplierInvoiceService.CountUnpaidAsync(_fiscalYearId.Value);
+            var unmatched = await BankImportService.CountUnmatchedAsync(fy.Id);
+            var unpaid = await SupplierInvoiceService.CountUnpaidAsync(fy.Id);
             _todoCount = unmatched + unpaid;
         }
-        catch
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Failed to load to-do count for nav badge");
             _todoCount = 0;
+        }
+        finally
+        {
+            _loadingTodoCount = false;
         }
     }
 
