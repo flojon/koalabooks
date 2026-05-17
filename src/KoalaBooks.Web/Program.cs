@@ -231,7 +231,8 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorPages();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .AddAdditionalAssemblies(typeof(KoalaBooks.Components.Pages.Home).Assembly);
 
 app.Run();
 
