@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Http;
+using KoalaBooks.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
@@ -10,7 +10,6 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
     {
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         optionsBuilder.UseNpgsql("Host=localhost;Database=KoalaBooks;Username=postgres;Password=postgres");
-        var tenant = new TenantContext(new HttpContextAccessor());
-        return new AppDbContext(optionsBuilder.Options, tenant);
+        return new AppDbContext(optionsBuilder.Options, new LocalCurrentUser());
     }
 }
