@@ -1,6 +1,5 @@
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
-using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,12 +8,10 @@ namespace KoalaBooks.Application.Services;
 public class CustomerInvoiceService
 {
     private readonly AppDbContext _db;
-    private readonly ICurrentUser _currentUser;
 
-    public CustomerInvoiceService(AppDbContext db, ICurrentUser currentUser)
+    public CustomerInvoiceService(AppDbContext db)
     {
         _db = db;
-        _currentUser = currentUser;
     }
 
     public async Task<List<CustomerInvoice>> GetAllAsync(int fiscalYearId)
