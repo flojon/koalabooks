@@ -313,15 +313,15 @@ public class JournalEntryService
         int fiscalYearId, string? fromAccount = null, string? toAccount = null,
         DateOnly? from = null, DateOnly? to = null, bool excludeClosingEntries = true)
     {
-        var accountQuery = _db.Accounts
-            .Where(a => a.FiscalYearId == fiscalYearId);
+        var accounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .OrderBy(a => a.AccountNumber)
+            .ToListAsync();
 
         if (!string.IsNullOrWhiteSpace(fromAccount))
-            accountQuery = accountQuery.Where(a => string.Compare(a.AccountNumber, fromAccount, StringComparison.Ordinal) >= 0);
+            accounts = accounts.Where(a => string.Compare(a.AccountNumber, fromAccount, StringComparison.Ordinal) >= 0).ToList();
         if (!string.IsNullOrWhiteSpace(toAccount))
-            accountQuery = accountQuery.Where(a => string.Compare(a.AccountNumber, toAccount, StringComparison.Ordinal) <= 0);
-
-        var accounts = await accountQuery.OrderBy(a => a.AccountNumber).ToListAsync();
+            accounts = accounts.Where(a => string.Compare(a.AccountNumber, toAccount, StringComparison.Ordinal) <= 0).ToList();
 
         var lineQuery = _db.JournalEntryLines
             .Include(l => l.JournalEntry)
@@ -532,12 +532,13 @@ public class JournalEntryService
 
     public async Task<VatReportData> GetVatReportAsync(int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
     {
-        var vatAccounts = await _db.Accounts
+        var vatAccounts = (await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
+            .OrderBy(a => a.AccountNumber)
+            .ToListAsync())
             .Where(a => string.Compare(a.AccountNumber, "2610", StringComparison.Ordinal) >= 0
                      && string.Compare(a.AccountNumber, "2649", StringComparison.Ordinal) <= 0)
-            .OrderBy(a => a.AccountNumber)
-            .ToListAsync();
+            .ToList();
 
         var vatAccountIds = vatAccounts.Select(a => a.Id).ToHashSet();
 
