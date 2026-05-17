@@ -14,6 +14,9 @@ public class SupplierInvoiceService
         _db = db;
     }
 
+    public Task<int> CountUnpaidAsync(int fiscalYearId) =>
+        _db.SupplierInvoices.CountAsync(s => s.FiscalYearId == fiscalYearId && !s.IsPaid);
+
     public async Task<List<SupplierInvoice>> GetAllAsync(int fiscalYearId)
     {
         return await _db.SupplierInvoices

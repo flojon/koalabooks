@@ -31,7 +31,7 @@
         <MudNavMenu>
             <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Översikt</MudNavLink>
 
-            <MudNavGroup Title="Transaktioner" Icon="@Icons.Material.Outlined.SwapHoriz" Expanded="true">
+            <MudNavGroup Title="Transaktioner" Icon="@Icons.Material.Outlined.SwapHoriz" @bind-Expanded="_transactionsExpanded">
                 <MudNavLink Href="/todo" Icon="@Icons.Material.Outlined.CheckCircle">
                     Att göra
                     @if (_todoCount > 0)
@@ -47,7 +47,7 @@
                 <MudNavLink Href="/import/tax" Icon="@Icons.Material.Outlined.Receipt">Skattekontoimport</MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Rapporter" Icon="@Icons.Material.Outlined.Assessment" Expanded="true">
+            <MudNavGroup Title="Rapporter" Icon="@Icons.Material.Outlined.Assessment" @bind-Expanded="_reportsExpanded">
                 <MudNavLink Href="/reports/trial-balance" Icon="@Icons.Material.Outlined.BarChart">Råbalans</MudNavLink>
                 <MudNavLink Href="/reports/general-ledger" Icon="@Icons.Material.Outlined.Book">Huvudbok</MudNavLink>
                 <MudNavLink Href="/reports/income-statement" Icon="@Icons.Material.Outlined.TrendingUp">Resultaträkning</MudNavLink>
@@ -55,13 +55,13 @@
                 <MudNavLink Href="/reports/vat" Icon="@Icons.Material.Outlined.Receipt">Momsredovisning</MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Inställningar" Icon="@Icons.Material.Outlined.Settings" Expanded="true">
+            <MudNavGroup Title="Inställningar" Icon="@Icons.Material.Outlined.Settings" @bind-Expanded="_settingsExpanded">
                 <MudNavLink Href="/accounts" Icon="@Icons.Material.Outlined.AccountTree">Konton</MudNavLink>
                 <MudNavLink Href="/fiscal-years" Icon="@Icons.Material.Outlined.CalendarMonth">Räkenskapsår</MudNavLink>
                 <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings">Inställningar</MudNavLink>
             </MudNavGroup>
 
-            <MudNavGroup Title="Data" Icon="@Icons.Material.Outlined.Storage" Expanded="true">
+            <MudNavGroup Title="Data" Icon="@Icons.Material.Outlined.Storage" @bind-Expanded="_dataExpanded">
                 <MudNavLink Href="/import/sie" Icon="@Icons.Material.Outlined.FileUpload">Importera SIE</MudNavLink>
                 <MudNavLink Href="/export/sie" Icon="@Icons.Material.Outlined.FileDownload">Exportera SIE</MudNavLink>
             </MudNavGroup>
@@ -96,29 +96,40 @@
     private bool _drawerOpen = true;
     private ErrorBoundary? _errorBoundary;
     private int _todoCount;
+    private int? _fiscalYearId;
+
+    // Collapse state — persists across badge refreshes within the session
+    private bool _transactionsExpanded = true;
+    private bool _reportsExpanded = true;
+    private bool _settingsExpanded = false;
+    private bool _dataExpanded = false;
 
     protected override async Task OnInitializedAsync()
     {
+        var fy = await FiscalYearService.GetActiveAsync();
+        _fiscalYearId = fy?.Id;
         Navigation.LocationChanged += OnLocationChanged;
         await LoadTodoCountAsync();
     }
 
-    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        await LoadTodoCountAsync();
-        StateHasChanged();
+        _ = InvokeAsync(async () =>
+        {
+            await LoadTodoCountAsync();
+            StateHasChanged();
+        });
     }
 
     private async Task LoadTodoCountAsync()
     {
         try
         {
-            var fy = await FiscalYearService.GetActiveAsync();
-            if (fy is null) { _todoCount = 0; return; }
+            if (_fiscalYearId is null) { _todoCount = 0; return; }
 
-            var unmatched = await BankImportService.GetUnmatchedAsync(fy.Id);
-            var invoices = await SupplierInvoiceService.GetAllAsync(fy.Id);
-            _todoCount = unmatched.Count + invoices.Count(i => !i.IsPaid);
+            var unmatched = await BankImportService.CountUnmatchedAsync(_fiscalYearId.Value);
+            var unpaid = await SupplierInvoiceService.CountUnpaidAsync(_fiscalYearId.Value);
+            _todoCount = unmatched + unpaid;
         }
         catch
         {
