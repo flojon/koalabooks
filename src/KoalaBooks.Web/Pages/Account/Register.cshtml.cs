@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -32,6 +33,7 @@ public class RegisterModel : PageModel
     private const string RegistrationEnabledKey = "Features:RegistrationEnabled";
 
     [BindProperty] public string OrgName { get; set; } = "";
+    [BindProperty] public LegalForm LegalForm { get; set; } = LegalForm.Aktiebolag;
     [BindProperty] public string Email { get; set; } = "";
     [BindProperty] public string Password { get; set; } = "";
     [BindProperty] public string ConfirmPassword { get; set; } = "";
@@ -76,7 +78,7 @@ public class RegisterModel : PageModel
         var orgName = OrgName.Trim();
         var slug = GenerateSlug(orgName);
 
-        var org = new Organisation { Name = orgName, Slug = slug };
+        var org = new Organisation { Name = orgName, Slug = slug, LegalForm = LegalForm };
         _db.Organisations.Add(org);
         await _db.SaveChangesAsync();
 

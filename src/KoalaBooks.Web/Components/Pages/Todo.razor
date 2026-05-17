@@ -211,7 +211,7 @@ else
             _contraAccountId = 0;
             _contraWasSuggested = false;
 
-            var suggested = await BankImportService.SuggestContraAccountAsync(item.BankAccountId!.Value, item.Description);
+            var suggested = await BankImportService.SuggestContraAccountAsync(item.BankAccountId!.Value, item.Description, item.Amount);
             if (suggested.HasValue && _allAccounts.Any(a => a.Id == suggested.Value))
             {
                 _contraAccountId = suggested.Value;

@@ -333,7 +333,7 @@ public class BankImportService
             .ToListAsync();
     }
 
-    public async Task<int?> SuggestContraAccountAsync(int bankAccountId, string description)
+    public async Task<int?> SuggestContraAccountAsync(int bankAccountId, string description, decimal amount)
     {
         var desc = description.Trim().ToUpperInvariant();
         var words = desc.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -353,14 +353,42 @@ public class BankImportService
             .Select(t => t.JournalEntryId!.Value)
             .ToHashSet();
 
-        if (entryIds.Count == 0)
-            return null;
+        if (entryIds.Count > 0)
+        {
+            var fromHistory = await _db.JournalEntryLines
+                .Where(l => entryIds.Contains(l.JournalEntryId) && l.AccountId != bankAccountId)
+                .GroupBy(l => l.AccountId)
+                .OrderByDescending(g => g.Count())
+                .Select(g => (int?)g.Key)
+                .FirstOrDefaultAsync();
 
-        return await _db.JournalEntryLines
-            .Where(l => entryIds.Contains(l.JournalEntryId) && l.AccountId != bankAccountId)
-            .GroupBy(l => l.AccountId)
-            .OrderByDescending(g => g.Count())
-            .Select(g => (int?)g.Key)
+            if (fromHistory.HasValue)
+                return fromHistory;
+        }
+
+        return await GetLegalFormDefaultAsync(bankAccountId, amount);
+    }
+
+    private async Task<int?> GetLegalFormDefaultAsync(int bankAccountId, decimal amount)
+    {
+        var org = await _db.Organisations.FindAsync(_tenant.OrganisationId);
+        if (org is null) return null;
+
+        var accountNumber = org.LegalForm switch
+        {
+            LegalForm.EnskildFirma => amount >= 0 ? "2013" : "2018",
+            LegalForm.Aktiebolag => "2893",
+            _ => null
+        };
+
+        if (accountNumber is null) return null;
+
+        var bankAccount = await _db.Accounts.FindAsync(bankAccountId);
+        if (bankAccount is null) return null;
+
+        return await _db.Accounts
+            .Where(a => a.FiscalYearId == bankAccount.FiscalYearId && a.AccountNumber == accountNumber)
+            .Select(a => (int?)a.Id)
             .FirstOrDefaultAsync();
     }
 

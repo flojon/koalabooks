@@ -628,7 +628,7 @@ else
 
         if (mode == ExpandMode.CreateEntry)
         {
-            var suggested = await BankImportService.SuggestContraAccountAsync(_selectedAccountId, tx.Description);
+            var suggested = await BankImportService.SuggestContraAccountAsync(_selectedAccountId, tx.Description, tx.Amount);
             if (suggested.HasValue && _allAccounts.Any(a => a.Id == suggested.Value))
             {
                 _newEntryContraAccountId = suggested.Value;
