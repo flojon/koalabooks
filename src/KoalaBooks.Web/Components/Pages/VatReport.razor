@@ -1,7 +1,10 @@
 @page "/reports/vat"
+@using System.IO
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
 @using static KoalaBooks.Application.Services.VatQuarterHelper
+@inject IJSRuntime JS
+@inject VatReportCsvExporter CsvExporter
 
 <PageTitle>Momsredovisning — KoalaBooks</PageTitle>
 
@@ -9,7 +12,7 @@
 
 @if (_fiscalYears.Any())
 {
-    <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
+    <div class="toolbar no-print" style="flex-wrap:wrap; gap:0.75rem;">
         <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
         <select @bind="SelectedFiscalYearId" @bind:after="OnFiscalYearChanged" style="width:200px;">
             @foreach (var fy in _fiscalYears)
@@ -29,7 +32,18 @@
         <button class="btn" @onclick="() => SetQuarter(3)" disabled="@_loading">K3</button>
         <button class="btn" @onclick="() => SetQuarter(4)" disabled="@_loading">K4</button>
         <button class="btn" @onclick="LoadReport" disabled="@_loading">@(_loading ? "Laddar…" : "Generera")</button>
+        <button class="btn btn-secondary" @onclick="PrintReport" disabled="@(_data is null || _loading)">Skriv ut</button>
+        <button class="btn btn-secondary" @onclick="ExportCsv" disabled="@(_data is null || _loading)">Exportera CSV</button>
     </div>
+
+    @if (SelectedFy is not null)
+    {
+        <p class="print-only" style="color:#475569; margin:0 0 1rem;">
+            @SelectedFy.Name &nbsp;·&nbsp;
+            Period: @(FromDate?.ToString("yyyy-MM-dd") ?? SelectedFy.StartDate.ToString("yyyy-MM-dd"))
+            — @(ToDate?.ToString("yyyy-MM-dd") ?? SelectedFy.EndDate.ToString("yyyy-MM-dd"))
+        </p>
+    }
 
     @if (_quarterWarning is not null)
     {
@@ -151,6 +165,7 @@ else
     private int SelectedFiscalYearId { get; set; }
     private DateOnly? FromDate { get; set; }
     private DateOnly? ToDate { get; set; }
+    private FiscalYear? SelectedFy => _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
 
     protected override async Task OnInitializedAsync()
     {
@@ -165,6 +180,7 @@ else
 
     private async Task OnFiscalYearChanged()
     {
+        _data = null;
         FromDate = null;
         ToDate = null;
         _quarterWarning = null;
@@ -199,5 +215,27 @@ else
         {
             _loading = false;
         }
+    }
+
+    private async Task PrintReport()
+    {
+        await JS.InvokeVoidAsync("window.print");
+    }
+
+    private async Task ExportCsv()
+    {
+        if (_data is null) return;
+        var fyName = string.Concat((SelectedFy?.Name ?? "").Split(Path.GetInvalidFileNameChars()));
+        var bytes = CsvExporter.Build(_data, fyName, FromDate, ToDate);
+        var base64 = Convert.ToBase64String(bytes);
+        var period = (FromDate, ToDate) switch
+        {
+            ({ } f, { } t) => $"_{f:yyyyMMdd}-{t:yyyyMMdd}",
+            ({ } f, null) => $"_from-{f:yyyyMMdd}",
+            (null, { } t) => $"_to-{t:yyyyMMdd}",
+            _ => ""
+        };
+        var fileName = $"momsredovisning_{fyName}{period}.csv";
+        await JS.InvokeVoidAsync("downloadFileFromBase64", base64, fileName);
     }
 }

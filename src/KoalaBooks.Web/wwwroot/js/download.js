@@ -3,6 +3,7 @@ window.koala = {
 };
 
 window.downloadFileFromBase64 = function (base64, fileName) {
+    if (!base64 || !fileName) return;
     const link = document.createElement('a');
     link.href = 'data:application/octet-stream;base64,' + base64;
     link.download = fileName;

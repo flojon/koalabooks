@@ -59,6 +59,32 @@ public class GeneralLedgerTests : IDisposable
     }
 
     [Fact]
+    public async Task GeneralLedger_AccountRangeFilter_BoundaryAccountsAreIncluded()
+    {
+        // Accounts at the exact fromAccount/toAccount boundaries must be included;
+        // accounts just outside must be excluded. This pins the ordinal string-compare
+        // fix — previously string.Compare inside IQueryable didn't translate to SQL.
+        await CreateEntry(new DateOnly(2026, 1, 1), "Boundary test", _cashAccount.Id, _revenueAccount.Id, 100m);
+
+        // fromAccount="1910" toAccount="3010": 1910 and 3010 included, 5010 excluded
+        var sections = await _f.JournalEntryService.GetGeneralLedgerAsync(
+            _fiscalYear.Id, fromAccount: "1910", toAccount: "3010");
+
+        Assert.Equal(2, sections.Count);
+        Assert.Contains(sections, s => s.AccountNumber == "1910");
+        Assert.Contains(sections, s => s.AccountNumber == "3010");
+        Assert.DoesNotContain(sections, s => s.AccountNumber == "5010");
+
+        // fromAccount="1911" toAccount="3009": only 5010's outer bounds excluded, nothing in 1911–3009
+        var narrow = await _f.JournalEntryService.GetGeneralLedgerAsync(
+            _fiscalYear.Id, fromAccount: "1911", toAccount: "3009");
+
+        Assert.DoesNotContain(narrow, s => s.AccountNumber == "1910");
+        Assert.DoesNotContain(narrow, s => s.AccountNumber == "3010");
+        Assert.DoesNotContain(narrow, s => s.AccountNumber == "5010");
+    }
+
+    [Fact]
     public async Task GeneralLedger_DateRangeFilter_ReturnsOnlyMatchingTransactions()
     {
         await CreateEntry(new DateOnly(2026, 1, 10), "Jan sale", _cashAccount.Id, _revenueAccount.Id, 1000m);
