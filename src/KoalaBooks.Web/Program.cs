@@ -101,6 +101,7 @@ builder.Services.AddScoped<CustomerInvoiceService>();
 builder.Services.AddScoped<OrganisationService>();
 builder.Services.AddScoped<AttachmentService>();
 builder.Services.AddSingleton<VatReportCsvExporter>();
+builder.Services.AddScoped<IAttachmentProvider, WebAttachmentProvider>();
 
 builder.Services.AddMudServices(config =>
 {
