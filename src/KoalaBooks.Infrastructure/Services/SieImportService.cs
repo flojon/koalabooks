@@ -2,6 +2,7 @@ using System.Text;
 using jsiSIE;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -45,12 +46,12 @@ public record SieImportAllResult(
 public class SieImportService
 {
     private readonly AppDbContext _db;
-    private readonly TenantContext _tenant;
+    private readonly ICurrentUser _currentUser;
 
-    public SieImportService(AppDbContext db, TenantContext tenant)
+    public SieImportService(AppDbContext db, ICurrentUser currentUser)
     {
         _db = db;
-        _tenant = tenant;
+        _currentUser = currentUser;
     }
 
     public SieDocument Parse(Stream stream)
@@ -215,7 +216,7 @@ public class SieImportService
         {
             fiscalYear = new FiscalYear
             {
-                OrganisationId = _tenant.OrganisationId
+                OrganisationId = _currentUser.OrganisationId
                     ?? throw new InvalidOperationException("SIE import requires an active organisation context."),
                 Name = fyName,
                 StartDate = fyStart,

@@ -1,5 +1,6 @@
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -9,12 +10,12 @@ namespace KoalaBooks.Application.Services;
 public class FiscalYearService
 {
     private readonly AppDbContext _db;
-    private readonly TenantContext _tenant;
+    private readonly ICurrentUser _currentUser;
 
-    public FiscalYearService(AppDbContext db, TenantContext tenant)
+    public FiscalYearService(AppDbContext db, ICurrentUser currentUser)
     {
         _db = db;
-        _tenant = tenant;
+        _currentUser = currentUser;
     }
 
     public async Task<List<FiscalYear>> GetAllAsync()
@@ -39,7 +40,7 @@ public class FiscalYearService
 
     public async Task<FiscalYear> CreateAsync(FiscalYear fiscalYear)
     {
-        fiscalYear.OrganisationId = _tenant.OrganisationId
+        fiscalYear.OrganisationId = _currentUser.OrganisationId
             ?? throw new InvalidOperationException("No active tenant.");
 
         var hasOverlap = await _db.FiscalYears
