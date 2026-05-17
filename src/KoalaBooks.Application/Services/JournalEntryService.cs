@@ -327,11 +327,13 @@ public class JournalEntryService
             filtered = filtered.Where(a => string.Compare(a.AccountNumber, toAccount, StringComparison.Ordinal) <= 0);
 
         var accounts = filtered.OrderBy(a => a.AccountNumber, StringComparer.Ordinal).ToList();
+        var accountIds = accounts.Select(a => a.Id).ToHashSet();
 
         var lineQuery = _db.JournalEntryLines
             .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
-            .Where(l => l.JournalEntry.IsPosted);
+            .Where(l => l.JournalEntry.IsPosted)
+            .Where(l => accountIds.Contains(l.AccountId));
 
         if (excludeClosingEntries)
             lineQuery = lineQuery.Where(l => !l.JournalEntry.IsClosingEntry);

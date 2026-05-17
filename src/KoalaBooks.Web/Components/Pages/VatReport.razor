@@ -1,4 +1,5 @@
 @page "/reports/vat"
+@using System.IO
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
 @using static KoalaBooks.Application.Services.VatQuarterHelper
@@ -223,7 +224,7 @@ else
     {
         if (_data is null) return;
         var fy = _fiscalYears.FirstOrDefault(f => f.Id == SelectedFiscalYearId);
-        var fyName = fy?.Name ?? "";
+        var fyName = string.Concat((fy?.Name ?? "").Split(Path.GetInvalidFileNameChars()));
         var bytes = VatReportCsvExporter.Build(_data, fyName, FromDate, ToDate);
         var base64 = Convert.ToBase64String(bytes);
         var period = (FromDate, ToDate) switch
