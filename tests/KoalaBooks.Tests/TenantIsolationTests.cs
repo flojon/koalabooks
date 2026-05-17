@@ -1,8 +1,8 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
@@ -246,8 +246,7 @@ public class TenantIsolationTests : IDisposable
     private AppDbContext DbFor(int orgId) =>
         new AppDbContext(_options, TestFixture.MakeTenant(orgId));
 
-    private static TenantContext NoTenant() =>
-        new TenantContext(new HttpContextAccessor());
+    private static ICurrentUser NoTenant() => TestFixture.NullTenant();
 
     private FiscalYear SeedFiscalYear(int orgId, string name)
     {

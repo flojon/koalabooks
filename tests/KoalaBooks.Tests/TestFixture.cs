@@ -1,26 +1,24 @@
-using System.Security.Claims;
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
 
 public class TestFixture : IDisposable
 {
-    private readonly HttpContextAccessor _accessor;
+    private readonly LocalCurrentUser _currentUser;
     private readonly string _dbName;
 
     public AppDbContext Db { get; }
-    public TenantContext Tenant { get; }
+    public ICurrentUser CurrentUser => _currentUser;
     public JournalEntryService JournalEntryService { get; }
     public FiscalYearService FiscalYearService { get; }
     public YearEndClosingService YearEndClosingService { get; }
     public SieExportService SieExportService { get; }
-    public Organisation DefaultOrg { get; }
     public SieImportService SieImportService { get; }
 
     public int OrganisationId { get; private set; }
@@ -34,39 +32,29 @@ public class TestFixture : IDisposable
             .UseNpgsql(connStr)
             .Options;
 
-        // HttpContext starts null so the org INSERT runs without a tenant filter.
-        // After the org is created, SetActiveTenant wires up the real claim so all
+        // OrganisationId starts null so the org INSERT runs without a tenant filter.
+        // After the org is created, SetActiveTenant sets the real id so all
         // subsequent service calls and query filters see the correct organisation.
-        _accessor = new HttpContextAccessor();
-        Tenant = new TenantContext(_accessor);
-        Db = new AppDbContext(options, Tenant);
+        _currentUser = new LocalCurrentUser();
+        Db = new AppDbContext(options, _currentUser);
         Db.Database.EnsureCreated();
 
         var org = new Organisation { Name = "Test Org", Slug = "test-org" };
         Db.Organisations.Add(org);
         Db.SaveChanges();
         OrganisationId = org.Id;
-        DefaultOrg = org;
         SetActiveTenant(OrganisationId);
 
         JournalEntryService = new JournalEntryService(Db);
-        FiscalYearService = new FiscalYearService(Db, Tenant);
+        FiscalYearService = new FiscalYearService(Db, _currentUser);
         YearEndClosingService = new YearEndClosingService(Db, FiscalYearService);
         SieExportService = new SieExportService(Db);
-        SieImportService = new SieImportService(Db, Tenant);
+        SieImportService = new SieImportService(Db, _currentUser);
     }
 
-    /// <summary>
-    /// Switches the active tenant claim. Use in tests that need to simulate
-    /// multi-tenant isolation or tenant switching.
-    /// </summary>
     public void SetActiveTenant(int orgId)
     {
-        _accessor.HttpContext = new DefaultHttpContext
-        {
-            User = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim("org_id", orgId.ToString())], "Test"))
-        };
+        _currentUser.OrganisationId = orgId;
     }
 
     public void Dispose()
@@ -75,16 +63,10 @@ public class TestFixture : IDisposable
         PostgresContainerFixture.DropDatabase(_dbName);
     }
 
-    internal static TenantContext NullTenant() => new TenantContext(new HttpContextAccessor());
+    // ── Static factories used by TenantIsolationTests ──────────────
 
-    public static TenantContext MakeTenant(int orgId) => new TenantContext(new HttpContextAccessor
-    {
-        HttpContext = new DefaultHttpContext
-        {
-            User = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim("org_id", orgId.ToString())], "Test"))
-        }
-    });
+    public static ICurrentUser MakeTenant(int orgId) => new LocalCurrentUser(orgId);
+    public static ICurrentUser NullTenant() => new LocalCurrentUser();
 
     // ── Seed data helpers ──────────────────────────────────────────
 
@@ -151,9 +133,6 @@ public class TestFixture : IDisposable
         return account;
     }
 
-    /// <summary>
-    /// Creates a balanced journal entry with two lines (debit/credit).
-    /// </summary>
     public JournalEntry MakeEntry(
         int fiscalYearId,
         int debitAccountId,
@@ -175,9 +154,6 @@ public class TestFixture : IDisposable
         };
     }
 
-    /// <summary>
-    /// Creates and posts a balanced journal entry. Asserts no errors.
-    /// </summary>
     public async Task<JournalEntry> CreateAndPostEntryAsync(
         int fiscalYearId,
         int debitAccountId,
@@ -195,10 +171,6 @@ public class TestFixture : IDisposable
         return created;
     }
 
-    /// <summary>
-    /// Creates a standard set of accounts for a fiscal year.
-    /// Returns (cash, liability, equity, revenue, expense).
-    /// </summary>
     public (Account Cash, Account Liability, Account Equity, Account Revenue, Account Expense)
         CreateStandardAccounts(int fiscalYearId)
     {

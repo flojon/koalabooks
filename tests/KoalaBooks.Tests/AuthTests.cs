@@ -1,3 +1,5 @@
+using KoalaBooks.Domain;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -29,8 +31,7 @@ public class LoginLockoutTests : IDisposable
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-        services.AddScoped<TenantContext>();
+        services.AddScoped<ICurrentUser, LocalCurrentUser>();
         services.AddDbContext<AppDbContext>(opts => opts.UseNpgsql(connStr));
         services.AddIdentity<ApplicationUser, IdentityRole>(opts =>
         {
