@@ -1,5 +1,13 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@implements IDisposable
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Infrastructure.Services
+@using Microsoft.Extensions.Logging
 @inject NavigationManager Navigation
+@inject FiscalYearService FiscalYearService
+@inject BankImportService BankImportService
+@inject SupplierInvoiceService SupplierInvoiceService
+@inject ILogger<MainLayout> Logger
 
 <MudLayout>
     <MudAppBar Elevation="0" Color="Color.Secondary">
@@ -25,36 +33,40 @@
         <MudNavMenu>
             <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Översikt</MudNavLink>
 
-            <MudDivider Class="my-1" />
-            <MudText Typo="Typo.caption" Class="px-4 py-1" Style="color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">Transaktioner</MudText>
+            <MudNavGroup Title="Transaktioner" Icon="@Icons.Material.Outlined.SwapHoriz" @bind-Expanded="_transactionsExpanded">
+                <MudNavLink Href="/todo" Icon="@Icons.Material.Outlined.CheckCircle">
+                    Att göra
+                    @if (_todoCount > 0)
+                    {
+                        <span style="display:inline-flex; align-items:center; margin-left:auto; background:var(--mud-palette-error); color:var(--mud-palette-error-text); border-radius:9999px; padding:1px 7px; font-size:0.7rem; font-weight:700; line-height:1.6;">@_todoCount</span>
+                    }
+                </MudNavLink>
+                <MudNavLink Href="/journal" Icon="@Icons.Material.Outlined.MenuBook">Journal</MudNavLink>
+                <MudNavLink Href="/supplier-invoices" Icon="@Icons.Material.Outlined.Receipt">Leverantörsfakturor</MudNavLink>
+                <MudNavLink Href="/customer-invoices" Icon="@Icons.Material.Outlined.RequestPage">Kundfakturor</MudNavLink>
+                <MudNavLink Href="/customers" Icon="@Icons.Material.Outlined.People">Kunder</MudNavLink>
+                <MudNavLink Href="/import/bank" Icon="@Icons.Material.Outlined.AccountBalance">Bankimport</MudNavLink>
+                <MudNavLink Href="/import/tax" Icon="@Icons.Material.Outlined.Receipt">Skattekontoimport</MudNavLink>
+            </MudNavGroup>
 
-            <MudNavLink Href="/todo" Icon="@Icons.Material.Outlined.CheckCircle">Att göra</MudNavLink>
-            <MudNavLink Href="/journal" Icon="@Icons.Material.Outlined.MenuBook">Journal</MudNavLink>
-            <MudNavLink Href="/supplier-invoices" Icon="@Icons.Material.Outlined.Receipt">Leverantörsfakturor</MudNavLink>
-            <MudNavLink Href="/customer-invoices" Icon="@Icons.Material.Outlined.RequestPage">Kundfakturor</MudNavLink>
-            <MudNavLink Href="/customers" Icon="@Icons.Material.Outlined.People">Kunder</MudNavLink>
-            <MudNavLink Href="/accounts" Icon="@Icons.Material.Outlined.AccountTree">Konton</MudNavLink>
-            <MudNavLink Href="/fiscal-years" Icon="@Icons.Material.Outlined.CalendarMonth">Räkenskapsår</MudNavLink>
+            <MudNavGroup Title="Rapporter" Icon="@Icons.Material.Outlined.Assessment" @bind-Expanded="_reportsExpanded">
+                <MudNavLink Href="/reports/trial-balance" Icon="@Icons.Material.Outlined.BarChart">Råbalans</MudNavLink>
+                <MudNavLink Href="/reports/general-ledger" Icon="@Icons.Material.Outlined.Book">Huvudbok</MudNavLink>
+                <MudNavLink Href="/reports/income-statement" Icon="@Icons.Material.Outlined.TrendingUp">Resultaträkning</MudNavLink>
+                <MudNavLink Href="/reports/balance-sheet" Icon="@Icons.Material.Outlined.AccountBalance">Balansräkning</MudNavLink>
+                <MudNavLink Href="/reports/vat" Icon="@Icons.Material.Outlined.Receipt">Momsredovisning</MudNavLink>
+            </MudNavGroup>
 
-            <MudDivider Class="my-1" />
-            <MudText Typo="Typo.caption" Class="px-4 py-1" Style="color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">Rapporter</MudText>
+            <MudNavGroup Title="Inställningar" Icon="@Icons.Material.Outlined.Settings" @bind-Expanded="_settingsExpanded">
+                <MudNavLink Href="/accounts" Icon="@Icons.Material.Outlined.AccountTree">Konton</MudNavLink>
+                <MudNavLink Href="/fiscal-years" Icon="@Icons.Material.Outlined.CalendarMonth">Räkenskapsår</MudNavLink>
+                <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings">Inställningar</MudNavLink>
+            </MudNavGroup>
 
-            <MudNavLink Href="/reports/trial-balance" Icon="@Icons.Material.Outlined.BarChart">Råbalans</MudNavLink>
-            <MudNavLink Href="/reports/general-ledger" Icon="@Icons.Material.Outlined.Book">Huvudbok</MudNavLink>
-            <MudNavLink Href="/reports/income-statement" Icon="@Icons.Material.Outlined.TrendingUp">Resultaträkning</MudNavLink>
-            <MudNavLink Href="/reports/balance-sheet" Icon="@Icons.Material.Outlined.AccountBalance">Balansräkning</MudNavLink>
-            <MudNavLink Href="/reports/vat" Icon="@Icons.Material.Outlined.Receipt">Momsredovisning</MudNavLink>
-
-            <MudDivider Class="my-1" />
-            <MudText Typo="Typo.caption" Class="px-4 py-1" Style="color: #94A3B8; text-transform: uppercase; letter-spacing: 0.08em;">Data</MudText>
-
-            <MudNavLink Href="/import/sie" Icon="@Icons.Material.Outlined.FileUpload">Importera SIE</MudNavLink>
-            <MudNavLink Href="/import/bank" Icon="@Icons.Material.Outlined.AccountBalance">Bankimport</MudNavLink>
-            <MudNavLink Href="/import/tax" Icon="@Icons.Material.Outlined.Receipt">Skattekontoimport</MudNavLink>
-            <MudNavLink Href="/export/sie" Icon="@Icons.Material.Outlined.FileDownload">Exportera SIE</MudNavLink>
-
-            <MudDivider Class="my-1" />
-            <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings">Inställningar</MudNavLink>
+            <MudNavGroup Title="Data" Icon="@Icons.Material.Outlined.Storage" @bind-Expanded="_dataExpanded">
+                <MudNavLink Href="/import/sie" Icon="@Icons.Material.Outlined.FileUpload">Importera SIE</MudNavLink>
+                <MudNavLink Href="/export/sie" Icon="@Icons.Material.Outlined.FileDownload">Exportera SIE</MudNavLink>
+            </MudNavGroup>
         </MudNavMenu>
     </MudDrawer>
 
@@ -85,6 +97,60 @@
 @code {
     private bool _drawerOpen = true;
     private ErrorBoundary? _errorBoundary;
+    private int _todoCount;
+    private bool _loadingTodoCount;
+
+    // Collapse state — persists across badge refreshes within the session
+    // Transaktioner and Rapporter start expanded; Inställningar and Data collapsed (lower-frequency)
+    private bool _transactionsExpanded = true;
+    private bool _reportsExpanded = true;
+    private bool _settingsExpanded = false;
+    private bool _dataExpanded = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        await LoadTodoCountAsync();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (_loadingTodoCount) return;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadTodoCountAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadTodoCountAsync()
+    {
+        if (_loadingTodoCount) return;
+        _loadingTodoCount = true;
+        try
+        {
+            var fy = await FiscalYearService.GetActiveAsync();
+            if (fy is null) { _todoCount = 0; return; }
+
+            var unmatched = await BankImportService.CountUnmatchedAsync(fy.Id);
+            var unpaid = await SupplierInvoiceService.CountUnpaidAsync(fy.Id);
+            _todoCount = unmatched + unpaid;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load to-do count for nav badge");
+            _todoCount = 0;
+        }
+        finally
+        {
+            _loadingTodoCount = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
 

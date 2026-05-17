@@ -263,6 +263,11 @@ public class BankImportService
         return new BankImportResult(imported, skipped, duplicates, errors);
     }
 
+    public Task<int> CountUnmatchedAsync(int fiscalYearId) =>
+        _db.BankTransactions.CountAsync(b =>
+            b.Account.FiscalYearId == fiscalYearId &&
+            b.Status == BankTransactionStatus.Unmatched);
+
     public async Task<List<BankTransaction>> GetUnmatchedAsync(int fiscalYearId)
     {
         return await _db.BankTransactions
