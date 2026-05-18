@@ -210,7 +210,7 @@ else
                                         {
                                             <tr>
                                                 <td>
-                                                    <a href="/attachments/@a.Id" target="_blank" style="color:#2563eb;">@a.FileName</a>
+                                                    <a href="@AttachmentProvider.GetDownloadUrl(a.Id)" target="_blank" style="color:#2563eb;">@a.FileName</a>
                                                 </td>
                                                 <td style="text-align:right; color:#64748b;">@a.FileSizeDisplay</td>
                                                 <td style="color:#64748b;">@a.UploadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
@@ -336,6 +336,7 @@ else
     [Inject] private AccountService AccountService { get; set; } = default!;
     [Inject] private SupplierInvoiceService InvoiceService { get; set; } = default!;
     [Inject] private AttachmentService AttachmentService { get; set; } = default!;
+    [Inject] private IAttachmentProvider AttachmentProvider { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
