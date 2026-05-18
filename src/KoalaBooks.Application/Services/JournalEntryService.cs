@@ -313,20 +313,27 @@ public class JournalEntryService
         int fiscalYearId, string? fromAccount = null, string? toAccount = null,
         DateOnly? from = null, DateOnly? to = null, bool excludeClosingEntries = true)
     {
-        var accounts = await _db.Accounts
+        // Load all accounts for the FY first; do the ordinal range filter in memory.
+        // string.Compare doesn't translate to SQL when the tenant query filter wraps
+        // the query in a join.
+        var allAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .OrderBy(a => a.AccountNumber)
             .ToListAsync();
 
+        IEnumerable<Account> filtered = allAccounts;
         if (!string.IsNullOrWhiteSpace(fromAccount))
-            accounts = accounts.Where(a => string.Compare(a.AccountNumber, fromAccount, StringComparison.Ordinal) >= 0).ToList();
+            filtered = filtered.Where(a => string.Compare(a.AccountNumber, fromAccount, StringComparison.Ordinal) >= 0);
         if (!string.IsNullOrWhiteSpace(toAccount))
-            accounts = accounts.Where(a => string.Compare(a.AccountNumber, toAccount, StringComparison.Ordinal) <= 0).ToList();
+            filtered = filtered.Where(a => string.Compare(a.AccountNumber, toAccount, StringComparison.Ordinal) <= 0);
+
+        var accounts = filtered.OrderBy(a => a.AccountNumber, StringComparer.Ordinal).ToList();
+        var accountIds = accounts.Select(a => a.Id).ToHashSet();
 
         var lineQuery = _db.JournalEntryLines
             .Include(l => l.JournalEntry)
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
-            .Where(l => l.JournalEntry.IsPosted);
+            .Where(l => l.JournalEntry.IsPosted)
+            .Where(l => accountIds.Contains(l.AccountId));
 
         if (excludeClosingEntries)
             lineQuery = lineQuery.Where(l => !l.JournalEntry.IsClosingEntry);
@@ -532,12 +539,18 @@ public class JournalEntryService
 
     public async Task<VatReportData> GetVatReportAsync(int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
     {
-        var vatAccounts = (await _db.Accounts
+        // Narrow to 26xx in SQL (translates cleanly), then filter the exact 2610–2649
+        // range client-side. string.Compare on the IQueryable doesn't translate when the
+        // tenant query filter wraps the query in a join.
+        var accounts26xx = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .OrderBy(a => a.AccountNumber)
-            .ToListAsync())
+            .Where(a => a.AccountNumber.StartsWith("26"))
+            .ToListAsync();
+
+        var vatAccounts = accounts26xx
             .Where(a => string.Compare(a.AccountNumber, "2610", StringComparison.Ordinal) >= 0
                      && string.Compare(a.AccountNumber, "2649", StringComparison.Ordinal) <= 0)
+            .OrderBy(a => a.AccountNumber, StringComparer.Ordinal)
             .ToList();
 
         var vatAccountIds = vatAccounts.Select(a => a.Id).ToHashSet();
