@@ -1,4 +1,4 @@
-using KoalaBooks.Domain.Interfaces;
+using KoalaBooks.Domain;
 
 namespace KoalaBooks.Tests;
 

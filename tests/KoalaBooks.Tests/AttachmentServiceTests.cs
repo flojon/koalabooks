@@ -2,29 +2,22 @@ using KoalaBooks.Application.Services;
 
 namespace KoalaBooks.Tests;
 
-public class AttachmentProviderTests : IDisposable
+public class AttachmentServiceTests : IDisposable
 {
     private readonly TestFixture _fx = new();
 
     public void Dispose() => _fx.Dispose();
 
     [Fact]
-    public void WebAttachmentProvider_GetDownloadUrl_ReturnsExpectedPath()
+    public async Task GetAsync_ReturnsNullForMissingId()
     {
-        var provider = new WebAttachmentProvider(new AttachmentService(_fx.Db));
-        Assert.Equal("/attachments/42", provider.GetDownloadUrl(42));
-    }
-
-    [Fact]
-    public async Task WebAttachmentProvider_GetAsync_ReturnsNullForMissingId()
-    {
-        var provider = new WebAttachmentProvider(new AttachmentService(_fx.Db));
-        var result = await provider.GetAsync(99999);
+        var svc = new AttachmentService(_fx.Db);
+        var result = await svc.GetAsync(99999);
         Assert.Null(result);
     }
 
     [Fact]
-    public async Task WebAttachmentProvider_GetAsync_ReturnsAttachmentData_WhenExists()
+    public async Task GetAsync_ReturnsAttachment_WhenExists()
     {
         var fy = _fx.CreateFiscalYear();
         var (debit, credit, _, _, _) = _fx.CreateStandardAccounts(fy.Id);
@@ -34,8 +27,7 @@ public class AttachmentProviderTests : IDisposable
         var added = await svc.AddAsync(entry.Id, "test.pdf", "application/pdf", new byte[] { 1, 2, 3 });
         Assert.NotNull(added);
 
-        var provider = new WebAttachmentProvider(svc);
-        var result = await provider.GetAsync(added.Id);
+        var result = await svc.GetAsync(added.Id);
 
         Assert.NotNull(result);
         Assert.Equal("application/pdf", result.ContentType);

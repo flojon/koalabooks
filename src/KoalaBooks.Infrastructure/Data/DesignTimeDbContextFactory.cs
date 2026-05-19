@@ -1,3 +1,4 @@
+using KoalaBooks.Domain;
 using KoalaBooks.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;

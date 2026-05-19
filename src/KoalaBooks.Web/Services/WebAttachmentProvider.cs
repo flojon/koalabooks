@@ -1,4 +1,6 @@
-namespace KoalaBooks.Application.Services;
+using KoalaBooks.Application.Services;
+
+namespace KoalaBooks.Web.Services;
 
 public class WebAttachmentProvider : IAttachmentProvider
 {

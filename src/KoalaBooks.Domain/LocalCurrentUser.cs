@@ -1,4 +1,6 @@
-namespace KoalaBooks.Domain.Interfaces;
+using KoalaBooks.Domain.Interfaces;
+
+namespace KoalaBooks.Domain;
 
 public class LocalCurrentUser : ICurrentUser
 {
