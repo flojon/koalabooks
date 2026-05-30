@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -15,24 +14,24 @@ namespace KoalaBooks.Tests;
 
 /// <summary>
 /// Tests for account lockout behaviour (MaxFailedAccessAttempts = 5, 15-min window).
-/// Uses a real Identity stack backed by an in-memory SQLite database so the access-failed
+/// Uses a real Identity stack backed by a Postgres database so the access-failed
 /// counter and lockout state exercise the actual EF Core store.
 /// </summary>
 public class LoginLockoutTests : IDisposable
 {
     private readonly ServiceProvider _sp;
-    private readonly SqliteConnection _connection;
+    private readonly string _dbName;
 
     public LoginLockoutTests()
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        _dbName = dbName;
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
         services.AddScoped<TenantContext>();
-        services.AddDbContext<AppDbContext>(opts => opts.UseSqlite(_connection));
+        services.AddDbContext<AppDbContext>(opts => opts.UseNpgsql(connStr));
         services.AddIdentity<ApplicationUser, IdentityRole>(opts =>
         {
             opts.Password.RequiredLength = 8;
@@ -113,7 +112,7 @@ public class LoginLockoutTests : IDisposable
     public void Dispose()
     {
         _sp.Dispose();
-        _connection.Dispose();
+        PostgresContainerFixture.DropDatabase(_dbName);
     }
 
     private static (UserManager<ApplicationUser>, SignInManager<ApplicationUser>) GetManagers(IServiceScope scope) =>
