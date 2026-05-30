@@ -31,7 +31,7 @@ else if (_fiscalYears.Any())
         <label style="font-weight:600; color:#475569;">Till datum:</label>
         <input type="date" @bind="ToDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
 
-        <button class="btn" @onclick="ApplyFilters">Uppdatera</button>
+        <button class="btn" @onclick="ApplyFilters" disabled="@_isReloading">Uppdatera</button>
 
         <label style="display:flex; align-items:center; gap:0.4rem; font-weight:600; color:#475569; cursor:pointer;">
             <input type="checkbox" @bind="_hideEmptyAccounts" @bind:after="StateHasChanged" />
@@ -39,7 +39,11 @@ else if (_fiscalYears.Any())
         </label>
     </div>
 
-    @if (!_accounts.Any())
+    @if (_isReloading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-2 mb-2" />
+    }
+    else if (!_accounts.Any())
     {
         <MudAlert Severity="Severity.Info" Class="mt-4">Inga konton hittades för räkenskapsåret.</MudAlert>
     }
@@ -81,7 +85,7 @@ else if (_fiscalYears.Any())
                                         <div style="padding:0.75rem 1rem;">
                                             @if (!ledger.Rows.Any())
                                             {
-                                                <span style="color:#94a3b8; font-style:italic;">Inga bokförda transaktioner för detta konto under vald period.</span>
+                                                <span style="color:#94a3b8; font-style:italic;">Inga bokförda transaktioner för detta konto@(FromDate.HasValue || ToDate.HasValue ? " under vald period" : "").</span>
                                             }
                                             else
                                             {
@@ -153,6 +157,7 @@ else
     private readonly Dictionary<int, GeneralLedgerAccountSection> _loadedSections = new();
     private HashSet<int> _accountsWithTransactions = [];
     private bool _isLoading;
+    private bool _isReloading;
     private bool _hideEmptyAccounts;
     private string _accountSearch = "";
 
@@ -181,31 +186,43 @@ else
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        _fiscalYears = await FiscalYearService.GetAllAsync();
-        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
-        if (active is not null)
+        try
         {
-            SelectedFiscalYearId = active.Id;
-            await LoadAccountList();
+            _fiscalYears = await FiscalYearService.GetAllAsync();
+            var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
+            if (active is not null)
+            {
+                SelectedFiscalYearId = active.Id;
+                await LoadAccountList();
+            }
         }
-        _isLoading = false;
+        finally
+        {
+            _isLoading = false;
+        }
     }
 
     private async Task LoadAccountList()
     {
-        _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
-        _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
         _expandedIds.Clear();
         _loadingIds.Clear();
         _loadedSections.Clear();
+        _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
+        _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
     }
 
     private async Task ApplyFilters()
     {
-        _loadedSections.Clear();
-        _expandedIds.Clear();
-        _loadingIds.Clear();
-        await LoadAccountList();
+        _isReloading = true;
+        StateHasChanged();
+        try
+        {
+            await LoadAccountList();
+        }
+        finally
+        {
+            _isReloading = false;
+        }
     }
 
     private async Task ToggleAccount(Account account)

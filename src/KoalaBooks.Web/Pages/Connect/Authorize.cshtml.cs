@@ -51,19 +51,18 @@ public class AuthorizeModel : PageModel
             roleType: OpenIddictConstants.Claims.Role);
 
         identity.SetClaim(OpenIddictConstants.Claims.Subject, await _userManager.GetUserIdAsync(user))
-                .SetClaim(OpenIddictConstants.Claims.Email, user.Email)
-                .SetClaim(OpenIddictConstants.Claims.Name, user.DisplayName ?? user.Email ?? user.UserName)
-                .SetDestinations(claim => claim.Type switch
-                {
-                    OpenIddictConstants.Claims.Email when claim.Subject.HasScope(OpenIddictConstants.Scopes.Email)
-                        => [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
-                    OpenIddictConstants.Claims.Name when claim.Subject.HasScope(OpenIddictConstants.Scopes.Profile)
-                        => [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
-                    _ => [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]
-                });
+                .SetClaim(OpenIddictConstants.Claims.Email, user.Email ?? string.Empty)
+                .SetClaim(OpenIddictConstants.Claims.Name, user.DisplayName ?? user.Email ?? user.UserName ?? string.Empty);
 
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(request.GetScopes());
+        principal.SetDestinations(claim => claim.Type switch
+        {
+            OpenIddictConstants.Claims.Email or
+            OpenIddictConstants.Claims.Name =>
+                [OpenIddictConstants.Destinations.AccessToken, OpenIddictConstants.Destinations.IdentityToken],
+            _ => [OpenIddictConstants.Destinations.AccessToken]
+        });
 
         return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
