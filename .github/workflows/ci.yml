@@ -24,7 +24,14 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.x'
-          cache: true
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
       - name: Test
         run: dotnet test --configuration Release
