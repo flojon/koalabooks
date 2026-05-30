@@ -121,6 +121,7 @@ public class JournalEntryService
     {
         var entry = await _db.JournalEntries
             .Include(j => j.FiscalYear)
+            .Include(j => j.Lines)
             .FirstOrDefaultAsync(j => j.Id == entryId);
         if (entry is null)
             return "Journal entry not found.";
@@ -131,6 +132,9 @@ public class JournalEntryService
 
         entry.IsPosted = true;
         await _db.SaveChangesAsync();
+
+        await PropagateAffectedAccountsAsync(
+            entry.FiscalYearId, entry.Lines.Select(l => l.AccountId));
         return null;
     }
 
@@ -193,6 +197,9 @@ public class JournalEntryService
 
         _db.JournalEntries.Add(reversal);
         await _db.SaveChangesAsync();
+
+        await PropagateAffectedAccountsAsync(
+            reversal.FiscalYearId, reversal.Lines.Select(l => l.AccountId));
         return (reversal, null);
     }
 
@@ -648,6 +655,54 @@ public class JournalEntryService
             return "Each line must have a debit or credit amount.";
 
         return null;
+    }
+
+    private async Task PropagateAffectedAccountsAsync(
+        int fiscalYearId, IEnumerable<int> affectedAccountIds)
+    {
+        var nextYear = await _db.FiscalYears
+            .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId);
+        if (nextYear is null) return;
+
+        var accountIdList = affectedAccountIds.ToList();
+
+        var sourceAccounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId && accountIdList.Contains(a.Id))
+            .ToListAsync();
+
+        var sourceNumbers = sourceAccounts.Select(a => a.AccountNumber).ToHashSet();
+        var nextAccounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == nextYear.Id && sourceNumbers.Contains(a.AccountNumber))
+            .ToDictionaryAsync(a => a.AccountNumber);
+
+        var debits = await _db.JournalEntryLines
+            .Where(l => accountIdList.Contains(l.AccountId) && l.JournalEntry.IsPosted)
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { g.Key, Total = g.Sum(l => l.DebitAmount) })
+            .ToDictionaryAsync(x => x.Key, x => x.Total);
+
+        var credits = await _db.JournalEntryLines
+            .Where(l => accountIdList.Contains(l.AccountId) && l.JournalEntry.IsPosted)
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { g.Key, Total = g.Sum(l => l.CreditAmount) })
+            .ToDictionaryAsync(x => x.Key, x => x.Total);
+
+        foreach (var account in sourceAccounts)
+        {
+            var isPnL = account.AccountClass is AccountClass.Revenue or AccountClass.Expense;
+            if (isPnL) continue;
+
+            var d = debits.GetValueOrDefault(account.Id);
+            var c = credits.GetValueOrDefault(account.Id);
+            var ub = account.AccountClass.IsCreditNormal()
+                ? account.IncomingBalance + c - d
+                : account.IncomingBalance + d - c;
+
+            if (nextAccounts.TryGetValue(account.AccountNumber, out var nextAccount))
+                nextAccount.IncomingBalance = ub;
+        }
+
+        await _db.SaveChangesAsync();
     }
 }
 
