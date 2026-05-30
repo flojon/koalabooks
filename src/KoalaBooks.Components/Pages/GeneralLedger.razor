@@ -15,7 +15,7 @@ else if (_fiscalYears.Any())
 {
     <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
         <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
-        <select @bind="SelectedFiscalYearId" style="width:200px;">
+        <select @bind="SelectedFiscalYearId" @bind:after="ApplyFilters" style="width:200px;">
             @foreach (var fy in _fiscalYears)
             {
                 <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
@@ -81,7 +81,7 @@ else if (_fiscalYears.Any())
                                         <div style="padding:0.75rem 1rem;">
                                             @if (!ledger.Rows.Any())
                                             {
-                                                <span style="color:#94a3b8; font-style:italic;">Inga bokförda transaktioner för detta konto.</span>
+                                                <span style="color:#94a3b8; font-style:italic;">Inga bokförda transaktioner för detta konto under vald period.</span>
                                             }
                                             else
                                             {
@@ -119,6 +119,12 @@ else if (_fiscalYears.Any())
                                                     </tbody>
                                                 </table>
                                             }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div style="padding:0.75rem 1rem;">
+                                            <span style="color:#94a3b8; font-style:italic;">Kunde inte ladda transaktioner för detta konto.</span>
                                         </div>
                                     }
                                 </td>
@@ -161,7 +167,7 @@ else
             var accounts = (IEnumerable<Account>)_accounts;
 
             if (_hideEmptyAccounts)
-                accounts = accounts.Where(a => a.IncomingBalance != 0 || _accountsWithTransactions.Contains(a.Id));
+                accounts = accounts.Where(a => a.IncomingBalance != 0 || a.OutgoingBalance != 0 || _accountsWithTransactions.Contains(a.Id));
 
             if (!string.IsNullOrWhiteSpace(_accountSearch))
                 accounts = accounts.Where(a =>
@@ -188,7 +194,7 @@ else
     private async Task LoadAccountList()
     {
         _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
-        _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate);
+        _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
         _expandedIds.Clear();
         _loadingIds.Clear();
         _loadedSections.Clear();
@@ -219,7 +225,7 @@ else
         StateHasChanged();
 
         var section = await JournalEntryService.GetAccountLedgerAsync(
-            SelectedFiscalYearId, account.Id, FromDate, ToDate);
+            SelectedFiscalYearId, account.Id, FromDate, ToDate, excludeClosingEntries: false);
 
         _loadingIds.Remove(account.Id);
         if (section is not null)
