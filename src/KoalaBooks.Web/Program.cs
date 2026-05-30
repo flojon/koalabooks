@@ -80,7 +80,8 @@ builder.Services.AddOpenIddict()
         }
         options.UseAspNetCore()
                .EnableAuthorizationEndpointPassthrough()
-               .EnableTokenEndpointPassthrough();
+               .EnableTokenEndpointPassthrough()
+               .DisableTransportSecurityRequirement();
     })
     .AddValidation(options =>
     {
@@ -124,10 +125,10 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
-    // Trust the loopback proxy (nginx on the same host). In production, restrict to your
-    // actual proxy IP/subnet by adding to KnownProxies or KnownIPNetworks instead.
     options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Loopback, 8));
     options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.IPv6Loopback, 128));
+    // Docker bridge networks (Caddy runs on 172.x.x.x when deployed via docker-compose)
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
 });
 
 builder.Services.AddRateLimiter(limiter =>
