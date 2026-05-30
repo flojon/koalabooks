@@ -1,4 +1,10 @@
 services:
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    environment:
+      - DASHBOARD__OTLP__AUTHMODE=Unsecured
+    restart: unless-stopped
+
   web:
     image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/koalabooks-web:latest
     build:
@@ -9,9 +15,13 @@ services:
       - ConnectionStrings__koalabooks=Host=postgres;Port=5432;Database=koalabooks;Username=koalabooks;Password=${POSTGRES_PASSWORD}
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8080
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
     depends_on:
       postgres:
         condition: service_healthy
+      aspire-dashboard:
+        condition: service_started
     restart: unless-stopped
 
   postgres:

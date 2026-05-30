@@ -1,3 +1,7 @@
 books.koalasoft.se {
     reverse_proxy web:8080
 }
+
+dashboard.koalasoft.se {
+    reverse_proxy aspire-dashboard:18888
+}
