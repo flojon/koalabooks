@@ -9,6 +9,8 @@ public static class AspireDashboardSeeder
     {
         var manager = services.GetRequiredService<IOpenIddictApplicationManager>();
 
+        // Idempotency guard: once seeded, config changes (redirect URI, secret) require
+        // manually deleting the OpenIddict application row for them to take effect.
         if (await manager.FindByClientIdAsync("aspire-dashboard") is not null)
             return;
 
