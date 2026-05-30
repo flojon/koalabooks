@@ -65,6 +65,7 @@ builder.Services.AddOpenIddict()
         options.AllowPasswordFlow()
                .AllowRefreshTokenFlow()
                .AllowAuthorizationCodeFlow();
+        options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
         if (builder.Environment.IsDevelopment())
         {
             options.AddDevelopmentEncryptionCertificate()
