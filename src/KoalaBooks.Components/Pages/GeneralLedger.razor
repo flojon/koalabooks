@@ -32,6 +32,11 @@ else if (_fiscalYears.Any())
         <input type="date" @bind="ToDate" @bind:format="yyyy-MM-dd" style="width:150px;" />
 
         <button class="btn" @onclick="ApplyFilters">Uppdatera</button>
+
+        <label style="display:flex; align-items:center; gap:0.4rem; font-weight:600; color:#475569; cursor:pointer;">
+            <input type="checkbox" @bind="_hideEmptyAccounts" @bind:after="StateHasChanged" />
+            Dölj tomma konton
+        </label>
     </div>
 
     @if (!_accounts.Any())
@@ -140,18 +145,32 @@ else
     private readonly HashSet<int> _expandedIds = [];
     private readonly HashSet<int> _loadingIds = [];
     private readonly Dictionary<int, GeneralLedgerAccountSection> _loadedSections = new();
+    private HashSet<int> _accountsWithTransactions = [];
     private bool _isLoading;
+    private bool _hideEmptyAccounts;
     private string _accountSearch = "";
 
     private int SelectedFiscalYearId { get; set; }
     private DateOnly? FromDate { get; set; }
     private DateOnly? ToDate { get; set; }
 
-    private IEnumerable<Account> FilteredAccounts => string.IsNullOrWhiteSpace(_accountSearch)
-        ? _accounts
-        : _accounts.Where(a =>
-            a.AccountNumber.Contains(_accountSearch, StringComparison.OrdinalIgnoreCase) ||
-            a.Name.Contains(_accountSearch, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<Account> FilteredAccounts
+    {
+        get
+        {
+            var accounts = (IEnumerable<Account>)_accounts;
+
+            if (_hideEmptyAccounts)
+                accounts = accounts.Where(a => a.IncomingBalance != 0 || _accountsWithTransactions.Contains(a.Id));
+
+            if (!string.IsNullOrWhiteSpace(_accountSearch))
+                accounts = accounts.Where(a =>
+                    a.AccountNumber.Contains(_accountSearch, StringComparison.OrdinalIgnoreCase) ||
+                    a.Name.Contains(_accountSearch, StringComparison.OrdinalIgnoreCase));
+
+            return accounts;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -168,7 +187,11 @@ else
 
     private async Task LoadAccountList()
     {
-        _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
+        var accountsTask = AccountService.GetAllAsync(SelectedFiscalYearId);
+        var txTask = JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate);
+        await Task.WhenAll(accountsTask, txTask);
+        _accounts = accountsTask.Result;
+        _accountsWithTransactions = txTask.Result;
         _expandedIds.Clear();
         _loadingIds.Clear();
         _loadedSections.Clear();

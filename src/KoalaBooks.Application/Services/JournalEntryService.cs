@@ -311,7 +311,8 @@ public class JournalEntryService
 
     public async Task<List<GeneralLedgerAccountSection>> GetGeneralLedgerAsync(
         int fiscalYearId, string? fromAccount = null, string? toAccount = null,
-        DateOnly? from = null, DateOnly? to = null, bool excludeClosingEntries = true)
+        DateOnly? from = null, DateOnly? to = null, bool excludeClosingEntries = true,
+        bool hideEmpty = false)
     {
         // Load all accounts for the FY first; do the ordinal range filter in memory.
         // string.Compare doesn't translate to SQL when the tenant query filter wraps
@@ -381,10 +382,30 @@ public class JournalEntryService
             }
 
             section.ClosingBalance = runningBalance;
+
+            if (hideEmpty && section.IncomingBalance == 0 && section.Rows.Count == 0)
+                continue;
+
             sections.Add(section);
         }
 
         return sections;
+    }
+
+    public async Task<HashSet<int>> GetAccountIdsWithTransactionsAsync(
+        int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
+    {
+        var query = _db.JournalEntryLines
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
+            .Where(l => l.JournalEntry.IsPosted)
+            .Where(l => !l.JournalEntry.IsClosingEntry);
+
+        if (from.HasValue)
+            query = query.Where(l => l.JournalEntry.Date >= from.Value);
+        if (to.HasValue)
+            query = query.Where(l => l.JournalEntry.Date <= to.Value);
+
+        return await query.Select(l => l.AccountId).Distinct().ToHashSetAsync();
     }
 
     public async Task<List<BalanceSheetSection>> GetBalanceSheetAsync(int fiscalYearId, bool excludeClosingEntries = false)
