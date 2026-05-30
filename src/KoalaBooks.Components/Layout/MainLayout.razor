@@ -2,11 +2,10 @@
 @implements IDisposable
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Infrastructure.Services
+@using Microsoft.Extensions.DependencyInjection
 @using Microsoft.Extensions.Logging
 @inject NavigationManager Navigation
-@inject FiscalYearService FiscalYearService
-@inject BankImportService BankImportService
-@inject SupplierInvoiceService SupplierInvoiceService
+@inject IServiceScopeFactory ScopeFactory
 @inject ILogger<MainLayout> Logger
 
 <MudLayout>
@@ -130,11 +129,18 @@
         _loadingTodoCount = true;
         try
         {
-            var fy = await FiscalYearService.GetActiveAsync();
+            // Use a dedicated scope so this background query doesn't share a DbContext
+            // with the page's OnInitializedAsync, which would cause concurrent-operation exceptions.
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var fySvc = scope.ServiceProvider.GetRequiredService<FiscalYearService>();
+            var bankSvc = scope.ServiceProvider.GetRequiredService<BankImportService>();
+            var invSvc = scope.ServiceProvider.GetRequiredService<SupplierInvoiceService>();
+
+            var fy = await fySvc.GetActiveAsync();
             if (fy is null) { _todoCount = 0; return; }
 
-            var unmatched = await BankImportService.CountUnmatchedAsync(fy.Id);
-            var unpaid = await SupplierInvoiceService.CountUnpaidAsync(fy.Id);
+            var unmatched = await bankSvc.CountUnmatchedAsync(fy.Id);
+            var unpaid = await invSvc.CountUnpaidAsync(fy.Id);
             _todoCount = unmatched + unpaid;
         }
         catch (Exception ex)
