@@ -90,7 +90,7 @@ Journal-entries list supports date range filtering: `?from=2024-01-01&to=2024-12
 
 ```csharp
 FiscalYearResponse    { int Id, string Name, DateOnly StartDate, DateOnly EndDate, bool IsClosed }
-AccountResponse       { int Id, string AccountNumber, string Name, string AccountClass,
+AccountResponse       { int Id, string AccountNumber, string Name, string AccountClass,  // enum serialised as string
                         bool IsActive, decimal IncomingBalance, decimal OutgoingBalance }
 JournalEntryResponse  { int Id, int EntryNumber, DateOnly Date, string Description,
                         bool IsPosted, DateTime CreatedAt, List<JournalEntryLineResponse> Lines }
