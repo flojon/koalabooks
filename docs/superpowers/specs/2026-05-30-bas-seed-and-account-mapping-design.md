@@ -113,13 +113,38 @@ Does **not** clear previously unmapped IBs — it only writes to accounts explic
 
 ### Auto-propagation
 
-`OutgoingBalance` is only ever written in two places — year-end closing and SIE import — so no journal-entry-level hook is needed.
+Three triggers, two strategies depending on whether the source year is open or closed.
 
-**Year-end closing** already calls `FiscalYearService.PropagateBalancesToNextYearAsync` as its final step. Update that method to look up the following year via `PreviousFiscalYearId` (a year where `PreviousFiscalYearId = closedYearId`) in addition to the current date-based fallback. This means: close 2025 → IBs on 2026 update automatically if the link exists.
+**Closed source year** — use stored `OutgoingBalance` (already correct from year-end close).
 
-**SIE import** sets UBs but does not propagate. Add a call to `PropagateBalancesToNextYearAsync` after each fiscal year is imported and balances are written. This means: import 2025 SIE → IBs on 2026 update automatically if the link exists.
+**Open source year** — compute UB on the fly for the affected accounts only: `IB + SUM(posted debit lines) - SUM(posted credit lines)` (inverted for credit-normal accounts). No full-year scan.
 
-**Mapping tool** calls `PropagateBalancesToNextYearAsync` on the source year after applying, so any year linked to the source also stays in sync.
+#### Trigger 1 — Year-end closing
+
+Already calls `FiscalYearService.PropagateBalancesToNextYearAsync` as its final step. Update that method to find the following year via `PreviousFiscalYearId` (in addition to the current date-based fallback). Uses stored `OutgoingBalance` since the year is now closed.
+
+#### Trigger 2 — SIE import
+
+`SieImportService` sets `OutgoingBalance` from the SIE file but does not propagate. Add a call to `PropagateBalancesToNextYearAsync` after each fiscal year's balances are written.
+
+#### Trigger 3 — Journal entry posted or reversed in an open year
+
+Add a private helper to `JournalEntryService`:
+
+```csharp
+private async Task PropagateAffectedAccountsAsync(int fiscalYearId, IEnumerable<int> affectedAccountIds)
+```
+
+After `PostAsync` and `CreateReversalAsync`, call this helper. It:
+
+1. Checks whether the source year has a linked following year (`PreviousFiscalYearId` pointing to the source).
+2. If yes, loads the affected accounts from the source year and computes their current UBs from `IB + net posted journal lines`.
+3. Updates `IncomingBalance` on the matching accounts in the following year.
+4. Saves.
+
+Only the accounts touched by the specific journal entry are recalculated. `UpdateAsync` does not trigger propagation (edits to unposted entries don't affect balances).
+
+**Mapping tool** calls `PropagateBalancesToNextYearAsync` on the source year after applying (full propagation since it sets IBs for all mapped accounts at once).
 
 ### Auto-copy update
 
@@ -144,6 +169,8 @@ Add "Kontobalansöverföring" (or similar short label) to the nav menu pointing 
   - `ApplyMapping_SkipsNullTargetRows` — rows with null target are not written.
 - `FiscalYearService`: `PropagateBalances_FollowsPreviousFiscalYearIdLink` — two years linked via `PreviousFiscalYearId`; propagation updates the correct year even when date ordering would pick a different one.
 - `SieImportService`: `ImportFiscalYear_PropagatesBalancesToLinkedNextYear` — importing a year with UBs triggers IB update on the linked following year.
+- `JournalEntryService`: `PostEntry_PropagatesAffectedAccountsToLinkedNextYear` — posting an entry in an open year updates only the touched accounts' IBs in the linked following year.
+- `JournalEntryService`: `PostEntry_DoesNotPropagateWhenNoLinkedYear` — posting in a year with no linked following year does nothing extra.
 
 ---
 
