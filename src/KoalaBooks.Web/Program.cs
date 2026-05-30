@@ -60,9 +60,11 @@ builder.Services.AddOpenIddict()
     })
     .AddServer(options =>
     {
+        options.SetAuthorizationEndpointUris("/connect/authorize");
         options.SetTokenEndpointUris("/connect/token");
         options.AllowPasswordFlow()
-               .AllowRefreshTokenFlow();
+               .AllowRefreshTokenFlow()
+               .AllowAuthorizationCodeFlow();
         if (builder.Environment.IsDevelopment())
         {
             options.AddDevelopmentEncryptionCertificate()
@@ -76,6 +78,7 @@ builder.Services.AddOpenIddict()
                    .AddEphemeralSigningKey();
         }
         options.UseAspNetCore()
+               .EnableAuthorizationEndpointPassthrough()
                .EnableTokenEndpointPassthrough();
     })
     .AddValidation(options =>
@@ -210,6 +213,12 @@ using (var scope = app.Services.CreateScope())
                 await userManager.CreateAsync(devUser, "Admin123!");
             }
         }
+
+        var dashboardRedirectUri = builder.Configuration["AspireDashboard:OidcRedirectUri"]
+            ?? "http://localhost:18888/signin-oidc";
+        var dashboardClientSecret = builder.Configuration["AspireDashboard:OidcClientSecret"]
+            ?? "aspire-dashboard-dev-secret";
+        await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);
     }
 }
 
