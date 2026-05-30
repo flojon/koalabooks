@@ -10,6 +10,7 @@ public class FiscalYear
     public DateOnly EndDate { get; set; }
     public bool IsClosed { get; set; }
     public DateTime? ClosedAt { get; set; }
+    public int? PreviousFiscalYearId { get; set; }
     public List<JournalEntry> JournalEntries { get; set; } = [];
     public List<Account> Accounts { get; set; } = [];
 }

@@ -173,6 +173,18 @@ public class BasImportServiceTests : IDisposable
         Assert.NotEmpty(result.Errors);
     }
 
+    // ── Embedded default import ──────────────────────────────────
+
+    [Fact]
+    public async Task ImportDefaultAsync_ImportsAccounts()
+    {
+        var result = await _service.ImportDefaultAsync(_fy.Id);
+
+        Assert.True(result.ImportedCount > 1000,
+            $"Expected >1000 accounts from BAS 2026, got {result.ImportedCount}");
+        Assert.Empty(result.Errors);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────
 
     private static string FindRepoRoot()

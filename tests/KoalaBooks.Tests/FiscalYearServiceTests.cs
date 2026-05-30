@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
@@ -81,5 +82,52 @@ public class FiscalYearServiceTests : IDisposable
         Assert.Equal(2, all.Count);
         Assert.Contains(all, f => f.Id == fy1.Id);
         Assert.Contains(all, f => f.Id == fy2.Id);
+    }
+
+    [Fact]
+    public async Task PropagateBalances_FollowsPreviousFiscalYearIdLink()
+    {
+        var source = _f.CreateFiscalYear("2024",
+            new DateOnly(2024, 1, 1), new DateOnly(2024, 12, 31), isClosed: true);
+        _f.CreateAccount(source.Id, "1910", "Kassa", AccountClass.Asset,
+            incomingBalance: 0, outgoingBalance: 500);
+
+        var target = _f.CreateFiscalYear("2026",
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+        target.PreviousFiscalYearId = source.Id;
+        _f.Db.SaveChanges();
+        _f.CreateAccount(target.Id, "1910", "Kassa", AccountClass.Asset,
+            incomingBalance: 0, outgoingBalance: 0);
+
+        // unrelated year between source and target — should NOT be chosen
+        _f.CreateFiscalYear("2025",
+            new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31));
+
+        await _f.FiscalYearService.PropagateBalancesToNextYearAsync(source.Id);
+
+        var ib = await _f.Db.Accounts
+            .Where(a => a.FiscalYearId == target.Id && a.AccountNumber == "1910")
+            .Select(a => a.IncomingBalance)
+            .FirstAsync();
+        Assert.Equal(500, ib);
+    }
+
+    [Fact]
+    public async Task CopyAccountsFromPreviousYear_SetsPreviousFiscalYearId()
+    {
+        var prev = _f.CreateFiscalYear("2025",
+            new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), isClosed: true);
+        _f.CreateAccount(prev.Id, "1910", "Kassa", AccountClass.Asset,
+            outgoingBalance: 100);
+
+        var newFy = await _f.FiscalYearService.CreateAsync(new FiscalYear
+        {
+            Name = "2026",
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 12, 31)
+        });
+
+        await _f.Db.Entry(newFy).ReloadAsync();
+        Assert.Equal(prev.Id, newFy.PreviousFiscalYearId);
     }
 }

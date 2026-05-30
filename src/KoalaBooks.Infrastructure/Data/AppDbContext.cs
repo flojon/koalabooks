@@ -84,6 +84,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                   .WithMany()
                   .HasForeignKey(f => f.OrganisationId)
                   .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FiscalYear>()
+                  .WithMany()
+                  .HasForeignKey(f => f.PreviousFiscalYearId)
+                  .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<JournalEntry>(entity =>

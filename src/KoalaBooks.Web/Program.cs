@@ -91,6 +91,7 @@ builder.Services.AddScoped<JournalEntryService>();
 builder.Services.AddScoped<SieExportService>();
 builder.Services.AddScoped<YearEndClosingService>();
 builder.Services.AddScoped<BasImportService>();
+builder.Services.AddScoped<AccountMappingService>();
 builder.Services.AddScoped<BankImportService>();
 builder.Services.AddScoped<SupplierInvoiceService>();
 builder.Services.AddScoped<CustomerService>();

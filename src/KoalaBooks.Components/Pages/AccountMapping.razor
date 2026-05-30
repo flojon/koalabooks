@@ -1,0 +1,252 @@
+@page "/account-mapping"
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using MudBlazor
+
+<PageTitle>Balansöverföring — KoalaBooks</PageTitle>
+
+<h1>⇄ Balansöverföring</h1>
+<p style="color:#64748b; margin-bottom:1.5rem;">
+    Överför utgående saldon (UB) från ett räkenskapsår till ingående saldon (IB) i ett annat år.
+</p>
+
+@if (_state == PageState.Picker)
+{
+    <div class="card" style="max-width:600px;">
+        <h3 style="margin:0 0 1rem 0;">Välj år</h3>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label>Källår (UB tas härifrån)</label>
+                <select @bind="_sourceId" style="width:100%;">
+                    @foreach (var fy in _allYears)
+                    {
+                        <option value="@fy.Id">@fy.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Målår (IB skrivs hit)</label>
+                <select @bind="_targetId" style="width:100%;">
+                    @foreach (var fy in _allYears)
+                    {
+                        <option value="@fy.Id">@fy.Name</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (_sameYearError)
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3">Källa och mål kan inte vara samma år.</MudAlert>
+        }
+
+        @if (_existingSourceName is not null && !_confirmed)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3">
+                Målåret är redan mappat från <strong>@_existingSourceName</strong>.
+                Att fortsätta skriver över befintliga ingående saldon.
+            </MudAlert>
+            <label style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem; cursor:pointer;">
+                <input type="checkbox" @bind="_confirmed" />
+                Jag förstår och vill fortsätta
+            </label>
+        }
+
+        <button class="btn btn-primary" @onclick="ProceedToMapping" disabled="@_loading">
+            @(_loading ? "Laddar..." : "Nästa →")
+        </button>
+    </div>
+}
+else if (_state == PageState.Mapping)
+{
+    <div style="margin-bottom:1rem; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+            <strong>Källår:</strong> @_sourceYear!.Name &nbsp;→&nbsp;
+            <strong>Målår:</strong> @_targetYear!.Name
+        </div>
+        <span style="color:#64748b; font-size:0.875rem;">
+            @_rows.Count(r => r.SelectedTarget is not null) av @_rows.Count konton mappade
+        </span>
+    </div>
+
+    <div style="max-height:500px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:1rem;">
+        <table style="margin:0;">
+            <thead style="position:sticky; top:0; background:#f8fafc; z-index:1;">
+                <tr>
+                    <th style="width:100px;">Konto</th>
+                    <th>Namn (källa)</th>
+                    <th style="width:120px; text-align:right;">UB</th>
+                    <th style="width:260px;">Målkonto</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr>
+                        <td style="font-family:monospace;">@row.SourceNumber</td>
+                        <td>@row.SourceName</td>
+                        <td style="text-align:right; font-family:monospace;">@row.Ub.ToString("N2")</td>
+                        <td>
+                            <select @bind="row.SelectedTarget" style="width:100%; font-size:0.875rem;">
+                                <option value="">— Hoppa över —</option>
+                                @foreach (var acc in _targetAccounts)
+                                {
+                                    <option value="@acc.AccountNumber">
+                                        @acc.AccountNumber — @acc.Name
+                                    </option>
+                                }
+                            </select>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div style="display:flex; gap:0.5rem;">
+        <button class="btn btn-success" @onclick="ApplyMapping" disabled="@_applying">
+            @(_applying ? "Tillämpar..." : "Tillämpa")
+        </button>
+        <button class="btn btn-secondary" @onclick="() => _state = PageState.Picker">Avbryt</button>
+    </div>
+}
+else if (_state == PageState.Result)
+{
+    <div class="card" style="max-width:400px;">
+        <h3 style="margin:0 0 1rem 0;">✅ Klart</h3>
+        <p>Mappade: <strong>@_applyResult!.Mapped</strong> konton</p>
+        <p>Hoppade över: <strong>@_applyResult.Skipped</strong> konton</p>
+        <button class="btn btn-secondary" @onclick="Reset">Stäng</button>
+    </div>
+}
+
+@code {
+    [Inject] private AccountMappingService AccountMappingService { get; set; } = default!;
+    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private enum PageState { Picker, Mapping, Result }
+    private PageState _state = PageState.Picker;
+
+    private List<FiscalYear> _allYears = [];
+    private int _sourceId;
+    private int _targetId;
+    private bool _sameYearError;
+    private string? _existingSourceName;
+    private bool _confirmed;
+    private bool _loading;
+    private bool _applying;
+
+    private FiscalYear? _sourceYear;
+    private FiscalYear? _targetYear;
+
+    private class UiRow
+    {
+        public required string SourceNumber { get; init; }
+        public required string SourceName { get; init; }
+        public decimal Ub { get; init; }
+        public string? SelectedTarget { get; set; }
+    }
+
+    private List<UiRow> _rows = [];
+    private List<Account> _targetAccounts = [];
+    private ApplyMappingResult? _applyResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allYears = await FiscalYearService.GetAllAsync();
+        if (_allYears.Count >= 2)
+        {
+            _sourceId = _allYears[1].Id;
+            _targetId = _allYears[0].Id;
+        }
+        else if (_allYears.Count == 1)
+        {
+            _sourceId = _allYears[0].Id;
+            _targetId = _allYears[0].Id;
+        }
+    }
+
+    private async Task ProceedToMapping()
+    {
+        _sameYearError = false;
+        if (_sourceId == _targetId)
+        {
+            _sameYearError = true;
+            return;
+        }
+
+        _sourceYear = _allYears.First(f => f.Id == _sourceId);
+        _targetYear = _allYears.First(f => f.Id == _targetId);
+
+        if (_targetYear.PreviousFiscalYearId.HasValue && !_confirmed)
+        {
+            var existingSource = _allYears.FirstOrDefault(f => f.Id == _targetYear.PreviousFiscalYearId);
+            _existingSourceName = existingSource?.Name ?? "okänt år";
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var rows = await AccountMappingService.BuildMappingAsync(_sourceId, _targetId);
+            _rows = rows.Select(r => new UiRow
+            {
+                SourceNumber = r.SourceAccountNumber,
+                SourceName = r.SourceAccountName,
+                Ub = r.Ub,
+                SelectedTarget = r.TargetAccountNumber
+            }).ToList();
+
+            _targetAccounts = await FiscalYearService.GetAccountsAsync(_targetId);
+
+            _confirmed = false;
+            _existingSourceName = null;
+            _state = PageState.Mapping;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Fel: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ApplyMapping()
+    {
+        _applying = true;
+        try
+        {
+            var mappingRows = _rows.Select(r => new MappingRow(
+                r.SourceNumber,
+                r.SourceName,
+                r.Ub,
+                string.IsNullOrEmpty(r.SelectedTarget) ? null : r.SelectedTarget
+            )).ToList();
+
+            _applyResult = await AccountMappingService.ApplyMappingAsync(_sourceId, _targetId, mappingRows);
+            _state = PageState.Result;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Fel vid tillämpning: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
+
+    private void Reset()
+    {
+        _state = PageState.Picker;
+        _rows = [];
+        _targetAccounts = [];
+        _applyResult = null;
+        _confirmed = false;
+        _existingSourceName = null;
+    }
+}
