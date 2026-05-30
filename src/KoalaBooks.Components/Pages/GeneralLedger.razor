@@ -186,34 +186,43 @@ else
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        _fiscalYears = await FiscalYearService.GetAllAsync();
-        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
-        if (active is not null)
+        try
         {
-            SelectedFiscalYearId = active.Id;
-            await LoadAccountList();
+            _fiscalYears = await FiscalYearService.GetAllAsync();
+            var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
+            if (active is not null)
+            {
+                SelectedFiscalYearId = active.Id;
+                await LoadAccountList();
+            }
         }
-        _isLoading = false;
+        finally
+        {
+            _isLoading = false;
+        }
     }
 
     private async Task LoadAccountList()
     {
-        _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
-        _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
         _expandedIds.Clear();
         _loadingIds.Clear();
         _loadedSections.Clear();
+        _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
+        _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
     }
 
     private async Task ApplyFilters()
     {
         _isReloading = true;
-        _expandedIds.Clear();
-        _loadingIds.Clear();
-        _loadedSections.Clear();
         StateHasChanged();
-        await LoadAccountList();
-        _isReloading = false;
+        try
+        {
+            await LoadAccountList();
+        }
+        finally
+        {
+            _isReloading = false;
+        }
     }
 
     private async Task ToggleAccount(Account account)
