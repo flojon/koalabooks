@@ -81,7 +81,7 @@ else if (_fiscalYears.Any())
                                         <div style="padding:0.75rem 1rem;">
                                             @if (!ledger.Rows.Any())
                                             {
-                                                <span style="color:#94a3b8; font-style:italic;">Inga bokförda transaktioner för detta konto under vald period.</span>
+                                                <span style="color:#94a3b8; font-style:italic;">Inga bokförda transaktioner för detta konto@(FromDate.HasValue || ToDate.HasValue ? " under vald period" : "").</span>
                                             }
                                             else
                                             {
@@ -202,9 +202,6 @@ else
 
     private async Task ApplyFilters()
     {
-        _loadedSections.Clear();
-        _expandedIds.Clear();
-        _loadingIds.Clear();
         await LoadAccountList();
     }
 
