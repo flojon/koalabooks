@@ -1,6 +1,7 @@
 using System.Text;
 using jsiSIE;
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -295,6 +296,7 @@ public class SieImportService
         }
 
         await _db.SaveChangesAsync();
+        await PropagateToLinkedNextYearAsync(fiscalYear.Id);
 
         return new SieImportResult(
             FiscalYearId: fiscalYear.Id,
@@ -305,6 +307,30 @@ public class SieImportService
             BalancesImported: balancesImported,
             FiscalYearName: fyName,
             Warnings: warnings);
+    }
+
+    private async Task PropagateToLinkedNextYearAsync(int fiscalYearId)
+    {
+        var nextYear = await _db.FiscalYears
+            .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId);
+        if (nextYear is null) return;
+
+        var sourceAccounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .ToListAsync();
+
+        var nextAccounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == nextYear.Id)
+            .ToDictionaryAsync(a => a.AccountNumber);
+
+        foreach (var src in sourceAccounts)
+        {
+            var isPnL = src.AccountClass is AccountClass.Revenue or AccountClass.Expense;
+            if (isPnL) continue;
+            if (nextAccounts.TryGetValue(src.AccountNumber, out var next))
+                next.IncomingBalance = src.OutgoingBalance;
+        }
+        await _db.SaveChangesAsync();
     }
 
     private async Task<(int Created, int Updated)> UpsertAccountsAsync(
