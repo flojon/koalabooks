@@ -400,12 +400,15 @@ public class JournalEntryService
     }
 
     public async Task<HashSet<int>> GetAccountIdsWithTransactionsAsync(
-        int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
+        int fiscalYearId, DateOnly? from = null, DateOnly? to = null,
+        bool includeClosingEntries = false)
     {
         var query = _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
-            .Where(l => l.JournalEntry.IsPosted)
-            .Where(l => !l.JournalEntry.IsClosingEntry);
+            .Where(l => l.JournalEntry.IsPosted);
+
+        if (!includeClosingEntries)
+            query = query.Where(l => !l.JournalEntry.IsClosingEntry);
 
         if (from.HasValue)
             query = query.Where(l => l.JournalEntry.Date >= from.Value);
