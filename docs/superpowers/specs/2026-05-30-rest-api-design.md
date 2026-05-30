@@ -57,7 +57,9 @@ app.MapControllers();
 
 OpenIddict is already configured with password flow, refresh token flow, and authorization code flow. Clients obtain a bearer token via `POST /connect/token` with `grant_type=password`. All API controllers carry `[Authorize]`, which uses the existing `AddValidation().UseLocalServer().UseAspNetCore()` validation pipeline.
 
-Tenant scoping is automatic: `TenantContext` reads `org_id` from the bearer token's claims, and the global query filters on `AppDbContext` scope all queries to that organisation. No additional auth work is required.
+Tenant scoping is automatic: `HttpContextCurrentUser` (registered as `ICurrentUser`) reads `org_id` from the bearer token's claims, and the global query filters on `AppDbContext` scope all queries to that organisation.
+
+**One piece of work required:** OpenIddict strips claims without explicit destinations from access tokens. The existing `Authorize.cshtml.cs` handler (authorization code flow) sets claim destinations but omits `org_id`. The password flow has no custom handler at all. A `Pages/Connect/Token.cshtml.cs` handler must be added that processes `grant_type=password`, validates credentials via `SignInManager`, and builds a principal that includes `org_id` with `Destinations.AccessToken` — following the same pattern as `Authorize.cshtml.cs`. Without this, `HttpContextCurrentUser.OrganisationId` returns null on every API request and all query filters block all data.
 
 No new rate limiting policy is added in v1. The existing `auth` policy covers `/connect/token`.
 
