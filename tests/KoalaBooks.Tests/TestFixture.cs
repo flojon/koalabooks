@@ -15,7 +15,6 @@ public class TestFixture : IDisposable
     private readonly string _dbName;
 
     public AppDbContext Db { get; }
-    public ICurrentUser CurrentUser => _currentUser;
     public JournalEntryService JournalEntryService { get; }
     public FiscalYearService FiscalYearService { get; }
     public YearEndClosingService YearEndClosingService { get; }
