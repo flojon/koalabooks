@@ -52,7 +52,15 @@ public class AuthorizeModel : PageModel
 
         identity.SetClaim(OpenIddictConstants.Claims.Subject, await _userManager.GetUserIdAsync(user))
                 .SetClaim(OpenIddictConstants.Claims.Email, user.Email)
-                .SetClaim(OpenIddictConstants.Claims.Name, user.DisplayName ?? user.Email);
+                .SetClaim(OpenIddictConstants.Claims.Name, user.DisplayName ?? user.Email ?? user.UserName)
+                .SetDestinations(claim => claim.Type switch
+                {
+                    OpenIddictConstants.Claims.Email when claim.Subject.HasScope(OpenIddictConstants.Scopes.Email)
+                        => [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
+                    OpenIddictConstants.Claims.Name when claim.Subject.HasScope(OpenIddictConstants.Scopes.Profile)
+                        => [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
+                    _ => [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme]
+                });
 
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(request.GetScopes());
