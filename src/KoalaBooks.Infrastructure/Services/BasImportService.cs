@@ -19,6 +19,16 @@ public class BasImportService
         _db = db;
     }
 
+    public async Task<BasImportResult> ImportDefaultAsync(int fiscalYearId)
+    {
+        var assembly = typeof(BasImportService).Assembly;
+        using var stream = assembly.GetManifestResourceStream(
+            "KoalaBooks.Infrastructure.Resources.BAS_kontoplan_2026_v2.xlsx")
+            ?? throw new InvalidOperationException(
+                "Embedded BAS 2026 resource not found. Ensure the file is marked as EmbeddedResource.");
+        return await ImportFromExcelAsync(stream, fiscalYearId);
+    }
+
     public async Task<BasImportResult> ImportFromExcelAsync(Stream fileStream, int fiscalYearId)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
