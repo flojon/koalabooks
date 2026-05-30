@@ -3,6 +3,7 @@ services:
     image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
     environment:
       - DASHBOARD__OTLP__AUTHMODE=Unsecured
+      - ASPNETCORE_URLS=http://+:18888
     restart: unless-stopped
 
   web:
