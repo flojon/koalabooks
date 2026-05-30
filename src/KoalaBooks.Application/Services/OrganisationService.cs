@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,24 +8,24 @@ namespace KoalaBooks.Application.Services;
 public class OrganisationService
 {
     private readonly AppDbContext _db;
-    private readonly TenantContext _tenant;
+    private readonly ICurrentUser _currentUser;
 
-    public OrganisationService(AppDbContext db, TenantContext tenant)
+    public OrganisationService(AppDbContext db, ICurrentUser currentUser)
     {
         _db = db;
-        _tenant = tenant;
+        _currentUser = currentUser;
     }
 
     public async Task<Organisation?> GetCurrentAsync()
     {
-        if (_tenant.OrganisationId is null) return null;
-        return await _db.Organisations.FirstOrDefaultAsync(o => o.Id == _tenant.OrganisationId);
+        if (_currentUser.OrganisationId is null) return null;
+        return await _db.Organisations.FirstOrDefaultAsync(o => o.Id == _currentUser.OrganisationId);
     }
 
     public async Task<string?> UpdateAsync(string name, string? orgNumber)
     {
-        if (_tenant.OrganisationId is null) return "Ingen organisation hittades.";
-        var org = await _db.Organisations.FirstOrDefaultAsync(o => o.Id == _tenant.OrganisationId);
+        if (_currentUser.OrganisationId is null) return "Ingen organisation hittades.";
+        var org = await _db.Organisations.FirstOrDefaultAsync(o => o.Id == _currentUser.OrganisationId);
         if (org is null) return "Ingen organisation hittades.";
 
         if (string.IsNullOrWhiteSpace(name)) return "Namn är obligatoriskt.";

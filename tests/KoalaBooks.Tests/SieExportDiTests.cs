@@ -1,6 +1,7 @@
+using KoalaBooks.Domain;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,8 +20,7 @@ public class SieExportDiTests
         var services = new ServiceCollection();
         services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(PostgresContainerFixture.ConnectionString));
-        services.AddHttpContextAccessor();
-        services.AddScoped<TenantContext>();
+        services.AddScoped<ICurrentUser, LocalCurrentUser>();
         services.AddScoped<SieExportService>();
 
         using var provider = services.BuildServiceProvider();

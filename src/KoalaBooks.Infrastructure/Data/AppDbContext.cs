@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Interfaces;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -6,11 +7,11 @@ namespace KoalaBooks.Infrastructure.Data;
 
 public class AppDbContext : IdentityDbContext<ApplicationUser>
 {
-    private readonly TenantContext _tenant;
+    private readonly ICurrentUser _currentUser;
 
-    public AppDbContext(DbContextOptions<AppDbContext> options, TenantContext tenant) : base(options)
+    public AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser currentUser) : base(options)
     {
-        _tenant = tenant;
+        _currentUser = currentUser;
     }
 
     public DbSet<Organisation> Organisations => Set<Organisation>();
@@ -39,32 +40,32 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         });
 
         modelBuilder.Entity<FiscalYear>()
-            .HasQueryFilter(f => _tenant.OrganisationId != null && f.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(f => _currentUser.OrganisationId != null && f.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<BankTransaction>()
-            .HasQueryFilter(b => _tenant.OrganisationId != null && b.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(b => _currentUser.OrganisationId != null && b.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<JournalEntry>()
-            .HasQueryFilter(j => _tenant.OrganisationId != null && j.FiscalYear.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(j => _currentUser.OrganisationId != null && j.FiscalYear.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<JournalEntryLine>()
-            .HasQueryFilter(l => _tenant.OrganisationId != null && l.JournalEntry.FiscalYear.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(l => _currentUser.OrganisationId != null && l.JournalEntry.FiscalYear.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<SupplierInvoice>()
-            .HasQueryFilter(s => _tenant.OrganisationId != null && s.FiscalYear.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(s => _currentUser.OrganisationId != null && s.FiscalYear.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<JournalEntryAttachment>()
-            .HasQueryFilter(a => _tenant.OrganisationId != null && a.JournalEntry.FiscalYear.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(a => _currentUser.OrganisationId != null && a.JournalEntry.FiscalYear.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<Customer>()
-            .HasQueryFilter(c => _tenant.OrganisationId != null && c.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(c => _currentUser.OrganisationId != null && c.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<CustomerInvoice>()
-            .HasQueryFilter(i => _tenant.OrganisationId != null && i.FiscalYear.OrganisationId == _tenant.OrganisationId);
+            .HasQueryFilter(i => _currentUser.OrganisationId != null && i.FiscalYear.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<Account>(entity =>
         {
-            entity.HasQueryFilter(a => _tenant.OrganisationId != null && a.FiscalYear.OrganisationId == _tenant.OrganisationId);
+            entity.HasQueryFilter(a => _currentUser.OrganisationId != null && a.FiscalYear.OrganisationId == _currentUser.OrganisationId);
             entity.HasIndex(a => new { a.FiscalYearId, a.AccountNumber }).IsUnique();
             entity.Property(a => a.AccountNumber).HasMaxLength(10);
             entity.Property(a => a.Name).HasMaxLength(200);

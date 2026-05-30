@@ -8,12 +8,10 @@ namespace KoalaBooks.Application.Services;
 public class CustomerInvoiceService
 {
     private readonly AppDbContext _db;
-    private readonly TenantContext _tenant;
 
-    public CustomerInvoiceService(AppDbContext db, TenantContext tenant)
+    public CustomerInvoiceService(AppDbContext db)
     {
         _db = db;
-        _tenant = tenant;
     }
 
     public async Task<List<CustomerInvoice>> GetAllAsync(int fiscalYearId)

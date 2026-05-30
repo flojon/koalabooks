@@ -1,6 +1,7 @@
 using ExcelDataReader;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
@@ -29,12 +30,12 @@ public record BankImportResult(int Imported, int Skipped, int Duplicates, List<s
 public class BankImportService
 {
     private readonly AppDbContext _db;
-    private readonly TenantContext _tenant;
+    private readonly ICurrentUser _currentUser;
 
-    public BankImportService(AppDbContext db, TenantContext tenant)
+    public BankImportService(AppDbContext db, ICurrentUser currentUser)
     {
         _db = db;
-        _tenant = tenant;
+        _currentUser = currentUser;
     }
 
     public BankFileParseResult ParseFile(Stream stream, string fileName)
@@ -241,7 +242,7 @@ public class BankImportService
 
             var tx = new BankTransaction
             {
-                OrganisationId = _tenant.OrganisationId ?? throw new InvalidOperationException("No active tenant."),
+                OrganisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant."),
                 AccountId = accountId,
                 Date = p.Date!.Value,
                 Amount = p.Amount!.Value,
@@ -376,7 +377,7 @@ public class BankImportService
 
     private async Task<int?> GetLegalFormDefaultAsync(int bankAccountId, decimal amount)
     {
-        var org = await _db.Organisations.FindAsync(_tenant.OrganisationId);
+        var org = await _db.Organisations.FindAsync(_currentUser.OrganisationId);
         if (org is null) return null;
 
         var accountNumber = org.LegalForm switch

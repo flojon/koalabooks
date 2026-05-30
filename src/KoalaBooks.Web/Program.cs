@@ -1,9 +1,11 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using KoalaBooks.Web.Components;
+using KoalaBooks.Web.Services;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -26,7 +28,7 @@ builder.AddServiceDefaults();
 builder.AddNpgsqlDbContext<AppDbContext>("koalabooks");
 
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<TenantContext>();
+builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
@@ -104,6 +106,7 @@ builder.Services.AddScoped<CustomerInvoiceService>();
 builder.Services.AddScoped<OrganisationService>();
 builder.Services.AddScoped<AttachmentService>();
 builder.Services.AddSingleton<VatReportCsvExporter>();
+builder.Services.AddScoped<IAttachmentProvider, WebAttachmentProvider>();
 
 builder.Services.AddMudServices(config =>
 {
