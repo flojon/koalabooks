@@ -136,6 +136,47 @@ public class GeneralLedgerTests : IDisposable
         Assert.Equal(0m, expense.ClosingBalance);
     }
 
+    [Fact]
+    public async Task GeneralLedger_HideEmpty_ExcludesAccountsWithZeroIBAndNoTransactions()
+    {
+        // _revenueAccount and _expenseAccount both have IB = 0 and no transactions
+        var sections = await _f.JournalEntryService.GetGeneralLedgerAsync(_fiscalYear.Id, hideEmpty: true);
+
+        Assert.DoesNotContain(sections, s => s.AccountNumber == "3010");
+        Assert.DoesNotContain(sections, s => s.AccountNumber == "5010");
+    }
+
+    [Fact]
+    public async Task GeneralLedger_HideEmpty_KeepsAccountsWithNonZeroIBEvenIfNoTransactions()
+    {
+        // _cashAccount has IB = 5000, no transactions — must be kept
+        var sections = await _f.JournalEntryService.GetGeneralLedgerAsync(_fiscalYear.Id, hideEmpty: true);
+
+        Assert.Contains(sections, s => s.AccountNumber == "1910");
+    }
+
+    [Fact]
+    public async Task GeneralLedger_HideEmpty_KeepsAccountsWithTransactionsEvenIfZeroIB()
+    {
+        // _revenueAccount has IB = 0 but receives a credit — must be kept
+        await CreateEntry(new DateOnly(2026, 1, 10), "Sale", _cashAccount.Id, _revenueAccount.Id, 500m);
+
+        var sections = await _f.JournalEntryService.GetGeneralLedgerAsync(_fiscalYear.Id, hideEmpty: true);
+
+        Assert.Contains(sections, s => s.AccountNumber == "3010");
+        Assert.DoesNotContain(sections, s => s.AccountNumber == "5010"); // still no transactions
+    }
+
+    [Fact]
+    public async Task GeneralLedger_HideEmptyFalse_IncludesAllAccounts()
+    {
+        // Default behavior: all accounts shown regardless of IB/transactions
+        var sections = await _f.JournalEntryService.GetGeneralLedgerAsync(_fiscalYear.Id, hideEmpty: false);
+
+        Assert.Contains(sections, s => s.AccountNumber == "3010");
+        Assert.Contains(sections, s => s.AccountNumber == "5010");
+    }
+
     private async Task CreateEntry(DateOnly date, string description, int debitAccountId, int creditAccountId, decimal amount)
     {
         var entry = new JournalEntry
