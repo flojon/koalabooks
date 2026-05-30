@@ -5,6 +5,7 @@ COPY src/KoalaBooks.Web/KoalaBooks.Web.csproj src/KoalaBooks.Web/
 COPY src/KoalaBooks.Domain/KoalaBooks.Domain.csproj src/KoalaBooks.Domain/
 COPY src/KoalaBooks.Application/KoalaBooks.Application.csproj src/KoalaBooks.Application/
 COPY src/KoalaBooks.Infrastructure/KoalaBooks.Infrastructure.csproj src/KoalaBooks.Infrastructure/
+COPY src/KoalaBooks.Components/KoalaBooks.Components.csproj src/KoalaBooks.Components/
 COPY src/KoalaBooks.ServiceDefaults/KoalaBooks.ServiceDefaults.csproj src/KoalaBooks.ServiceDefaults/
 RUN dotnet restore src/KoalaBooks.Web
 
