@@ -9,13 +9,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
 
-/// <summary>
-/// Shared test fixture that eliminates duplicated SQLite in-memory DB setup
-/// across test classes. Provides common seed data helpers and service instances.
-/// </summary>
 public class TestFixture : IDisposable
 {
     private readonly HttpContextAccessor _accessor;
+    private readonly string _dbName;
 
     public AppDbContext Db { get; }
     public TenantContext Tenant { get; }
@@ -30,8 +27,11 @@ public class TestFixture : IDisposable
 
     public TestFixture()
     {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        _dbName = dbName;
+
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
+            .UseNpgsql(connStr)
             .Options;
 
         // HttpContext starts null so the org INSERT runs without a tenant filter.
@@ -40,7 +40,6 @@ public class TestFixture : IDisposable
         _accessor = new HttpContextAccessor();
         Tenant = new TenantContext(_accessor);
         Db = new AppDbContext(options, Tenant);
-        Db.Database.OpenConnection();
         Db.Database.EnsureCreated();
 
         var org = new Organisation { Name = "Test Org", Slug = "test-org" };
@@ -70,7 +69,11 @@ public class TestFixture : IDisposable
         };
     }
 
-    public void Dispose() => Db.Dispose();
+    public void Dispose()
+    {
+        Db.Dispose();
+        PostgresContainerFixture.DropDatabase(_dbName);
+    }
 
     internal static TenantContext NullTenant() => new TenantContext(new HttpContextAccessor());
 

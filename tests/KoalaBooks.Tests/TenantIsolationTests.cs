@@ -3,7 +3,6 @@ using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
@@ -14,17 +13,17 @@ namespace KoalaBooks.Tests;
 /// </summary>
 public class TenantIsolationTests : IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private readonly string _dbName;
     private readonly DbContextOptions<AppDbContext> _options;
     private readonly int _orgAId;
     private readonly int _orgBId;
 
     public TenantIsolationTests()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
-        _connection.Open();
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        _dbName = dbName;
         _options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(_connection)
+            .UseNpgsql(connStr)
             .Options;
 
         using var bootstrap = new AppDbContext(_options, NoTenant());
@@ -37,7 +36,7 @@ public class TenantIsolationTests : IDisposable
         _orgBId = bootstrap.Organisations.First(o => o.Slug == "org-b").Id;
     }
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose() => PostgresContainerFixture.DropDatabase(_dbName);
 
     // ── FiscalYear ─────────────────────────────────────────────────
 

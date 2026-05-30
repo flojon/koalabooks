@@ -18,7 +18,7 @@ public class SieExportDiTests
     {
         var services = new ServiceCollection();
         services.AddDbContext<AppDbContext>(options =>
-            options.UseSqlite("Data Source=:memory:"));
+            options.UseNpgsql(PostgresContainerFixture.ConnectionString));
         services.AddHttpContextAccessor();
         services.AddScoped<TenantContext>();
         services.AddScoped<SieExportService>();
@@ -35,7 +35,7 @@ public class SieExportDiTests
     public void SieExportService_IsInstantiableWithAppDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite("Data Source=:memory:")
+            .UseNpgsql(PostgresContainerFixture.ConnectionString)
             .Options;
         using var db = new AppDbContext(options, TestFixture.NullTenant());
 
