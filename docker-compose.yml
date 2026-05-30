@@ -4,6 +4,10 @@ services:
     environment:
       - DASHBOARD__OTLP__AUTHMODE=Unsecured
       - ASPNETCORE_URLS=http://+:18888
+      - DASHBOARD__FRONTEND__AUTHMODE=OpenIdConnect
+      - Authentication__Schemes__OpenIdConnect__Authority=https://books.koalasoft.se
+      - Authentication__Schemes__OpenIdConnect__ClientId=aspire-dashboard
+      - Authentication__Schemes__OpenIdConnect__ClientSecret=${ASPIRE_DASHBOARD_OIDC_CLIENT_SECRET}
     restart: unless-stopped
 
   web:
@@ -18,6 +22,8 @@ services:
       - ASPNETCORE_URLS=http://+:8080
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - AspireDashboard__OidcRedirectUri=https://dashboard.koalasoft.se/signin-oidc
+      - AspireDashboard__OidcClientSecret=${ASPIRE_DASHBOARD_OIDC_CLIENT_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
