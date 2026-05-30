@@ -1,6 +1,7 @@
+using KoalaBooks.Domain;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
@@ -20,8 +21,7 @@ public class OidcClientSeedingTests : IDisposable
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IHttpContextAccessor, HttpContextAccessor>();
-        services.AddScoped<TenantContext>();
+        services.AddSingleton<ICurrentUser>(new LocalCurrentUser());
         services.AddDbContext<AppDbContext>(opts => opts.UseNpgsql(connStr));
         services.AddOpenIddict()
             .AddCore(opts => opts.UseEntityFrameworkCore().UseDbContext<AppDbContext>());
