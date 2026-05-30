@@ -111,6 +111,16 @@ public Task<ApplyMappingResult> ApplyMappingAsync(
 
 Does **not** clear previously unmapped IBs — it only writes to accounts explicitly included in the mapping. This lets the user apply partial mappings incrementally.
 
+### Auto-propagation
+
+`OutgoingBalance` is only ever written in two places — year-end closing and SIE import — so no journal-entry-level hook is needed.
+
+**Year-end closing** already calls `FiscalYearService.PropagateBalancesToNextYearAsync` as its final step. Update that method to look up the following year via `PreviousFiscalYearId` (a year where `PreviousFiscalYearId = closedYearId`) in addition to the current date-based fallback. This means: close 2025 → IBs on 2026 update automatically if the link exists.
+
+**SIE import** sets UBs but does not propagate. Add a call to `PropagateBalancesToNextYearAsync` after each fiscal year is imported and balances are written. This means: import 2025 SIE → IBs on 2026 update automatically if the link exists.
+
+**Mapping tool** calls `PropagateBalancesToNextYearAsync` on the source year after applying, so any year linked to the source also stays in sync.
+
 ### Auto-copy update
 
 `FiscalYearService.CopyAccountsFromPreviousYearAsync` should set `PreviousFiscalYearId` on the target year after copying, so the mapping tool can detect and warn about it.
@@ -132,6 +142,8 @@ Add "Kontobalansöverföring" (or similar short label) to the nav menu pointing 
   - `ApplyMapping_WritesIbToTargetAccounts` — applies a two-row mapping, asserts IBs set correctly.
   - `ApplyMapping_SetsPreviousFiscalYearId` — after apply, target year's PreviousFiscalYearId matches source year.
   - `ApplyMapping_SkipsNullTargetRows` — rows with null target are not written.
+- `FiscalYearService`: `PropagateBalances_FollowsPreviousFiscalYearIdLink` — two years linked via `PreviousFiscalYearId`; propagation updates the correct year even when date ordering would pick a different one.
+- `SieImportService`: `ImportFiscalYear_PropagatesBalancesToLinkedNextYear` — importing a year with UBs triggers IB update on the linked following year.
 
 ---
 
