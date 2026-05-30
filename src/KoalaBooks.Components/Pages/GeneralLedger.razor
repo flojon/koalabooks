@@ -187,11 +187,8 @@ else
 
     private async Task LoadAccountList()
     {
-        var accountsTask = AccountService.GetAllAsync(SelectedFiscalYearId);
-        var txTask = JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate);
-        await Task.WhenAll(accountsTask, txTask);
-        _accounts = accountsTask.Result;
-        _accountsWithTransactions = txTask.Result;
+        _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
+        _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate);
         _expandedIds.Clear();
         _loadingIds.Clear();
         _loadedSections.Clear();
