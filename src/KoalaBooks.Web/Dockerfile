@@ -1,7 +1,14 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY . .
+
+COPY src/KoalaBooks.Web/KoalaBooks.Web.csproj src/KoalaBooks.Web/
+COPY src/KoalaBooks.Domain/KoalaBooks.Domain.csproj src/KoalaBooks.Domain/
+COPY src/KoalaBooks.Application/KoalaBooks.Application.csproj src/KoalaBooks.Application/
+COPY src/KoalaBooks.Infrastructure/KoalaBooks.Infrastructure.csproj src/KoalaBooks.Infrastructure/
+COPY src/KoalaBooks.ServiceDefaults/KoalaBooks.ServiceDefaults.csproj src/KoalaBooks.ServiceDefaults/
 RUN dotnet restore src/KoalaBooks.Web
+
+COPY . .
 RUN dotnet publish src/KoalaBooks.Web -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra
