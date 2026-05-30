@@ -103,6 +103,14 @@ public class FiscalYearService
         await _db.SaveChangesAsync();
     }
 
+    public async Task<List<Account>> GetAccountsAsync(int fiscalYearId)
+    {
+        return await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .OrderBy(a => a.AccountNumber)
+            .ToListAsync();
+    }
+
     public async Task PropagateBalancesToNextYearAsync(int fiscalYearId)
     {
         var sourceYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId);
