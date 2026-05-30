@@ -56,11 +56,6 @@ public class FiscalYearService
         return fiscalYear;
     }
 
-    /// <summary>
-    /// Copies accounts from the previous fiscal year (by date) into the new year,
-    /// setting IncomingBalance = previous year's OutgoingBalance.
-    /// Only creates accounts that don't already exist in the target year.
-    /// </summary>
     private async Task CopyAccountsFromPreviousYearAsync(FiscalYear targetYear)
     {
         var previousYear = await _db.FiscalYears
@@ -70,11 +65,17 @@ public class FiscalYearService
 
         if (previousYear is null) return;
 
+        targetYear.PreviousFiscalYearId = previousYear.Id;
+
         var previousAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == previousYear.Id)
             .ToListAsync();
 
-        if (!previousAccounts.Any()) return;
+        if (!previousAccounts.Any())
+        {
+            await _db.SaveChangesAsync();
+            return;
+        }
 
         var existingNumbers = await _db.Accounts
             .Where(a => a.FiscalYearId == targetYear.Id)
@@ -102,19 +103,18 @@ public class FiscalYearService
         await _db.SaveChangesAsync();
     }
 
-    /// <summary>
-    /// Propagates outgoing balances from the given fiscal year to the next year's
-    /// incoming balances. Creates missing accounts in the next year if needed.
-    /// </summary>
     public async Task PropagateBalancesToNextYearAsync(int fiscalYearId)
     {
         var sourceYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId);
         if (sourceYear is null) return;
 
+        // Prefer the explicitly linked year; fall back to next year by date.
         var nextYear = await _db.FiscalYears
-            .Where(f => f.StartDate > sourceYear.EndDate)
-            .OrderBy(f => f.StartDate)
-            .FirstOrDefaultAsync();
+                           .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId)
+                       ?? await _db.FiscalYears
+                           .Where(f => f.StartDate > sourceYear.EndDate)
+                           .OrderBy(f => f.StartDate)
+                           .FirstOrDefaultAsync();
 
         if (nextYear is null) return;
 
