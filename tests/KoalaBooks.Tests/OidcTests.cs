@@ -44,7 +44,7 @@ public class OidcClientSeedingTests : IDisposable
     }
 
     [Fact]
-    public async Task SeedAsync_ClientHasAuthorizationCodePermissions()
+    public async Task SeedAsync_ClientHasExpectedPermissions()
     {
         using var scope = _sp.CreateScope();
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, DashboardRedirectUri, "test-secret");
@@ -55,8 +55,12 @@ public class OidcClientSeedingTests : IDisposable
         await manager.PopulateAsync(descriptor, app);
 
         Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.RefreshToken, descriptor.Permissions);
         Assert.Contains(OpenIddictConstants.Permissions.Endpoints.Authorization, descriptor.Permissions);
         Assert.Contains(OpenIddictConstants.Permissions.Endpoints.Token, descriptor.Permissions);
+        Assert.Contains(
+            OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess,
+            descriptor.Permissions);
     }
 
     [Fact]
@@ -72,6 +76,29 @@ public class OidcClientSeedingTests : IDisposable
         var manager = verifyScope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var count = await manager.CountAsync();
         Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task SeedAsync_UpdatesExistingClient()
+    {
+        var originalUri = new Uri("http://localhost:18888/signin-oidc");
+        var updatedUri = new Uri("http://localhost:19999/signin-oidc");
+
+        using (var scope = _sp.CreateScope())
+            await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, originalUri, "secret-v1");
+
+        using (var scope = _sp.CreateScope())
+            await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, updatedUri, "secret-v2");
+
+        using var verifyScope = _sp.CreateScope();
+        var manager = verifyScope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        var app = (await manager.FindByClientIdAsync("aspire-dashboard"))!;
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(descriptor, app);
+
+        Assert.Equal(1, await manager.CountAsync());
+        Assert.Contains(updatedUri, descriptor.RedirectUris);
+        Assert.DoesNotContain(originalUri, descriptor.RedirectUris);
     }
 
     public void Dispose()
