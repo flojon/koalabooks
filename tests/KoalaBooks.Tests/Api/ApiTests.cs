@@ -160,4 +160,61 @@ public class ApiTests : IAsyncLifetime
         var response = await _client.GetAsync("/api/v1/fiscal-years/999999");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
+
+    // ── Account tests ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Accounts_GetByFiscalYear_ReturnsSeededAccounts()
+    {
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.EnumerateArray().ToList();
+        Assert.Equal(2, items.Count);
+        Assert.Contains(items, a => a.GetProperty("accountNumber").GetString() == "1910");
+        Assert.Contains(items, a => a.GetProperty("accountNumber").GetString() == "3000");
+    }
+
+    [Fact]
+    public async Task Accounts_GetByFiscalYear_UnknownFiscalYear_Returns404()
+    {
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync("/api/v1/fiscal-years/999999/accounts");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Accounts_GetById_ReturnsCorrectAccount()
+    {
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var listResponse = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var cashAccount = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910");
+        var accountId = cashAccount.GetProperty("id").GetInt32();
+
+        var response = await _client.GetAsync($"/api/v1/accounts/{accountId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("1910", json.GetProperty("accountNumber").GetString());
+        Assert.Equal("Asset", json.GetProperty("accountClass").GetString());
+    }
+
+    [Fact]
+    public async Task Accounts_GetById_UnknownId_Returns404()
+    {
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync("/api/v1/accounts/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 }
