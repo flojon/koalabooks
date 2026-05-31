@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.RateLimiting;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
 using System.Security.Claims;
@@ -10,6 +11,7 @@ using Microsoft.AspNetCore;
 
 namespace KoalaBooks.Web.Pages.Connect;
 
+[EnableRateLimiting("auth")]
 [IgnoreAntiforgeryToken]
 public class TokenModel : PageModel
 {
@@ -51,7 +53,9 @@ public class TokenModel : PageModel
                     [OpenIddictServerAspNetCoreConstants.Properties.Error] = OpenIddictConstants.Errors.InvalidGrant,
                     [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = result.IsLockedOut
                         ? "The account is locked out."
-                        : "The credentials are invalid."
+                        : result.IsNotAllowed
+                            ? "The account is not confirmed."
+                            : "The credentials are invalid."
                 }));
 
         var identity = new ClaimsIdentity(
@@ -64,7 +68,7 @@ public class TokenModel : PageModel
                 .SetClaim(OpenIddictConstants.Claims.Name, user.DisplayName ?? user.Email ?? user.UserName ?? string.Empty);
 
         if (user.OrganisationId.HasValue)
-            identity.AddClaim(new Claim("org_id", user.OrganisationId.Value.ToString()));
+            identity.SetClaim("org_id", user.OrganisationId.Value.ToString());
 
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(request.GetScopes());
