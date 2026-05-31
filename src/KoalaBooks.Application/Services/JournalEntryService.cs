@@ -399,12 +399,47 @@ public class JournalEntryService
         return sections;
     }
 
-    public async Task<Dictionary<int, decimal>> GetComputedClosingBalancesAsync(int fiscalYearId)
+    public async Task<Dictionary<int, (decimal IB, decimal UB)>> GetComputedBalancesAsync(int fiscalYearId)
     {
+        var fy = await _db.FiscalYears.FirstAsync(f => f.Id == fiscalYearId);
         var accounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
             .ToListAsync();
 
+        // Closed year: stored values are authoritative
+        if (fy.IsClosed)
+            return accounts.ToDictionary(a => a.Id, a => (a.IncomingBalance, a.OutgoingBalance));
+
+        // Open year: compute IB from previous year's dynamic UB if that year is also open
+        var ibByAccountNumber = new Dictionary<string, decimal>();
+        if (fy.PreviousFiscalYearId.HasValue)
+        {
+            var prevFy = await _db.FiscalYears.FirstAsync(f => f.Id == fy.PreviousFiscalYearId.Value);
+            if (!prevFy.IsClosed)
+            {
+                var prevAccounts = await _db.Accounts
+                    .Where(a => a.FiscalYearId == prevFy.Id)
+                    .ToListAsync();
+
+                var prevNets = await _db.JournalEntryLines
+                    .Where(l => l.JournalEntry.FiscalYearId == prevFy.Id && l.JournalEntry.IsPosted)
+                    .GroupBy(l => l.AccountId)
+                    .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
+                    .ToListAsync();
+
+                var prevNetLookup = prevNets.ToDictionary(x => x.AccountId, x => (x.Debit, x.Credit));
+
+                foreach (var prev in prevAccounts)
+                {
+                    if (prev.AccountClass is AccountClass.Revenue or AccountClass.Expense) continue;
+                    var (d, c) = prevNetLookup.TryGetValue(prev.Id, out var n) ? n : (0m, 0m);
+                    ibByAccountNumber[prev.AccountNumber] = prev.IncomingBalance +
+                        (prev.AccountClass.IsCreditNormal() ? c - d : d - c);
+                }
+            }
+        }
+
+        // Compute current year net movements
         var nets = await _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId && l.JournalEntry.IsPosted)
             .GroupBy(l => l.AccountId)
@@ -417,10 +452,12 @@ public class JournalEntryService
             a => a.Id,
             a =>
             {
+                var ib = ibByAccountNumber.TryGetValue(a.AccountNumber, out var dynIb)
+                    ? dynIb
+                    : a.IncomingBalance;
                 var (debit, credit) = netLookup.TryGetValue(a.Id, out var n) ? n : (0m, 0m);
-                return a.IncomingBalance + (a.AccountClass.IsCreditNormal()
-                    ? credit - debit
-                    : debit - credit);
+                var ub = ib + (a.AccountClass.IsCreditNormal() ? credit - debit : debit - credit);
+                return (ib, ub);
             });
     }
 

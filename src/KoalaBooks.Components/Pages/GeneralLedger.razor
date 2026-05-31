@@ -65,13 +65,13 @@ else if (_fiscalYears.Any())
                     {
                         var isExpanded = _expandedIds.Contains(account.Id);
                         var isLoading = _loadingIds.Contains(account.Id);
-                        var computedUb = _computedUb.TryGetValue(account.Id, out var ub) ? ub : account.OutgoingBalance;
+                        var (dispIb, dispUb) = _computedBalances.TryGetValue(account.Id, out var bal) ? bal : (account.IncomingBalance, account.OutgoingBalance);
                         <tr @onclick="() => ToggleAccount(account)" style="cursor:pointer; user-select:none;">
                             <td style="text-align:center; color:#94a3b8;">@(isExpanded ? "▼" : "▶")</td>
                             <td style="font-family:monospace;">@account.AccountNumber</td>
                             <td>@account.Name</td>
-                            <td style="text-align:right;">@account.IncomingBalance.ToString("N2")</td>
-                            <td style="text-align:right;">@computedUb.ToString("N2")</td>
+                            <td style="text-align:right;">@dispIb.ToString("N2")</td>
+                            <td style="text-align:right;">@dispUb.ToString("N2")</td>
                         </tr>
                         @if (isExpanded)
                         {
@@ -156,7 +156,7 @@ else
     private readonly HashSet<int> _expandedIds = [];
     private readonly HashSet<int> _loadingIds = [];
     private readonly Dictionary<int, GeneralLedgerAccountSection> _loadedSections = new();
-    private Dictionary<int, decimal> _computedUb = new();
+    private Dictionary<int, (decimal IB, decimal UB)> _computedBalances = new();
     private HashSet<int> _accountsWithTransactions = [];
     private bool _isLoading;
     private bool _isReloading;
@@ -175,9 +175,10 @@ else
 
             if (_hideEmptyAccounts)
                 accounts = accounts.Where(a =>
-                    a.IncomingBalance != 0 ||
-                    (_computedUb.TryGetValue(a.Id, out var ub) ? ub : a.OutgoingBalance) != 0 ||
-                    _accountsWithTransactions.Contains(a.Id));
+                {
+                    var (ib, ub) = _computedBalances.TryGetValue(a.Id, out var b) ? b : (a.IncomingBalance, a.OutgoingBalance);
+                    return ib != 0 || ub != 0 || _accountsWithTransactions.Contains(a.Id);
+                });
 
             if (!string.IsNullOrWhiteSpace(_accountSearch))
                 accounts = accounts.Where(a =>
@@ -213,7 +214,7 @@ else
         _loadingIds.Clear();
         _loadedSections.Clear();
         _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
-        _computedUb = await JournalEntryService.GetComputedClosingBalancesAsync(SelectedFiscalYearId);
+        _computedBalances = await JournalEntryService.GetComputedBalancesAsync(SelectedFiscalYearId);
         _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
     }
 
