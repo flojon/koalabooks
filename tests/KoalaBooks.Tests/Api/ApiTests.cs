@@ -161,6 +161,42 @@ public class ApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task FiscalYears_CrossTenant_Returns404()
+    {
+        // Create a second org and fiscal year
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+
+        var org2 = new Organisation { Name = "Other Org", Slug = "other-org", LegalForm = LegalForm.Aktiebolag };
+        db.Organisations.Add(org2);
+        await db.SaveChangesAsync();
+
+        const string otherEmail = "other@koalabooks.test";
+        var otherUser = new ApplicationUser
+        {
+            UserName = otherEmail, Email = otherEmail,
+            EmailConfirmed = true, OrganisationId = org2.Id
+        };
+        await userManager.CreateAsync(otherUser, "OtherTest123!");
+
+        var fy2 = new FiscalYear
+        {
+            OrganisationId = org2.Id, Name = "2025",
+            StartDate = new DateOnly(2025, 1, 1), EndDate = new DateOnly(2025, 12, 31)
+        };
+        db.FiscalYears.Add(fy2);
+        await db.SaveChangesAsync();
+
+        // Authenticate as tenant A and try to read tenant B's fiscal year
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync($"/api/v1/fiscal-years/{fy2.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     // ── Account tests ────────────────────────────────────────────────────────────
 
     [Fact]
