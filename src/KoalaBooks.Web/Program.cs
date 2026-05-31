@@ -1,4 +1,5 @@
 using KoalaBooks.Application.Services;
+using Scalar.AspNetCore;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
@@ -67,6 +68,7 @@ builder.Services.AddOpenIddict()
         options.AllowPasswordFlow()
                .AllowRefreshTokenFlow()
                .AllowAuthorizationCodeFlow();
+        options.AcceptAnonymousClients();
         options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
         if (builder.Environment.IsDevelopment())
         {
@@ -116,6 +118,12 @@ builder.Services.AddMudServices(config =>
     config.SnackbarConfiguration.HideTransitionDuration = 300;
     config.SnackbarConfiguration.ShowTransitionDuration = 300;
 });
+
+builder.Services.AddControllers()
+    .AddJsonOptions(o =>
+        o.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter()));
+builder.Services.AddOpenApi();
 
 builder.Services.AddRazorPages();
 builder.Services.AddRazorComponents()
@@ -249,6 +257,11 @@ app.MapRazorPages();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
     .AddAdditionalAssemblies(typeof(KoalaBooks.Components.Pages.Home).Assembly);
+
+app.MapOpenApi();
+if (app.Environment.IsDevelopment())
+    app.MapScalarApiReference();
+app.MapControllers();
 
 app.Run();
 
