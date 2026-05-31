@@ -70,10 +70,12 @@ builder.Services.AddOpenIddict()
                .AllowAuthorizationCodeFlow();
         options.AcceptAnonymousClients();
         options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
-        if (builder.Environment.IsDevelopment())
+        if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
         {
             options.AddDevelopmentEncryptionCertificate()
                    .AddDevelopmentSigningCertificate();
+            // Emit plain JWTs in dev/test so the payload is readable without decryption.
+            options.DisableAccessTokenEncryption();
         }
         else
         {
