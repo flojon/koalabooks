@@ -1,8 +1,5 @@
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
-
-RUN dotnet workload install wasm-tools
-
 WORKDIR /src
 COPY src/KoalaBooks.Web/KoalaBooks.Web.csproj src/KoalaBooks.Web/
 COPY src/KoalaBooks.Domain/KoalaBooks.Domain.csproj src/KoalaBooks.Domain/
