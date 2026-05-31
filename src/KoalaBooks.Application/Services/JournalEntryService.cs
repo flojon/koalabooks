@@ -399,6 +399,31 @@ public class JournalEntryService
         return sections;
     }
 
+    public async Task<Dictionary<int, decimal>> GetComputedClosingBalancesAsync(int fiscalYearId)
+    {
+        var accounts = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .ToListAsync();
+
+        var nets = await _db.JournalEntryLines
+            .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId && l.JournalEntry.IsPosted)
+            .GroupBy(l => l.AccountId)
+            .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
+            .ToListAsync();
+
+        var netLookup = nets.ToDictionary(x => x.AccountId, x => (x.Debit, x.Credit));
+
+        return accounts.ToDictionary(
+            a => a.Id,
+            a =>
+            {
+                var (debit, credit) = netLookup.TryGetValue(a.Id, out var n) ? n : (0m, 0m);
+                return a.IncomingBalance + (a.AccountClass.IsCreditNormal()
+                    ? credit - debit
+                    : debit - credit);
+            });
+    }
+
     public async Task<HashSet<int>> GetAccountIdsWithTransactionsAsync(
         int fiscalYearId, DateOnly? from = null, DateOnly? to = null,
         bool includeClosingEntries = false)

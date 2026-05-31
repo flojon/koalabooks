@@ -65,12 +65,13 @@ else if (_fiscalYears.Any())
                     {
                         var isExpanded = _expandedIds.Contains(account.Id);
                         var isLoading = _loadingIds.Contains(account.Id);
+                        var computedUb = _computedUb.TryGetValue(account.Id, out var ub) ? ub : account.OutgoingBalance;
                         <tr @onclick="() => ToggleAccount(account)" style="cursor:pointer; user-select:none;">
                             <td style="text-align:center; color:#94a3b8;">@(isExpanded ? "▼" : "▶")</td>
                             <td style="font-family:monospace;">@account.AccountNumber</td>
                             <td>@account.Name</td>
-                            <td style="text-align:right;">@(account.IncomingBalance != 0 ? account.IncomingBalance.ToString("N2") : "—")</td>
-                            <td style="text-align:right;">@(account.OutgoingBalance != 0 ? account.OutgoingBalance.ToString("N2") : "—")</td>
+                            <td style="text-align:right;">@account.IncomingBalance.ToString("N2")</td>
+                            <td style="text-align:right;">@computedUb.ToString("N2")</td>
                         </tr>
                         @if (isExpanded)
                         {
@@ -111,8 +112,8 @@ else if (_fiscalYears.Any())
                                                                 <td>@row.Date.ToString("yyyy-MM-dd")</td>
                                                                 <td>@row.EntryNumber</td>
                                                                 <td>@row.Description</td>
-                                                                <td style="text-align:right;">@(row.DebitAmount != 0 ? row.DebitAmount.ToString("N2") : "—")</td>
-                                                                <td style="text-align:right;">@(row.CreditAmount != 0 ? row.CreditAmount.ToString("N2") : "—")</td>
+                                                                <td style="text-align:right;">@row.DebitAmount.ToString("N2")</td>
+                                                                <td style="text-align:right;">@row.CreditAmount.ToString("N2")</td>
                                                                 <td style="text-align:right;">@row.RunningBalance.ToString("N2")</td>
                                                             </tr>
                                                         }
@@ -155,6 +156,7 @@ else
     private readonly HashSet<int> _expandedIds = [];
     private readonly HashSet<int> _loadingIds = [];
     private readonly Dictionary<int, GeneralLedgerAccountSection> _loadedSections = new();
+    private Dictionary<int, decimal> _computedUb = new();
     private HashSet<int> _accountsWithTransactions = [];
     private bool _isLoading;
     private bool _isReloading;
@@ -172,7 +174,10 @@ else
             var accounts = (IEnumerable<Account>)_accounts;
 
             if (_hideEmptyAccounts)
-                accounts = accounts.Where(a => a.IncomingBalance != 0 || a.OutgoingBalance != 0 || _accountsWithTransactions.Contains(a.Id));
+                accounts = accounts.Where(a =>
+                    a.IncomingBalance != 0 ||
+                    (_computedUb.TryGetValue(a.Id, out var ub) ? ub : a.OutgoingBalance) != 0 ||
+                    _accountsWithTransactions.Contains(a.Id));
 
             if (!string.IsNullOrWhiteSpace(_accountSearch))
                 accounts = accounts.Where(a =>
@@ -208,6 +213,7 @@ else
         _loadingIds.Clear();
         _loadedSections.Clear();
         _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
+        _computedUb = await JournalEntryService.GetComputedClosingBalancesAsync(SelectedFiscalYearId);
         _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
     }
 
