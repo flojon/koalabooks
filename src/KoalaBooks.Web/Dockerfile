@@ -11,7 +11,17 @@ COPY src/KoalaBooks.ServiceDefaults/KoalaBooks.ServiceDefaults.csproj src/KoalaB
 RUN dotnet restore src/KoalaBooks.Web -a $TARGETARCH
 
 COPY . .
+
+# Cross-compile for the target arch to get the correct native binaries.
 RUN dotnet publish src/KoalaBooks.Web -c Release -o /app --no-restore -a $TARGETARCH
+
+# Publish again natively on the builder (no QEMU) to produce the correct static web
+# asset manifest. Cross-compilation skips blazor.web.js in the manifest because the
+# arm64 runtime pack doesn't expose framework static web assets — only the host SDK's
+# shared framework does. The managed DLLs are MSIL so they're identical either way.
+RUN dotnet publish src/KoalaBooks.Web -c Release -o /app-native --no-restore && \
+    cp /app-native/*.staticwebassets.runtime.json /app/ && \
+    cp -rT /app-native/_framework /app/_framework
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra
 WORKDIR /app
