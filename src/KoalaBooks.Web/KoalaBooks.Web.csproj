@@ -24,6 +24,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
     <ContainerRepository>koalabooks-web</ContainerRepository>
     <ContainerImageTag>latest</ContainerImageTag>
   </PropertyGroup>
