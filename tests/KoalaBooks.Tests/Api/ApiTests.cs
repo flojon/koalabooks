@@ -118,4 +118,46 @@ public class ApiTests : IAsyncLifetime
         var orgId = DecodeOrgIdFromToken(token);
         Assert.Equal(_orgId.ToString(), orgId);
     }
+
+    // ── Fiscal year tests ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task FiscalYears_ReturnsOnlyTenantFiscalYears()
+    {
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync("/api/v1/fiscal-years");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.EnumerateArray().ToList();
+        Assert.Single(items);
+        Assert.Equal("2025", items[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task FiscalYears_GetById_ReturnsCorrectYear()
+    {
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(_fiscalYearId, json.GetProperty("id").GetInt32());
+        Assert.Equal("2025", json.GetProperty("name").GetString());
+        Assert.False(json.GetProperty("isClosed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task FiscalYears_GetById_UnknownId_Returns404()
+    {
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync("/api/v1/fiscal-years/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 }
