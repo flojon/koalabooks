@@ -2,7 +2,6 @@ using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Headers;
@@ -74,129 +73,6 @@ public class ApiTests : IAsyncLifetime
         return (org.Id, fy.Id);
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
-
-    private async Task<string> GetBearerTokenAsync()
-    {
-        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
-        [
-            new KeyValuePair<string, string>("grant_type", "password"),
-            new KeyValuePair<string, string>("username", TestEmail),
-            new KeyValuePair<string, string>("password", TestPassword)
-        ]));
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        return json.GetProperty("access_token").GetString()!;
-    }
-
-    private static string? DecodeOrgIdFromToken(string token)
-    {
-        var payload = token.Split('.')[1];
-        var padded = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
-        var json = Encoding.UTF8.GetString(Convert.FromBase64String(padded));
-        var claims = JsonSerializer.Deserialize<JsonElement>(json);
-        return claims.TryGetProperty("org_id", out var v) ? v.GetString() : null;
-    }
-
-    private void UseToken(string token) =>
-        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-    // ── Auth tests ─────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task FiscalYears_WithoutToken_Returns401()
-    {
-        var response = await _client.GetAsync("/api/v1/fiscal-years");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ConnectToken_ValidCredentials_ReturnsAccessTokenWithOrgId()
-    {
-        var token = await GetBearerTokenAsync();
-        Assert.NotEmpty(token);
-        var orgId = DecodeOrgIdFromToken(token);
-        Assert.Equal(_orgId.ToString(), orgId);
-    }
-
-    // ── Fiscal year tests ───────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task FiscalYears_ReturnsOnlyTenantFiscalYears()
-    {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync("/api/v1/fiscal-years");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var items = json.EnumerateArray().ToList();
-        Assert.Single(items);
-        Assert.Equal("2025", items[0].GetProperty("name").GetString());
-    }
-
-    [Fact]
-    public async Task FiscalYears_GetById_ReturnsCorrectYear()
-    {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal(_fiscalYearId, json.GetProperty("id").GetInt32());
-        Assert.Equal("2025", json.GetProperty("name").GetString());
-        Assert.False(json.GetProperty("isClosed").GetBoolean());
-    }
-
-    [Fact]
-    public async Task FiscalYears_GetById_UnknownId_Returns404()
-    {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync("/api/v1/fiscal-years/999999");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task FiscalYears_CrossTenant_Returns404()
-    {
-        // Create a second org and fiscal year
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-
-        var org2 = new Organisation { Name = "Other Org", Slug = "other-org", LegalForm = LegalForm.Aktiebolag };
-        db.Organisations.Add(org2);
-        await db.SaveChangesAsync();
-
-        const string otherEmail = "other@koalabooks.test";
-        var otherUser = new ApplicationUser
-        {
-            UserName = otherEmail, Email = otherEmail,
-            EmailConfirmed = true, OrganisationId = org2.Id
-        };
-        await userManager.CreateAsync(otherUser, "OtherTest123!");
-
-        var fy2 = new FiscalYear
-        {
-            OrganisationId = org2.Id, Name = "2025",
-            StartDate = new DateOnly(2025, 1, 1), EndDate = new DateOnly(2025, 12, 31)
-        };
-        db.FiscalYears.Add(fy2);
-        await db.SaveChangesAsync();
-
-        // Authenticate as tenant A and try to read tenant B's fiscal year
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync($"/api/v1/fiscal-years/{fy2.Id}");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
-
     private async Task<(int orgId, int fiscalYearId, int accountId)> SeedSecondTenantAsync()
     {
         using var scope = _factory.Services.CreateScope();
@@ -221,15 +97,125 @@ public class ApiTests : IAsyncLifetime
         return (org2.Id, fy2.Id, account2.Id);
     }
 
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private async Task<string> GetBearerTokenAsync()
+    {
+        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("username", TestEmail),
+            new KeyValuePair<string, string>("password", TestPassword)
+        ]));
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        return json.GetProperty("access_token").GetString()!;
+    }
+
+    private async Task<HttpClient> AuthenticatedClientAsync()
+    {
+        var token = await GetBearerTokenAsync();
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
+    private static string? DecodeOrgIdFromToken(string token)
+    {
+        var payload = token.Split('.')[1];
+        var padded = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+        var json = Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+        var claims = JsonSerializer.Deserialize<JsonElement>(json);
+        return claims.TryGetProperty("org_id", out var v) ? v.GetString() : null;
+    }
+
+    // ── Auth tests ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task FiscalYears_WithoutToken_Returns401()
+    {
+        var response = await _client.GetAsync("/api/v1/fiscal-years");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConnectToken_ValidCredentials_ReturnsAccessTokenWithOrgId()
+    {
+        var token = await GetBearerTokenAsync();
+        Assert.NotEmpty(token);
+        var orgId = DecodeOrgIdFromToken(token);
+        Assert.Equal(_orgId.ToString(), orgId);
+    }
+
+    // ── Fiscal year tests ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task FiscalYears_ReturnsOnlyTenantFiscalYears()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/v1/fiscal-years");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.EnumerateArray().ToList();
+        Assert.Single(items);
+        Assert.Equal("2025", items[0].GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public async Task FiscalYears_GetById_ReturnsCorrectYear()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(_fiscalYearId, json.GetProperty("id").GetInt32());
+        Assert.Equal("2025", json.GetProperty("name").GetString());
+        Assert.False(json.GetProperty("isClosed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task FiscalYears_GetById_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task FiscalYears_CrossTenant_Returns404()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var org2 = new Organisation { Name = "Other Org", Slug = "other-org", LegalForm = LegalForm.Aktiebolag };
+        db.Organisations.Add(org2);
+        await db.SaveChangesAsync();
+
+        var fy2 = new FiscalYear
+        {
+            OrganisationId = org2.Id, Name = "2025",
+            StartDate = new DateOnly(2025, 1, 1), EndDate = new DateOnly(2025, 12, 31)
+        };
+        db.FiscalYears.Add(fy2);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{fy2.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     // ── Account tests ────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task Accounts_GetByFiscalYear_ReturnsSeededAccounts()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
+        var client = await AuthenticatedClientAsync();
 
-        var response = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -242,25 +228,22 @@ public class ApiTests : IAsyncLifetime
     [Fact]
     public async Task Accounts_GetByFiscalYear_UnknownFiscalYear_Returns404()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync("/api/v1/fiscal-years/999999/accounts");
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/accounts");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task Accounts_GetById_ReturnsCorrectAccount()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
+        var client = await AuthenticatedClientAsync();
 
-        var listResponse = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var listResponse = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
         var accounts = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
         var cashAccount = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910");
         var accountId = cashAccount.GetProperty("id").GetInt32();
 
-        var response = await _client.GetAsync($"/api/v1/accounts/{accountId}");
+        var response = await client.GetAsync($"/api/v1/accounts/{accountId}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -271,10 +254,8 @@ public class ApiTests : IAsyncLifetime
     [Fact]
     public async Task Accounts_GetById_UnknownId_Returns404()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync("/api/v1/accounts/999999");
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/accounts/999999");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -283,10 +264,8 @@ public class ApiTests : IAsyncLifetime
     {
         var (_, _, otherAccountId) = await SeedSecondTenantAsync();
 
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync($"/api/v1/accounts/{otherAccountId}");
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/accounts/{otherAccountId}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -295,10 +274,9 @@ public class ApiTests : IAsyncLifetime
     [Fact]
     public async Task JournalEntries_List_ReturnsPaginatedResult()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
+        var client = await AuthenticatedClientAsync();
 
-        var response = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?page=1&pageSize=10");
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?page=1&pageSize=10");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -311,20 +289,17 @@ public class ApiTests : IAsyncLifetime
     [Fact]
     public async Task JournalEntries_List_UnknownFiscalYear_Returns404()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync("/api/v1/fiscal-years/999999/journal-entries");
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/journal-entries");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task JournalEntries_Create_ValidEntry_Returns201WithLocation()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
+        var client = await AuthenticatedClientAsync();
 
-        var accountsResp = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
         var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
         var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
         var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
@@ -340,7 +315,7 @@ public class ApiTests : IAsyncLifetime
             }
         };
 
-        var response = await _client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", body);
+        var response = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", body);
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.NotNull(response.Headers.Location);
 
@@ -352,10 +327,9 @@ public class ApiTests : IAsyncLifetime
     [Fact]
     public async Task JournalEntries_Create_UnbalancedLines_Returns400()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
+        var client = await AuthenticatedClientAsync();
 
-        var accountsResp = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
         var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
         var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
         var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
@@ -371,17 +345,16 @@ public class ApiTests : IAsyncLifetime
             }
         };
 
-        var response = await _client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", body);
+        var response = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", body);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task JournalEntries_Delete_DraftEntry_Returns204()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
+        var client = await AuthenticatedClientAsync();
 
-        var accountsResp = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
         var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
         var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
         var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
@@ -396,32 +369,29 @@ public class ApiTests : IAsyncLifetime
                 new { accountId = revenueId, debitAmount = 0m, creditAmount = 500m }
             }
         };
-        var createResp = await _client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
         Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
         var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
         var entryId = created.GetProperty("id").GetInt32();
 
-        var deleteResp = await _client.DeleteAsync($"/api/v1/journal-entries/{entryId}");
+        var deleteResp = await client.DeleteAsync($"/api/v1/journal-entries/{entryId}");
         Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
     }
 
     [Fact]
     public async Task JournalEntries_Delete_UnknownId_Returns404()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.DeleteAsync("/api/v1/journal-entries/999999");
+        var client = await AuthenticatedClientAsync();
+        var response = await client.DeleteAsync("/api/v1/journal-entries/999999");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task JournalEntries_GetById_ReturnsEntryWithLines()
     {
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
+        var client = await AuthenticatedClientAsync();
 
-        var accountsResp = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
         var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
         var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
         var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
@@ -436,11 +406,11 @@ public class ApiTests : IAsyncLifetime
                 new { accountId = revenueId, debitAmount = 0m, creditAmount = 200m }
             }
         };
-        var createResp = await _client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
         var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
         var entryId = created.GetProperty("id").GetInt32();
 
-        var response = await _client.GetAsync($"/api/v1/journal-entries/{entryId}");
+        var response = await client.GetAsync($"/api/v1/journal-entries/{entryId}");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -453,7 +423,6 @@ public class ApiTests : IAsyncLifetime
     {
         var (_, otherFiscalYearId, otherAccountId) = await SeedSecondTenantAsync();
 
-        // Seed a journal entry directly into the second tenant's fiscal year
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var otherEntry = new JournalEntry
@@ -470,10 +439,8 @@ public class ApiTests : IAsyncLifetime
         db.JournalEntries.Add(otherEntry);
         await db.SaveChangesAsync();
 
-        var token = await GetBearerTokenAsync();
-        UseToken(token);
-
-        var response = await _client.GetAsync($"/api/v1/journal-entries/{otherEntry.Id}");
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/journal-entries/{otherEntry.Id}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }

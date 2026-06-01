@@ -5,9 +5,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.RateLimiting;
 using OpenIddict.Abstractions;
+using Microsoft.AspNetCore;
 using OpenIddict.Server.AspNetCore;
 using System.Security.Claims;
-using Microsoft.AspNetCore;
 
 namespace KoalaBooks.Web.Pages.Connect;
 

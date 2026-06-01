@@ -1,13 +1,13 @@
 using KoalaBooks.Domain.Enums;
+using System.Text.Json.Serialization;
 
 namespace KoalaBooks.Web.Models.Api;
 
-// AccountClass is serialised as a string (e.g. "Asset") via JsonStringEnumConverter in Program.cs
 public record AccountResponse(
     int Id,
     string AccountNumber,
     string Name,
-    AccountClass AccountClass,
+    [property: JsonConverter(typeof(JsonStringEnumConverter))] AccountClass AccountClass,
     bool IsActive,
     decimal IncomingBalance,
     decimal OutgoingBalance);
