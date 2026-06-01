@@ -197,6 +197,30 @@ public class ApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    private async Task<(int orgId, int fiscalYearId, int accountId)> SeedSecondTenantAsync()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var org2 = new Organisation { Name = "Other Org", Slug = "other-org", LegalForm = LegalForm.Aktiebolag };
+        db.Organisations.Add(org2);
+        await db.SaveChangesAsync();
+
+        var fy2 = new FiscalYear
+        {
+            OrganisationId = org2.Id, Name = "2025",
+            StartDate = new DateOnly(2025, 1, 1), EndDate = new DateOnly(2025, 12, 31)
+        };
+        db.FiscalYears.Add(fy2);
+        await db.SaveChangesAsync();
+
+        var account2 = new Account { AccountNumber = "1910", Name = "Cash", AccountClass = AccountClass.Asset, FiscalYearId = fy2.Id, IsActive = true };
+        db.Accounts.Add(account2);
+        await db.SaveChangesAsync();
+
+        return (org2.Id, fy2.Id, account2.Id);
+    }
+
     // ── Account tests ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -251,6 +275,18 @@ public class ApiTests : IAsyncLifetime
         UseToken(token);
 
         var response = await _client.GetAsync("/api/v1/accounts/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Accounts_GetById_CrossTenant_Returns404()
+    {
+        var (_, _, otherAccountId) = await SeedSecondTenantAsync();
+
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync($"/api/v1/accounts/{otherAccountId}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -410,5 +446,34 @@ public class ApiTests : IAsyncLifetime
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("Read-back test", json.GetProperty("description").GetString());
         Assert.Equal(2, json.GetProperty("lines").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task JournalEntries_GetById_CrossTenant_Returns404()
+    {
+        var (_, otherFiscalYearId, otherAccountId) = await SeedSecondTenantAsync();
+
+        // Seed a journal entry directly into the second tenant's fiscal year
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherEntry = new JournalEntry
+        {
+            FiscalYearId = otherFiscalYearId,
+            Date = new DateOnly(2025, 1, 15),
+            Description = "Other tenant entry",
+            Lines =
+            [
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 100, CreditAmount = 0 },
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 0, CreditAmount = 100 }
+            ]
+        };
+        db.JournalEntries.Add(otherEntry);
+        await db.SaveChangesAsync();
+
+        var token = await GetBearerTokenAsync();
+        UseToken(token);
+
+        var response = await _client.GetAsync($"/api/v1/journal-entries/{otherEntry.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }

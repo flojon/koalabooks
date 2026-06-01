@@ -98,13 +98,14 @@ public class JournalEntriesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
     {
+        var entry = await _journalEntryService.GetByIdAsync(id);
+        if (entry is null) return NotFound();
+
         var error = await _journalEntryService.DeleteDraftAsync(id);
-        return error switch
-        {
-            null => NoContent(),
-            "Journal entry not found." => NotFound(),
-            _ => Problem(detail: error, statusCode: StatusCodes.Status400BadRequest)
-        };
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return NoContent();
     }
 
     private static JournalEntryResponse MapEntry(JournalEntry e) =>
