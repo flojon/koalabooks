@@ -22,6 +22,7 @@ public class DocumentService(
         "application/pdf",
         "image/png",
         "image/jpeg",
+        "image/jpg", // Some browsers report .jpg files as image/jpg rather than image/jpeg
     ];
 
     public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, byte[] data)
