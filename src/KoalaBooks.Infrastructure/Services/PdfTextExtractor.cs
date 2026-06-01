@@ -1,11 +1,12 @@
 using KoalaBooks.Domain.Interfaces;
+using Microsoft.Extensions.Logging;
 using System.Text;
 using System.Text.RegularExpressions;
 using UglyToad.PdfPig;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-public partial class PdfTextExtractor : IDocumentExtractor
+public partial class PdfTextExtractor(ILogger<PdfTextExtractor> logger) : IDocumentExtractor
 {
     public Task<ExtractionResult> ExtractAsync(string fileName, string contentType, byte[] data)
     {
@@ -17,8 +18,9 @@ public partial class PdfTextExtractor : IDocumentExtractor
             var text = ExtractText(data);
             return Task.FromResult(Parse(text));
         }
-        catch
+        catch (Exception ex)
         {
+            logger.LogWarning(ex, "PDF text extraction failed for {FileName}", fileName);
             return Task.FromResult(new ExtractionResult(null, null, null, null, null, null, null));
         }
     }
@@ -74,7 +76,11 @@ public partial class PdfTextExtractor : IDocumentExtractor
     private static string? ExtractInvoiceNumber(string text)
     {
         var match = InvoiceNumberPattern().Match(text);
-        return match.Success ? match.Groups[1].Value.Trim() : null;
+        if (!match.Success) return null;
+        var value = match.Groups[1].Value.Trim();
+        if (string.IsNullOrEmpty(value))
+            value = match.Groups[2].Value.Trim();
+        return string.IsNullOrEmpty(value) ? null : value;
     }
 
     private static string? ExtractSupplier(string text)
@@ -83,7 +89,7 @@ public partial class PdfTextExtractor : IDocumentExtractor
         {
             var trimmed = line.Trim();
             if (Regex.IsMatch(trimmed, @"\b(AB|KB|HB|Inc|Ltd|GmbH|AS)\b"))
-                return trimmed.Length > 100 ? null : trimmed;
+                return trimmed.Length > 100 ? trimmed[..100] : trimmed;
         }
         return null;
     }
