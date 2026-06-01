@@ -14,4 +14,5 @@ public class JournalEntry
     public FiscalYear FiscalYear { get; set; } = null!;
 
     public List<JournalEntryLine> Lines { get; set; } = [];
+    public List<Document> Documents { get; set; } = [];
 }
