@@ -10,6 +10,6 @@ public class CreateJournalEntryRequest
     [Required]
     public string Description { get; init; } = "";
 
-    [Required, MinLength(1)]
+    [MinLength(1)]
     public List<CreateJournalEntryLineRequest> Lines { get; init; } = [];
 }
