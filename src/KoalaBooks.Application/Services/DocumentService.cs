@@ -1,16 +1,28 @@
-// src/KoalaBooks.Application/Services/DocumentService.cs
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace KoalaBooks.Application.Services;
 
-public class DocumentService(AppDbContext db, IDocumentStorage storage, IDocumentExtractor extractor, ICurrentUser currentUser)
+public class DocumentService(
+    AppDbContext db,
+    IDocumentStorage storage,
+    IDocumentExtractor extractor,
+    ICurrentUser currentUser,
+    ILogger<DocumentService> logger)
 {
     private const long MaxBytes = 10 * 1024 * 1024;
+
+    private static readonly HashSet<string> AllowedContentTypes =
+    [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+    ];
 
     public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, byte[] data)
     {
@@ -18,6 +30,8 @@ public class DocumentService(AppDbContext db, IDocumentStorage storage, IDocumen
             return (null, "Filen är för stor (max 10 MB).");
         if (currentUser.OrganisationId is null)
             return (null, "Ingen aktiv organisation.");
+        if (!AllowedContentTypes.Contains(contentType))
+            return (null, "Otillåten filtyp. Tillåtna typer: PDF, PNG, JPEG.");
 
         var doc = new Document
         {
@@ -47,12 +61,14 @@ public class DocumentService(AppDbContext db, IDocumentStorage storage, IDocumen
         {
             var result = await extractor.ExtractAsync(fileName, contentType, data);
             doc.SuggestedType = result.SuggestedType;
-            doc.ClassifiedType = result.SuggestedType;
             doc.ExtractedDataJson = result.SuggestedType is not null
                 ? JsonSerializer.Serialize(result)
                 : null;
         }
-        catch { /* extraction failure must not block upload */ }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Extraction failed for {FileName} — upload proceeds without suggestion", fileName);
+        }
 
         await db.SaveChangesAsync();
         return (doc, null);
@@ -67,67 +83,22 @@ public class DocumentService(AppDbContext db, IDocumentStorage storage, IDocumen
         return null;
     }
 
-    public async Task<List<DocumentMeta>> GetPendingAsync() =>
-        await db.Documents
+    public Task<List<DocumentMeta>> GetPendingAsync() =>
+        SelectMetaAsync(db.Documents
             .Where(d => !d.JournalEntries.Any() && !d.SupplierInvoices.Any() && !d.CustomerInvoices.Any())
-            .OrderByDescending(d => d.UploadedAt)
-            .Select(d => new DocumentMeta
-            {
-                Id = d.Id,
-                FileName = d.FileName,
-                ContentType = d.ContentType,
-                FileSize = d.FileSize,
-                UploadedAt = d.UploadedAt,
-                ClassifiedType = d.ClassifiedType,
-                SuggestedType = d.SuggestedType,
-                ExtractedDataJson = d.ExtractedDataJson
-            })
-            .ToListAsync();
+            .OrderByDescending(d => d.UploadedAt));
 
-    public async Task<List<DocumentMeta>> GetLinkedAsync(DocumentEntityType entityType, int entityId) =>
-        entityType switch
+    public Task<List<DocumentMeta>> GetLinkedAsync(DocumentEntityType entityType, int entityId)
+    {
+        var query = entityType switch
         {
-            DocumentEntityType.JournalEntry =>
-                await db.Documents.Where(d => d.JournalEntries.Any(j => j.Id == entityId))
-                    .Select(d => new DocumentMeta
-                    {
-                        Id = d.Id,
-                        FileName = d.FileName,
-                        ContentType = d.ContentType,
-                        FileSize = d.FileSize,
-                        UploadedAt = d.UploadedAt,
-                        ClassifiedType = d.ClassifiedType,
-                        SuggestedType = d.SuggestedType,
-                        ExtractedDataJson = d.ExtractedDataJson
-                    }).ToListAsync(),
-            DocumentEntityType.SupplierInvoice =>
-                await db.Documents.Where(d => d.SupplierInvoices.Any(s => s.Id == entityId))
-                    .Select(d => new DocumentMeta
-                    {
-                        Id = d.Id,
-                        FileName = d.FileName,
-                        ContentType = d.ContentType,
-                        FileSize = d.FileSize,
-                        UploadedAt = d.UploadedAt,
-                        ClassifiedType = d.ClassifiedType,
-                        SuggestedType = d.SuggestedType,
-                        ExtractedDataJson = d.ExtractedDataJson
-                    }).ToListAsync(),
-            DocumentEntityType.CustomerInvoice =>
-                await db.Documents.Where(d => d.CustomerInvoices.Any(c => c.Id == entityId))
-                    .Select(d => new DocumentMeta
-                    {
-                        Id = d.Id,
-                        FileName = d.FileName,
-                        ContentType = d.ContentType,
-                        FileSize = d.FileSize,
-                        UploadedAt = d.UploadedAt,
-                        ClassifiedType = d.ClassifiedType,
-                        SuggestedType = d.SuggestedType,
-                        ExtractedDataJson = d.ExtractedDataJson
-                    }).ToListAsync(),
-            _ => []
+            DocumentEntityType.JournalEntry    => db.Documents.Where(d => d.JournalEntries.Any(j => j.Id == entityId)),
+            DocumentEntityType.SupplierInvoice => db.Documents.Where(d => d.SupplierInvoices.Any(s => s.Id == entityId)),
+            DocumentEntityType.CustomerInvoice => db.Documents.Where(d => d.CustomerInvoices.Any(c => c.Id == entityId)),
+            _                                  => db.Documents.Where(_ => false)
         };
+        return SelectMetaAsync(query);
+    }
 
     public async Task<Dictionary<int, int>> GetCountsForJournalEntriesAsync(IEnumerable<int> entryIds)
     {
@@ -195,17 +166,18 @@ public class DocumentService(AppDbContext db, IDocumentStorage storage, IDocumen
         return (doc, null);
     }
 
-    private static DocumentMeta ToMeta(Document d) => new()
-    {
-        Id = d.Id,
-        FileName = d.FileName,
-        ContentType = d.ContentType,
-        FileSize = d.FileSize,
-        UploadedAt = d.UploadedAt,
-        ClassifiedType = d.ClassifiedType,
-        SuggestedType = d.SuggestedType,
-        ExtractedDataJson = d.ExtractedDataJson
-    };
+    private static Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query) =>
+        query.Select(d => new DocumentMeta
+        {
+            Id = d.Id,
+            FileName = d.FileName,
+            ContentType = d.ContentType,
+            FileSize = d.FileSize,
+            UploadedAt = d.UploadedAt,
+            ClassifiedType = d.ClassifiedType,
+            SuggestedType = d.SuggestedType,
+            ExtractedDataJson = d.ExtractedDataJson
+        }).ToListAsync();
 }
 
 public class DocumentMeta

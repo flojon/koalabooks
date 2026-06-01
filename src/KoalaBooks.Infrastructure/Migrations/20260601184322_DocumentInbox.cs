@@ -152,10 +152,10 @@ namespace KoalaBooks.Infrastructure.Migrations
     JOIN ""FiscalYears"" fy ON fy.""Id"" = j.""FiscalYearId"";
 ");
 
-            // Step C: Update StorageKey to Document.Id
+            // Step C: Update StorageKey to Document.Id (use correlation column to scope update)
             migrationBuilder.Sql(@"
     UPDATE ""Documents"" SET ""StorageKey"" = CAST(""Id"" AS TEXT)
-    WHERE ""StorageKey"" = '0';
+    WHERE _src_attachment_id IS NOT NULL;
 ");
 
             // Step D: Insert DocumentData using the correlation column
@@ -184,6 +184,8 @@ namespace KoalaBooks.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Forward-only migration: data from JournalEntryAttachments was migrated to Documents/DocumentData
+            // and is not restored on rollback. Rolling back this migration will result in data loss.
             migrationBuilder.DropTable(
                 name: "DocumentCustomerInvoices");
 

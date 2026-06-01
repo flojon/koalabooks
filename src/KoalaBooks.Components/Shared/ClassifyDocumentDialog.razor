@@ -63,7 +63,7 @@
                         </div>
                         <div class="form-group">
                             <label>Fakturadatum <span style="color:#ef4444;">*</span></label>
-                            <DateInput @bind-Value="_invoiceDate" />
+                            <DateInput @bind-Value="_date" />
                         </div>
                         <div class="form-group">
                             <label>Förfallodatum <span style="color:#ef4444;">*</span></label>
@@ -94,7 +94,7 @@
                         </div>
                         <div class="form-group">
                             <label>Fakturadatum <span style="color:#ef4444;">*</span></label>
-                            <DateInput @bind-Value="_invoiceDate" />
+                            <DateInput @bind-Value="_date" />
                         </div>
                         <div class="form-group">
                             <label>Förfallodatum <span style="color:#ef4444;">*</span></label>
@@ -123,7 +123,7 @@
                     {
                         <div class="form-group">
                             <label>Datum <span style="color:#ef4444;">*</span></label>
-                            <DateInput @bind-Value="_invoiceDate" />
+                            <DateInput @bind-Value="_date" />
                         </div>
                         <div class="form-group">
                             <label>Beskrivning <span style="color:#ef4444;">*</span></label>
@@ -221,7 +221,7 @@
     private string _type = "";
     private string _supplier = "";
     private string _invoiceNumber = "";
-    private DateTime _invoiceDate = DateTime.Today;
+    private DateTime _date = DateTime.Today;
     private DateTime _dueDate = DateTime.Today.AddDays(30);
     private decimal _amountExcl;
     private decimal _vatAmount;
@@ -256,7 +256,7 @@
                     _invoiceNumber = ex.InvoiceNumber ?? "";
                     _amountExcl = ex.Amount ?? 0;
                     _vatAmount = ex.VatAmount ?? 0;
-                    if (ex.InvoiceDate.HasValue) _invoiceDate = ex.InvoiceDate.Value.ToDateTime(TimeOnly.MinValue);
+                    if (ex.InvoiceDate.HasValue) _date = ex.InvoiceDate.Value.ToDateTime(TimeOnly.MinValue);
                     if (ex.DueDate.HasValue) _dueDate = ex.DueDate.Value.ToDateTime(TimeOnly.MinValue);
                 }
             }
@@ -309,7 +309,7 @@
             FiscalYearId = _fiscalYear.Id,
             SupplierName = _supplier.Trim(),
             InvoiceNumber = string.IsNullOrWhiteSpace(_invoiceNumber) ? null : _invoiceNumber.Trim(),
-            InvoiceDate = DateOnly.FromDateTime(_invoiceDate),
+            InvoiceDate = DateOnly.FromDateTime(_date),
             DueDate = DateOnly.FromDateTime(_dueDate),
             AmountExclVat = _amountExcl,
             VatAmount = _vatAmount,
@@ -337,7 +337,7 @@
             FiscalYearId = _fiscalYear.Id,
             CustomerId = _customerId,
             CustomerName = customer.Name,
-            InvoiceDate = DateOnly.FromDateTime(_invoiceDate),
+            InvoiceDate = DateOnly.FromDateTime(_date),
             DueDate = DateOnly.FromDateTime(_dueDate),
             AmountExclVat = _amountExcl,
             VatAmount = _vatAmount,
@@ -384,7 +384,7 @@
         var entry = new JournalEntry
         {
             FiscalYearId = _fiscalYear.Id,
-            Date = DateOnly.FromDateTime(_invoiceDate),
+            Date = DateOnly.FromDateTime(_date),
             Description = _description.Trim(),
             Lines = validLines
         };

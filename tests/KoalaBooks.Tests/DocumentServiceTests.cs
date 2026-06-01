@@ -23,13 +23,23 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UploadAsync_SetsClassifiedTypeFromFilename()
+    public async Task UploadAsync_SetsSuggestedTypeFromFilename_ClassifiedTypeRemainsNull()
     {
         var svc = _fx.MakeDocumentService();
         var (doc, _) = await svc.UploadAsync("leverantörsfaktura.pdf", "application/pdf", []);
 
-        Assert.Equal("SupplierInvoice", doc!.ClassifiedType);
-        Assert.Equal("SupplierInvoice", doc.SuggestedType);
+        Assert.Equal("SupplierInvoice", doc!.SuggestedType);
+        Assert.Null(doc.ClassifiedType);
+    }
+
+    [Fact]
+    public async Task UploadAsync_RejectsDisallowedContentType()
+    {
+        var svc = _fx.MakeDocumentService();
+        var (doc, err) = await svc.UploadAsync("bad.html", "text/html", [1, 2, 3]);
+
+        Assert.Null(doc);
+        Assert.NotNull(err);
     }
 
     [Fact]

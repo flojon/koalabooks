@@ -48,9 +48,9 @@ public partial class PdfTextExtractor(ILogger<PdfTextExtractor> logger) : IDocum
 
     private static string? DetectType(string text)
     {
-        if (Regex.IsMatch(text, @"[Kk]undfaktura|[Ss]ales [Ii]nvoice", RegexOptions.IgnoreCase))
+        if (Regex.IsMatch(text, @"kundfaktura|sales invoice", RegexOptions.IgnoreCase))
             return "CustomerInvoice";
-        if (Regex.IsMatch(text, @"[Ff]aktura|[Ii]nvoice", RegexOptions.IgnoreCase))
+        if (Regex.IsMatch(text, @"faktura|invoice", RegexOptions.IgnoreCase))
             return "SupplierInvoice";
         return null;
     }
@@ -85,6 +85,8 @@ public partial class PdfTextExtractor(ILogger<PdfTextExtractor> logger) : IDocum
 
     private static string? ExtractSupplier(string text)
     {
+        // TODO: "AS" and "Inc" produce false positives on common English words; replace with
+        // org-number heuristics or AI extraction when available.
         foreach (var line in text.Split('\n'))
         {
             var trimmed = line.Trim();

@@ -188,6 +188,6 @@ public class TestFixture : IDisposable
         var extractor = new CompositeExtractor(new FilenameExtractor(), new PdfTextExtractor(
             NullLogger<PdfTextExtractor>.Instance));
         var storage = new DbDocumentStorage(Db);
-        return new DocumentService(Db, storage, extractor, _currentUser);
+        return new DocumentService(Db, storage, extractor, _currentUser, NullLogger<DocumentService>.Instance);
     }
 }
