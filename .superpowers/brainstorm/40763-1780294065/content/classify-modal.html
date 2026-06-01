@@ -1,0 +1,120 @@
+<h2>Klassificeringsmodal — layout</h2>
+<p class="subtitle">Hur ska fördelningen se ut i den breda modalen?</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0000004a; border-radius:6px; padding:10px; font-size:0.75rem; font-family:sans-serif; color:#334155;">
+        <div style="background:#fff; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.2); overflow:hidden; display:flex; height:160px;">
+          <!-- Left: PDF preview, 60% -->
+          <div style="flex:3; background:#f1f5f9; display:flex; flex-direction:column; align-items:center; justify-content:center; border-right:1px solid #e2e8f0; padding:8px; gap:4px;">
+            <div style="font-size:2rem;">📄</div>
+            <div style="font-size:0.65rem; color:#64748b;">faktura-leverantör.pdf</div>
+            <div style="background:#e2e8f0; border-radius:3px; width:90%; height:55px; display:flex; align-items:center; justify-content:center; font-size:0.6rem; color:#94a3b8;">PDF-förhandsgranskning</div>
+          </div>
+          <!-- Right: form, 40% -->
+          <div style="flex:2; padding:10px; display:flex; flex-direction:column; gap:5px; overflow:hidden;">
+            <div style="font-weight:600; font-size:0.72rem;">Klassificera</div>
+            <div style="font-size:0.65rem; color:#0284c7; background:#f0f9ff; border-radius:3px; padding:3px 5px;">Förslag: Leverantörsfaktura · 2 450 kr</div>
+            <select style="font-size:0.62rem; border:1px solid #e2e8f0; border-radius:3px; padding:2px;">
+              <option>Leverantörsfaktura</option>
+              <option>Kundfaktura</option>
+              <option>Verifikation</option>
+            </select>
+            <div style="font-size:0.62rem;">Leverantör: <input style="width:90px; font-size:0.6rem; border:1px solid #e2e8f0;" value="Elbolaget AB" /></div>
+            <div style="font-size:0.62rem;">Belopp: <input style="width:70px; font-size:0.6rem; border:1px solid #e2e8f0;" value="2 450,00" /></div>
+            <div style="margin-top:auto; display:flex; gap:4px;">
+              <span style="background:#16a34a; color:#fff; border-radius:3px; padding:2px 8px; font-size:0.62rem;">Skapa</span>
+              <span style="background:#f1f5f9; color:#475569; border-radius:3px; padding:2px 8px; font-size:0.62rem;">Avbryt</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — 60 / 40: bred förhandsgranskning</h3>
+      <p>Dokumentet tar mer plats — bra för att läsa fakturan och verifiera mot fälten. Formuläret är kompakt till höger.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0000004a; border-radius:6px; padding:10px; font-size:0.75rem; font-family:sans-serif; color:#334155;">
+        <div style="background:#fff; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.2); overflow:hidden; display:flex; height:160px;">
+          <!-- Left: PDF preview, 50% -->
+          <div style="flex:1; background:#f1f5f9; display:flex; flex-direction:column; align-items:center; justify-content:center; border-right:1px solid #e2e8f0; padding:8px; gap:4px;">
+            <div style="font-size:2rem;">📄</div>
+            <div style="font-size:0.65rem; color:#64748b;">faktura-leverantör.pdf</div>
+            <div style="background:#e2e8f0; border-radius:3px; width:90%; height:50px; display:flex; align-items:center; justify-content:center; font-size:0.6rem; color:#94a3b8;">PDF-förhandsgranskning</div>
+          </div>
+          <!-- Right: form, 50% -->
+          <div style="flex:1; padding:10px; display:flex; flex-direction:column; gap:4px; overflow:hidden;">
+            <div style="font-weight:600; font-size:0.72rem;">Klassificera</div>
+            <div style="font-size:0.65rem; color:#0284c7; background:#f0f9ff; border-radius:3px; padding:3px 5px;">Förslag: Leverantörsfaktura · 2 450 kr</div>
+            <select style="font-size:0.62rem; border:1px solid #e2e8f0; border-radius:3px; padding:2px;">
+              <option>Leverantörsfaktura</option>
+              <option>Kundfaktura</option>
+              <option>Verifikation</option>
+            </select>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:3px; font-size:0.62rem;">
+              <div>Leverantör: <input style="width:100%; font-size:0.6rem; border:1px solid #e2e8f0;" value="Elbolaget AB" /></div>
+              <div>Fakt.nr: <input style="width:100%; font-size:0.6rem; border:1px solid #e2e8f0;" value="INV-2241" /></div>
+              <div>Belopp: <input style="width:100%; font-size:0.6rem; border:1px solid #e2e8f0;" value="2 450,00" /></div>
+              <div>Datum: <input style="width:100%; font-size:0.6rem; border:1px solid #e2e8f0;" value="2026-05-15" /></div>
+            </div>
+            <div style="margin-top:auto; display:flex; gap:4px;">
+              <span style="background:#16a34a; color:#fff; border-radius:3px; padding:2px 8px; font-size:0.62rem;">Skapa</span>
+              <span style="background:#f1f5f9; color:#475569; border-radius:3px; padding:2px 8px; font-size:0.62rem;">Avbryt</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — 50 / 50: lika fördelning</h3>
+      <p>Balanserat — gott om utrymme för både dokumentet och ett fullständigt formulär (leverantör, fakturanummer, belopp, datum, moms).</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0000004a; border-radius:6px; padding:10px; font-size:0.75rem; font-family:sans-serif; color:#334155;">
+        <div style="background:#fff; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.2); overflow:hidden; display:flex; flex-direction:column; height:160px;">
+          <!-- Top: PDF preview strip -->
+          <div style="background:#f1f5f9; border-bottom:1px solid #e2e8f0; padding:6px 10px; display:flex; align-items:center; gap:8px;">
+            <span style="font-size:1.2rem;">📄</span>
+            <span style="font-size:0.65rem; color:#64748b; flex:1;">faktura-leverantör.pdf</span>
+            <span style="font-size:0.65rem; color:#0284c7; background:#f0f9ff; border-radius:3px; padding:2px 6px;">Förslag: Leverantörsfaktura · 2 450 kr</span>
+          </div>
+          <!-- Bottom: form area -->
+          <div style="flex:1; padding:8px 10px; display:flex; flex-direction:column; gap:5px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.65rem; font-weight:600;">Typ:</span>
+              <select style="font-size:0.62rem; border:1px solid #e2e8f0; border-radius:3px; padding:2px;">
+                <option>Leverantörsfaktura</option>
+                <option>Kundfaktura</option>
+                <option>Verifikation</option>
+              </select>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; font-size:0.62rem;">
+              <div>Leverantör<br/><input style="width:100%; font-size:0.6rem; border:1px solid #e2e8f0;" value="Elbolaget AB" /></div>
+              <div>Fakt.nr<br/><input style="width:100%; font-size:0.6rem; border:1px solid #e2e8f0;" value="INV-2241" /></div>
+              <div>Belopp<br/><input style="width:100%; font-size:0.6rem; border:1px solid #e2e8f0;" value="2 450,00" /></div>
+              <div>Datum<br/><input style="width:100%; font-size:0.6rem; border:1px solid #e2e8f0;" value="2026-05-15" /></div>
+            </div>
+            <div style="margin-top:auto; display:flex; gap:4px;">
+              <span style="background:#16a34a; color:#fff; border-radius:3px; padding:2px 8px; font-size:0.62rem;">Skapa</span>
+              <span style="background:#f1f5f9; color:#475569; border-radius:3px; padding:2px 8px; font-size:0.62rem;">Avbryt</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Stående: dokument ovan, formulär under</h3>
+      <p>Dokumentnamnet och förslaget visas som en header-remsa. Formuläret fyller ut underdelen i en horisontell rad. Kompakt och enkelt, men ingen riktig dokumentvisning.</p>
+    </div>
+  </div>
+
+</div>

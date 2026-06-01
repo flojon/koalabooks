@@ -1,0 +1,96 @@
+<h2>Datamodell</h2>
+<p class="subtitle">Document ersätter JournalEntryAttachment och blir universell dokumenttabell</p>
+
+<div class="mockup">
+  <div class="mockup-header">Entitetsrelationer</div>
+  <div class="mockup-body">
+    <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; font-family:monospace; font-size:0.78rem;">
+
+      <!-- Document entity -->
+      <div style="min-width:200px;">
+        <div style="background:#6366f1; color:#fff; border-radius:6px 6px 0 0; padding:6px 12px; font-weight:700; font-size:0.82rem;">Document <span style="font-size:0.65rem; opacity:0.8;">(ny)</span></div>
+        <div style="border:2px solid #6366f1; border-top:none; border-radius:0 0 6px 6px; padding:8px 12px; background:#f5f3ff;">
+          <div style="color:#475569; font-size:0.7rem; margin-bottom:4px;">PK &nbsp;Id</div>
+          <div style="color:#475569; font-size:0.7rem; margin-bottom:4px;">FK &nbsp;OrganisationId</div>
+          <div style="margin-top:6px; border-top:1px solid #e2e8f0; padding-top:6px; color:#334155; font-size:0.7rem; line-height:1.7;">
+            FileName<br/>
+            ContentType<br/>
+            FileSize<br/>
+            Data (byte[])<br/>
+            UploadedAt<br/>
+            <span style="color:#7c3aed;">SuggestedType?</span><br/>
+            <span style="color:#7c3aed;">ExtractedDataJson?</span>
+          </div>
+          <div style="margin-top:8px; border-top:1px solid #e2e8f0; padding-top:6px; font-size:0.68rem; color:#6366f1; font-weight:600;">
+            many-to-many →<br/>JournalEntry<br/>SupplierInvoice<br/>CustomerInvoice
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow area -->
+      <div style="display:flex; flex-direction:column; justify-content:space-around; padding-top:40px; gap:16px; color:#94a3b8; font-size:0.7rem; text-align:center; min-width:100px;">
+        <div>
+          <div style="font-size:1rem;">⟷</div>
+          <div style="background:#f1f5f9; border-radius:4px; padding:3px 6px; font-size:0.62rem; color:#64748b;">DocumentJournalEntries</div>
+          <div style="font-size:0.6rem; color:#94a3b8;">(join table)</div>
+        </div>
+        <div>
+          <div style="font-size:1rem;">⟷</div>
+          <div style="background:#f1f5f9; border-radius:4px; padding:3px 6px; font-size:0.62rem; color:#64748b;">DocumentSupplierInvoices</div>
+          <div style="font-size:0.6rem; color:#94a3b8;">(join table)</div>
+        </div>
+        <div>
+          <div style="font-size:1rem;">⟷</div>
+          <div style="background:#f1f5f9; border-radius:4px; padding:3px 6px; font-size:0.62rem; color:#64748b;">DocumentCustomerInvoices</div>
+          <div style="font-size:0.6rem; color:#94a3b8;">(join table)</div>
+        </div>
+      </div>
+
+      <!-- Target entities -->
+      <div style="display:flex; flex-direction:column; gap:12px;">
+
+        <div style="min-width:180px;">
+          <div style="background:#0f766e; color:#fff; border-radius:6px 6px 0 0; padding:5px 10px; font-weight:700; font-size:0.78rem;">JournalEntry <span style="font-size:0.6rem; opacity:0.8;">(befintlig)</span></div>
+          <div style="border:2px solid #0f766e; border-top:none; border-radius:0 0 6px 6px; padding:6px 10px; background:#f0fdfa; font-size:0.68rem; color:#475569; line-height:1.6;">
+            Id, EntryNumber, Date<br/>
+            Description, IsPosted…<br/>
+            <span style="color:#0f766e;">← Documents (ny nav)</span>
+          </div>
+        </div>
+
+        <div style="min-width:180px;">
+          <div style="background:#b45309; color:#fff; border-radius:6px 6px 0 0; padding:5px 10px; font-weight:700; font-size:0.78rem;">SupplierInvoice <span style="font-size:0.6rem; opacity:0.8;">(befintlig)</span></div>
+          <div style="border:2px solid #b45309; border-top:none; border-radius:0 0 6px 6px; padding:6px 10px; background:#fffbeb; font-size:0.68rem; color:#475569; line-height:1.6;">
+            Id, SupplierName, Amount…<br/>
+            <span style="color:#b45309;">← Documents (ny nav)</span>
+          </div>
+        </div>
+
+        <div style="min-width:180px;">
+          <div style="background:#1d4ed8; color:#fff; border-radius:6px 6px 0 0; padding:5px 10px; font-weight:700; font-size:0.78rem;">CustomerInvoice <span style="font-size:0.6rem; opacity:0.8;">(befintlig)</span></div>
+          <div style="border:2px solid #1d4ed8; border-top:none; border-radius:0 0 6px 6px; padding:6px 10px; background:#eff6ff; font-size:0.68rem; color:#475569; line-height:1.6;">
+            Id, CustomerId, Amount…<br/>
+            <span style="color:#1d4ed8;">← Documents (ny nav)</span>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <div style="margin-top:16px; border-top:1px solid #e2e8f0; padding-top:12px; display:flex; gap:16px; flex-wrap:wrap; font-size:0.72rem;">
+      <div style="background:#fef3c7; border-radius:6px; padding:8px 12px; max-width:280px;">
+        <strong>Inkorg = inga kopplingar</strong><br/>
+        <span style="color:#64748b;">Document utan någon rad i join-tabellerna = obehandlat. Inkorgen filtrerar på detta.</span>
+      </div>
+      <div style="background:#dcfce7; border-radius:6px; padding:8px 12px; max-width:280px;">
+        <strong>Migration</strong><br/>
+        <span style="color:#64748b;">Befintliga JournalEntryAttachment-rader kopieras till Document + DocumentJournalEntries. Gamla tabellen tas bort.</span>
+      </div>
+      <div style="background:#e0e7ff; border-radius:6px; padding:8px 12px; max-width:280px;">
+        <strong>Ett dokument kan länkas till flera</strong><br/>
+        <span style="color:#64748b;">T.ex. en faktura-PDF länkad till både SupplierInvoice och den verifikation som skapas när fakturan bokförs.</span>
+      </div>
+    </div>
+  </div>
+</div>
