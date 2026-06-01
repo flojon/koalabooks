@@ -2,6 +2,7 @@ using KoalaBooks.Domain.Entities;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using QuestDocument = QuestPDF.Fluent.Document;
 
 namespace KoalaBooks.Web.Services;
 
@@ -13,7 +14,7 @@ public static class CustomerInvoicePdfGenerator
         var orgName = org?.Name ?? "KoalaBooks";
         var orgNumber = org?.OrgNumber;
 
-        return Document.Create(container =>
+        return QuestDocument.Create(container =>
         {
             container.Page(page =>
             {
