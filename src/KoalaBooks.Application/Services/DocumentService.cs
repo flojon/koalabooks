@@ -31,7 +31,17 @@ public class DocumentService(AppDbContext db, IDocumentStorage storage, IDocumen
         db.Documents.Add(doc);
         await db.SaveChangesAsync(); // gets doc.Id
 
-        doc.StorageKey = await storage.SaveAsync(doc.Id, contentType, data);
+        try
+        {
+            doc.StorageKey = await storage.SaveAsync(doc.Id, contentType, data);
+        }
+        catch (Exception ex)
+        {
+            // Storage failed — roll back the DB row to avoid orphaned metadata
+            db.Documents.Remove(doc);
+            await db.SaveChangesAsync();
+            return (null, $"Lagring misslyckades: {ex.Message}");
+        }
 
         try
         {
@@ -61,7 +71,17 @@ public class DocumentService(AppDbContext db, IDocumentStorage storage, IDocumen
         await db.Documents
             .Where(d => !d.JournalEntries.Any() && !d.SupplierInvoices.Any() && !d.CustomerInvoices.Any())
             .OrderByDescending(d => d.UploadedAt)
-            .Select(d => ToMeta(d))
+            .Select(d => new DocumentMeta
+            {
+                Id = d.Id,
+                FileName = d.FileName,
+                ContentType = d.ContentType,
+                FileSize = d.FileSize,
+                UploadedAt = d.UploadedAt,
+                ClassifiedType = d.ClassifiedType,
+                SuggestedType = d.SuggestedType,
+                ExtractedDataJson = d.ExtractedDataJson
+            })
             .ToListAsync();
 
     public async Task<List<DocumentMeta>> GetLinkedAsync(DocumentEntityType entityType, int entityId) =>
@@ -69,13 +89,43 @@ public class DocumentService(AppDbContext db, IDocumentStorage storage, IDocumen
         {
             DocumentEntityType.JournalEntry =>
                 await db.Documents.Where(d => d.JournalEntries.Any(j => j.Id == entityId))
-                    .Select(d => ToMeta(d)).ToListAsync(),
+                    .Select(d => new DocumentMeta
+                    {
+                        Id = d.Id,
+                        FileName = d.FileName,
+                        ContentType = d.ContentType,
+                        FileSize = d.FileSize,
+                        UploadedAt = d.UploadedAt,
+                        ClassifiedType = d.ClassifiedType,
+                        SuggestedType = d.SuggestedType,
+                        ExtractedDataJson = d.ExtractedDataJson
+                    }).ToListAsync(),
             DocumentEntityType.SupplierInvoice =>
                 await db.Documents.Where(d => d.SupplierInvoices.Any(s => s.Id == entityId))
-                    .Select(d => ToMeta(d)).ToListAsync(),
+                    .Select(d => new DocumentMeta
+                    {
+                        Id = d.Id,
+                        FileName = d.FileName,
+                        ContentType = d.ContentType,
+                        FileSize = d.FileSize,
+                        UploadedAt = d.UploadedAt,
+                        ClassifiedType = d.ClassifiedType,
+                        SuggestedType = d.SuggestedType,
+                        ExtractedDataJson = d.ExtractedDataJson
+                    }).ToListAsync(),
             DocumentEntityType.CustomerInvoice =>
                 await db.Documents.Where(d => d.CustomerInvoices.Any(c => c.Id == entityId))
-                    .Select(d => ToMeta(d)).ToListAsync(),
+                    .Select(d => new DocumentMeta
+                    {
+                        Id = d.Id,
+                        FileName = d.FileName,
+                        ContentType = d.ContentType,
+                        FileSize = d.FileSize,
+                        UploadedAt = d.UploadedAt,
+                        ClassifiedType = d.ClassifiedType,
+                        SuggestedType = d.SuggestedType,
+                        ExtractedDataJson = d.ExtractedDataJson
+                    }).ToListAsync(),
             _ => []
         };
 
