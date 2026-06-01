@@ -377,7 +377,7 @@ public class TenantIsolationTests : IDisposable
             Data = new byte[1024],
             UploadedAt = DateTime.UtcNow
         };
-        db.JournalEntryAttachments.Add(attachment);
+        db.Set<JournalEntryAttachment>().Add(attachment);
         db.SaveChanges();
         return attachment;
     }

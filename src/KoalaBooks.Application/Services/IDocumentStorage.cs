@@ -1,8 +1,5 @@
+// IDocumentStorage has been moved to KoalaBooks.Domain.Interfaces.
 namespace KoalaBooks.Application.Services;
 
-public interface IDocumentStorage
-{
-    Task<string> SaveAsync(int documentId, string contentType, byte[] data);
-    Task<byte[]> LoadAsync(string storageKey);
-    Task DeleteAsync(string storageKey);
-}
+// Keep this namespace import so that existing using directives remain valid.
+// The actual interface is defined in KoalaBooks.Domain.Interfaces.

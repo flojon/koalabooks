@@ -4,8 +4,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
+// NOTE: This service is being migrated to DocumentService (Task 9).
+// JournalEntryAttachments DbSet has been removed from AppDbContext; using Set<T>() directly
+// as a temporary shim until this service is replaced.
 public class AttachmentService(AppDbContext db)
 {
+    private Microsoft.EntityFrameworkCore.DbSet<JournalEntryAttachment> Attachments => db.Set<JournalEntryAttachment>();
+
     public async Task<JournalEntryAttachment?> AddAsync(int entryId, string fileName, string contentType, byte[] data)
     {
         // Verify the entry belongs to the current tenant (query filter applied).
@@ -23,13 +28,13 @@ public class AttachmentService(AppDbContext db)
             Data = data,
             UploadedAt = DateTime.UtcNow
         };
-        db.JournalEntryAttachments.Add(attachment);
+        Attachments.Add(attachment);
         await db.SaveChangesAsync();
         return attachment;
     }
 
     public async Task<List<AttachmentMeta>> GetMetaAsync(int entryId) =>
-        await db.JournalEntryAttachments
+        await Attachments
             .Where(a => a.JournalEntryId == entryId)
             .OrderBy(a => a.UploadedAt)
             .Select(a => new AttachmentMeta
@@ -45,20 +50,20 @@ public class AttachmentService(AppDbContext db)
     public async Task<Dictionary<int, int>> GetCountsAsync(IEnumerable<int> entryIds)
     {
         var ids = entryIds.ToList();
-        return await db.JournalEntryAttachments
+        return await Attachments
             .Where(a => ids.Contains(a.JournalEntryId))
             .GroupBy(a => a.JournalEntryId)
             .ToDictionaryAsync(g => g.Key, g => g.Count());
     }
 
     public async Task<JournalEntryAttachment?> GetAsync(int id) =>
-        await db.JournalEntryAttachments.FirstOrDefaultAsync(a => a.Id == id);
+        await Attachments.FirstOrDefaultAsync(a => a.Id == id);
 
     public async Task<bool> DeleteAsync(int id)
     {
-        var a = await db.JournalEntryAttachments.FirstOrDefaultAsync(att => att.Id == id);
+        var a = await Attachments.FirstOrDefaultAsync(att => att.Id == id);
         if (a is null) return false;
-        db.JournalEntryAttachments.Remove(a);
+        Attachments.Remove(a);
         await db.SaveChangesAsync();
         return true;
     }
