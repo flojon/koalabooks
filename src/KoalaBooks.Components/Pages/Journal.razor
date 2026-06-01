@@ -2,6 +2,7 @@
 @page "/journal/{EntryId:int}"
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Enums
 @using MudBlazor
 @using System.Globalization
 @using Microsoft.AspNetCore.Components.Forms
@@ -210,7 +211,7 @@ else
                                         {
                                             <tr>
                                                 <td>
-                                                    <a href="@AttachmentProvider.GetDownloadUrl(a.Id)" target="_blank" style="color:#2563eb;">@a.FileName</a>
+                                                    <a href="@DocumentProvider.GetDownloadUrl(a.Id)" target="_blank" style="color:#2563eb;">@a.FileName</a>
                                                 </td>
                                                 <td style="text-align:right; color:#64748b;">@a.FileSizeDisplay</td>
                                                 <td style="color:#64748b;">@a.UploadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
@@ -335,8 +336,8 @@ else
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private AccountService AccountService { get; set; } = default!;
     [Inject] private SupplierInvoiceService InvoiceService { get; set; } = default!;
-    [Inject] private AttachmentService AttachmentService { get; set; } = default!;
-    [Inject] private IAttachmentProvider AttachmentProvider { get; set; } = default!;
+    [Inject] private DocumentService DocumentService { get; set; } = default!;
+    [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
@@ -356,7 +357,7 @@ else
 
     // Attachment panel
     private int? _attachmentEntryId;
-    private List<AttachmentMeta> _attachmentMeta = [];
+    private List<DocumentMeta> _attachmentMeta = [];
     private Dictionary<int, int> _attachmentCounts = [];
     private bool _uploadingAttachment;
     private string? _attachmentError;
@@ -407,7 +408,7 @@ else
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
         _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_activeFiscalYear.Id);
         _knownSuppliers = await InvoiceService.GetSuppliersAsync(_activeFiscalYear.Id);
-        _attachmentCounts = await AttachmentService.GetCountsAsync(_entries.Select(e => e.Id));
+        _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
         _isLoading = false;
     }
 
@@ -486,7 +487,7 @@ else
     private async Task ReloadEntriesAsync()
     {
         _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
-        _attachmentCounts = await AttachmentService.GetCountsAsync(_entries.Select(e => e.Id));
+        _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
     }
 
     private class LineModel
@@ -637,7 +638,7 @@ else
             return;
         }
         _attachmentEntryId = entry.Id;
-        _attachmentMeta = await AttachmentService.GetMetaAsync(entry.Id);
+        _attachmentMeta = await DocumentService.GetLinkedAsync(DocumentEntityType.JournalEntry, entry.Id);
     }
 
     private async Task UploadAttachmentAsync(InputFileChangeEventArgs e)
@@ -655,13 +656,15 @@ else
             using var ms = new MemoryStream();
             await e.File.OpenReadStream(maxBytes).CopyToAsync(ms);
             var contentType = string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
-            var added = await AttachmentService.AddAsync(_attachmentEntryId!.Value, e.File.Name, contentType, ms.ToArray());
+            var (added, uploadErr) = await DocumentService.UploadAndLinkAsync(
+                e.File.Name, contentType, ms.ToArray(),
+                DocumentEntityType.JournalEntry, _attachmentEntryId!.Value);
             if (added is null)
             {
-                _attachmentError = "Verifikationen hittades inte.";
+                _attachmentError = uploadErr ?? "Uppladdning misslyckades.";
                 return;
             }
-            _attachmentMeta = await AttachmentService.GetMetaAsync(_attachmentEntryId.Value);
+            _attachmentMeta = await DocumentService.GetLinkedAsync(DocumentEntityType.JournalEntry, _attachmentEntryId.Value);
             _attachmentCounts[_attachmentEntryId.Value] = _attachmentMeta.Count;
             Snackbar.Add($"{e.File.Name} uppladdad.", Severity.Success);
         }
@@ -675,8 +678,8 @@ else
     private async Task DeleteAttachmentAsync(int attachmentId)
     {
         _attachmentError = null;
-        await AttachmentService.DeleteAsync(attachmentId);
-        _attachmentMeta = await AttachmentService.GetMetaAsync(_attachmentEntryId!.Value);
+        await DocumentService.DeleteAsync(attachmentId);
+        _attachmentMeta = await DocumentService.GetLinkedAsync(DocumentEntityType.JournalEntry, _attachmentEntryId!.Value);
         _attachmentCounts[_attachmentEntryId.Value] = _attachmentMeta.Count;
         if (_attachmentCounts[_attachmentEntryId.Value] == 0)
             _attachmentCounts.Remove(_attachmentEntryId.Value);

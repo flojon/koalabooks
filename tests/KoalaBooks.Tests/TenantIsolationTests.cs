@@ -189,18 +189,36 @@ public class TenantIsolationTests : IDisposable
     // ── Attachment ─────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetAttachment_AsOtherTenant_ReturnsNull()
+    public async Task GetDocument_AsOtherTenant_ReturnsNull()
     {
         var fyA = SeedFiscalYear(_orgAId, "2026");
         var accountA = SeedAccount(fyA.Id, "1910", "Kassa");
         var entryA = SeedJournalEntry(fyA.Id, accountA.Id);
-        var attachmentA = SeedAttachment(entryA.Id);
 
+        // Seed a document in Org A and link it to the journal entry
+        using var dbA = DbFor(_orgAId);
+        var documentA = new Document
+        {
+            OrganisationId = _orgAId,
+            FileName = "receipt.pdf",
+            ContentType = "application/pdf",
+            FileSize = 1024,
+            UploadedAt = DateTime.UtcNow,
+            StorageKey = Guid.NewGuid().ToString()
+        };
+        dbA.Documents.Add(documentA);
+
+        // Reload the entry from dbA (since entryA came from a different context)
+        var reloadedEntry = dbA.JournalEntries.First(j => j.Id == entryA.Id);
+        reloadedEntry.Documents.Add(documentA);
+        dbA.SaveChanges();
+
+        // Try to retrieve the document as Org B
         using var dbB = DbFor(_orgBId);
-        var service = new AttachmentService(dbB);
-        var result = await service.GetAsync(attachmentA.Id);
+        var doc = await dbB.Documents.FirstOrDefaultAsync(d => d.Id == documentA.Id);
 
-        Assert.Null(result);
+        // Document belongs to Org A, so tenant isolation should filter it out when accessed via Org B's context
+        Assert.Null(doc);
     }
 
     // ── OwnTenant can still read its own data ──────────────────────
@@ -357,28 +375,4 @@ public class TenantIsolationTests : IDisposable
         return invoice;
     }
 
-    private JournalEntryAttachment SeedAttachment(int journalEntryId)
-    {
-        using var bootstrap = new AppDbContext(_options, NoTenant());
-        var orgId = bootstrap.JournalEntries
-            .IgnoreQueryFilters()
-            .Include(j => j.FiscalYear)
-            .Where(j => j.Id == journalEntryId)
-            .Select(j => j.FiscalYear.OrganisationId)
-            .First();
-
-        using var db = DbFor(orgId);
-        var attachment = new JournalEntryAttachment
-        {
-            JournalEntryId = journalEntryId,
-            FileName = "receipt.pdf",
-            ContentType = "application/pdf",
-            FileSize = 1024,
-            Data = new byte[1024],
-            UploadedAt = DateTime.UtcNow
-        };
-        db.Set<JournalEntryAttachment>().Add(attachment);
-        db.SaveChanges();
-        return attachment;
-    }
 }
