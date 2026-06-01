@@ -95,6 +95,23 @@ public class SupplierInvoiceService
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
 
+        // Propagate document links to the new journal entry
+        var docIds = await _db.Documents
+            .Where(d => d.SupplierInvoices.Any(s => s.Id == invoiceId))
+            .Select(d => d.Id)
+            .ToListAsync();
+
+        foreach (var docId in docIds)
+        {
+            var doc = await _db.Documents
+                .Include(d => d.JournalEntries)
+                .FirstOrDefaultAsync(d => d.Id == docId);
+            if (doc is not null && !doc.JournalEntries.Any(j => j.Id == journalEntry.Id))
+                doc.JournalEntries.Add(journalEntry);
+        }
+        if (docIds.Count > 0)
+            await _db.SaveChangesAsync();
+
         return (invoice, null);
     }
 
