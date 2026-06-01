@@ -139,41 +139,43 @@ namespace KoalaBooks.Infrastructure.Migrations
                 column: "SupplierInvoicesId");
 
             // Copy existing JournalEntryAttachment data to Document + DocumentData + join table
+            // Step A: Add temp correlation column
+            migrationBuilder.Sql(@"ALTER TABLE ""Documents"" ADD COLUMN _src_attachment_id int;");
+
+            // Step B: Insert Documents with the correlation column
             migrationBuilder.Sql(@"
-    INSERT INTO ""Documents"" (""OrganisationId"", ""FileName"", ""ContentType"", ""FileSize"", ""UploadedAt"", ""StorageKey"", ""SuggestedType"", ""ExtractedDataJson"", ""ClassifiedType"")
+    INSERT INTO ""Documents"" (""OrganisationId"", ""FileName"", ""ContentType"", ""FileSize"", ""UploadedAt"", ""StorageKey"", ""SuggestedType"", ""ExtractedDataJson"", ""ClassifiedType"", _src_attachment_id)
     SELECT fy.""OrganisationId"", a.""FileName"", a.""ContentType"", a.""FileSize"", a.""UploadedAt"",
-           '0', NULL, NULL, NULL
+           '0', NULL, NULL, NULL, a.""Id""
     FROM ""JournalEntryAttachments"" a
     JOIN ""JournalEntries"" j ON j.""Id"" = a.""JournalEntryId""
     JOIN ""FiscalYears"" fy ON fy.""Id"" = j.""FiscalYearId"";
 ");
 
+            // Step C: Update StorageKey to Document.Id
             migrationBuilder.Sql(@"
     UPDATE ""Documents"" SET ""StorageKey"" = CAST(""Id"" AS TEXT)
     WHERE ""StorageKey"" = '0';
 ");
 
+            // Step D: Insert DocumentData using the correlation column
             migrationBuilder.Sql(@"
     INSERT INTO ""DocumentData"" (""DocumentId"", ""Data"")
     SELECT d.""Id"", a.""Data""
     FROM ""JournalEntryAttachments"" a
-    JOIN ""JournalEntries"" j ON j.""Id"" = a.""JournalEntryId""
-    JOIN ""FiscalYears"" fy ON fy.""Id"" = j.""FiscalYearId""
-    JOIN ""Documents"" d ON d.""OrganisationId"" = fy.""OrganisationId""
-        AND d.""FileName"" = a.""FileName""
-        AND d.""UploadedAt"" = a.""UploadedAt"";
+    JOIN ""Documents"" d ON d._src_attachment_id = a.""Id"";
 ");
 
+            // Step E: Insert DocumentJournalEntries using the correlation column
             migrationBuilder.Sql(@"
     INSERT INTO ""DocumentJournalEntries"" (""DocumentsId"", ""JournalEntriesId"")
     SELECT d.""Id"", a.""JournalEntryId""
     FROM ""JournalEntryAttachments"" a
-    JOIN ""JournalEntries"" j ON j.""Id"" = a.""JournalEntryId""
-    JOIN ""FiscalYears"" fy ON fy.""Id"" = j.""FiscalYearId""
-    JOIN ""Documents"" d ON d.""OrganisationId"" = fy.""OrganisationId""
-        AND d.""FileName"" = a.""FileName""
-        AND d.""UploadedAt"" = a.""UploadedAt"";
+    JOIN ""Documents"" d ON d._src_attachment_id = a.""Id"";
 ");
+
+            // Step F: Drop the temp column
+            migrationBuilder.Sql(@"ALTER TABLE ""Documents"" DROP COLUMN _src_attachment_id;");
 
             migrationBuilder.DropTable(
                 name: "JournalEntryAttachments");

@@ -212,6 +212,12 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(d => d.ClassifiedType).HasMaxLength(50);
             entity.HasQueryFilter(d => _currentUser.OrganisationId != null && d.OrganisationId == _currentUser.OrganisationId);
 
+            entity.HasOne<Organisation>()
+                  .WithMany()
+                  .HasForeignKey(d => d.OrganisationId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(d => d.OrganisationId);
+
             entity.HasMany(d => d.JournalEntries)
                   .WithMany(j => j.Documents)
                   .UsingEntity("DocumentJournalEntries");
