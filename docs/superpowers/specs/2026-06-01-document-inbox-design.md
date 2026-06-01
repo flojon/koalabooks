@@ -17,11 +17,12 @@ A document inbox where users upload files (PDFs, images) that sit unprocessed un
 public class Document
 {
     public int Id { get; set; }
-    public int OrganisationId { get; set; }
+    public int OrganisationId { get; set; }  // set by DocumentService from ICurrentUser
     public string FileName { get; set; }
     public string ContentType { get; set; }
     public long FileSize { get; set; }
     public DateTime UploadedAt { get; set; }
+    public string StorageKey { get; set; }   // opaque key returned by IDocumentStorage.SaveAsync
 
     // Extraction hints (nullable — set after extraction runs)
     public string? SuggestedType { get; set; }   // "SupplierInvoice" | "CustomerInvoice" | "JournalEntry"
@@ -34,7 +35,7 @@ public class Document
 }
 ```
 
-File bytes are stored via `IDocumentStorage` (not as a column on `Document` directly — the storage implementation decides where bytes live).
+File bytes are stored via `IDocumentStorage` (not as a column on `Document` directly — the storage implementation decides where bytes live). `StorageKey` is the opaque reference returned by `SaveAsync` and passed back to `LoadAsync`/`DeleteAsync`.
 
 ### Storage abstraction
 
@@ -47,7 +48,7 @@ public interface IDocumentStorage
 }
 ```
 
-Initial implementation: `DbDocumentStorage` stores bytes in a `DocumentData` table (one row per document, same org-scoped query filter). Storage key = `documentId.ToString()`. This keeps the `Document` entity clean and makes future S3 migration a drop-in swap (see [#123](https://github.com/flojon/koalabooks/issues/123)).
+Initial implementation: `DbDocumentStorage` stores bytes in a separate `DocumentData` table — one row per document with columns `(DocumentId PK FK, Data byte[])`. No query filter on `DocumentData` itself; tenant isolation is enforced by always going through `Document` (which has the org query filter) to resolve a valid `DocumentId` before loading. Storage key = `documentId.ToString()`. This keeps the `Document` entity clean and makes future S3 migration a drop-in swap (see [#123](https://github.com/flojon/koalabooks/issues/123)).
 
 ### EF join tables (auto-created by EF Core many-to-many)
 
@@ -100,10 +101,10 @@ public interface IDocumentExtractor
 
 Two implementations composed by `CompositeExtractor`:
 
-**`FilenameExtractor`** — Swedish keyword heuristics on the filename (case-insensitive):
+**`FilenameExtractor`** — Swedish keyword heuristics on the filename (case-insensitive, checked in order — more specific patterns first):
+- "kundfaktura" / "customer" → `CustomerInvoice`
 - "faktura" / "invoice" / "fakt" → `SupplierInvoice`
 - "kvitto" / "receipt" → `JournalEntry`
-- "kundfaktura" / "customer" → `CustomerInvoice`
 
 **`PdfTextExtractor`** — only runs for `application/pdf`. Uses **PdfPig** to extract the text layer (no OCR). Regex patterns for Swedish invoice fields:
 - Amount: `([\d\s]+[,.][\d]{2})\s*(kr|SEK)`
@@ -206,7 +207,7 @@ public interface IDocumentProvider
 
   *Verifikation:* Toggle "Ny verifikation" / "Koppla till befintlig"
   - Ny: Datum*, Beskrivning*, debit/credit rows (same component as Journal.razor)
-  - Befintlig: journal entry search dropdown
+  - Befintlig: searchable dropdown of journal entries in the active fiscal year (same `_linkableEntries` pattern used in `SupplierInvoices.razor`)
 
 - "Skapa & koppla" button — calls the appropriate `DocumentService.ClassifyAs*` method, closes dialog, removes document from inbox list
 
