@@ -25,8 +25,12 @@ public class Document
     public string StorageKey { get; set; }   // opaque key returned by IDocumentStorage.SaveAsync
 
     // Extraction hints (nullable — set after extraction runs)
-    public string? SuggestedType { get; set; }   // "SupplierInvoice" | "CustomerInvoice" | "JournalEntry"
+    public string? SuggestedType { get; set; }    // "SupplierInvoice" | "CustomerInvoice" | "JournalEntry"
     public string? ExtractedDataJson { get; set; } // JSON: { supplier, amount, date, dueDate, invoiceNumber }
+
+    // User-confirmed type — settable independently of full classification
+    // null = untagged, set = tagged (may or may not have join-table links yet)
+    public string? ClassifiedType { get; set; }   // "SupplierInvoice" | "CustomerInvoice" | "JournalEntry"
 
     // Navigation (many-to-many — EF join tables)
     public List<JournalEntry> JournalEntries { get; set; } = [];
@@ -131,8 +135,13 @@ Replaces `AttachmentService`.
 UploadAsync(fileName, contentType, data) → Document
   - Validates file size
   - Saves via IDocumentStorage
-  - Runs IDocumentExtractor, stores result on Document
+  - Runs IDocumentExtractor, stores SuggestedType + ExtractedDataJson on Document
+  - Sets ClassifiedType = SuggestedType as a starting point (user can override)
   - Returns Document (with extraction hints)
+
+SetTypeAsync(documentId, classifiedType) → error?
+  - Sets ClassifiedType on the Document without creating any entity
+  - Used for quick inline tagging in the inbox list
 
 GetPendingAsync() → List<DocumentMeta>
   - Documents with no join-table rows (the inbox)
@@ -184,7 +193,17 @@ public interface IDocumentProvider
 - Page header + "Ladda upp" button (and drag-and-drop zone)
 - Upload accepts PDF and image files (max 10 MB)
 - Calls `DocumentService.UploadAsync`, shows extraction suggestion immediately
-- Table of pending documents: filename, size, upload time, suggested type badge, "Klassificera" button
+
+**Filter bar** (above the document list):  
+Alla | Oklassificerade | Leverantörsfaktura | Kundfaktura | Verifikation  
+Filters on `ClassifiedType` (null = Oklassificerade). "Alla" shows everything regardless of join-table links (i.e. the full inbox, not yet processed into entities).
+
+**Document list columns:** Filnamn · Storlek · Uppladdad · Typ (inline selector) · Åtgärder
+
+The **Typ** column shows a compact inline MudSelect (or button group) with the four options (blank / Leverantörsfaktura / Kundfaktura / Verifikation). Changing it calls `DocumentService.SetTypeAsync` immediately — no modal, no save button. This is the "quick tag" step.
+
+The **Åtgärder** column shows "Klassificera" (opens modal) and "🗑" (delete). "Klassificera" is always available regardless of whether a type is set; it just pre-selects the type in the modal if one is already set.
+
 - "Klassificera" opens `ClassifyDocumentDialog`
 
 ### `ClassifyDocumentDialog` (MudDialog, ~900px wide)
@@ -198,7 +217,8 @@ public interface IDocumentProvider
 
 **Right panel — classification form**
 - Type selector (MudSelect): Leverantörsfaktura / Kundfaktura / Verifikation
-- Pre-filled from `ExtractionResult` (editable)
+- Pre-selected from `ClassifiedType` if already set, otherwise from `SuggestedType`
+- Pre-filled fields from `ExtractedDataJson` (editable)
 - Form fields change based on selected type:
 
   *Leverantörsfaktura:* Leverantör*, Fakturanummer, Fakturadatum*, Förfallodatum*, Belopp exkl. moms*, Momsbelopp
