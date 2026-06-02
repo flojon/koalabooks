@@ -23,7 +23,10 @@ services:
       - ASPNETCORE_URLS=http://+:8080
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-      - AspireDashboard__OidcRedirectUri=https://dashboard.koalasoft.se/signin-oidc
+      # http:// intentional: ASPNETCORE_FORWARDEDHEADERS_ENABLED only trusts loopback proxies by default,
+      # so Caddy (Docker bridge) cannot override the scheme. Caddy 301s http→https preserving the query
+      # string, so the OIDC code exchange still completes over HTTPS end-to-end.
+      - AspireDashboard__OidcRedirectUri=http://dashboard.koalasoft.se/signin-oidc
       - AspireDashboard__OidcClientSecret=${ASPIRE_DASHBOARD_OIDC_CLIENT_SECRET}
     depends_on:
       postgres:
