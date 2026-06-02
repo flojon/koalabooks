@@ -183,11 +183,13 @@ public class TestFixture : IDisposable
         return (cash, liability, equity, revenue, expense);
     }
 
-    public DocumentService MakeDocumentService()
+    public DocumentService MakeDocumentService() =>
+        MakeDocumentService(new DbDocumentStorage(Db));
+
+    public DocumentService MakeDocumentService(IDocumentStorage storage)
     {
         var extractor = new CompositeExtractor(new FilenameExtractor(), new PdfTextExtractor(
             NullLogger<PdfTextExtractor>.Instance));
-        var storage = new DbDocumentStorage(Db);
         return new DocumentService(Db, storage, extractor, _currentUser, NullLogger<DocumentService>.Instance);
     }
 }

@@ -1,6 +1,7 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 
 namespace KoalaBooks.Tests;
 
@@ -133,6 +134,20 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UploadAsync_RollsBackDocumentRowWhenStorageFails()
+    {
+        var svc = _fx.MakeDocumentService(new FailingStorage());
+        var (doc, err) = await svc.UploadAsync("faktura.pdf", "application/pdf", [1, 2, 3]);
+
+        Assert.Null(doc);
+        Assert.NotNull(err);
+
+        // The metadata row must not survive the storage failure
+        var pending = await _fx.MakeDocumentService().GetPendingAsync();
+        Assert.Empty(pending);
+    }
+
+    [Fact]
     public async Task UploadAsync_AcceptsImageJpgMimeType()
     {
         var svc = _fx.MakeDocumentService();
@@ -195,4 +210,13 @@ public class DocumentServiceTests : IDisposable
         Assert.Equal(2, counts[e1.Id]);
         Assert.Equal(1, counts[e2.Id]);
     }
+}
+
+file class FailingStorage : IDocumentStorage
+{
+    public Task<string> SaveAsync(int documentId, string contentType, byte[] data) =>
+        throw new InvalidOperationException("simulated storage failure");
+
+    public Task<byte[]> LoadAsync(string storageKey) => Task.FromResult(Array.Empty<byte>());
+    public Task DeleteAsync(string storageKey) => Task.CompletedTask;
 }
