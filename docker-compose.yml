@@ -8,6 +8,7 @@ services:
       - Authentication__Schemes__OpenIdConnect__Authority=https://books.koalasoft.se
       - Authentication__Schemes__OpenIdConnect__ClientId=aspire-dashboard
       - Authentication__Schemes__OpenIdConnect__ClientSecret=${ASPIRE_DASHBOARD_OIDC_CLIENT_SECRET}
+      - ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
     restart: unless-stopped
 
   web:
