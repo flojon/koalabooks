@@ -84,10 +84,28 @@ public class DocumentService(
         return null;
     }
 
-    public Task<List<DocumentMeta>> GetPendingAsync() =>
-        SelectMetaAsync(db.Documents
-            .Where(d => !d.JournalEntries.Any() && !d.SupplierInvoices.Any() && !d.CustomerInvoices.Any())
-            .OrderByDescending(d => d.UploadedAt));
+    public Task<List<DocumentMeta>> GetPendingAsync(string? typeFilter = null, int skip = 0, int? take = null)
+    {
+        var query = PendingQuery(typeFilter).OrderByDescending(d => d.UploadedAt).Skip(skip);
+        if (take.HasValue) query = query.Take(take.Value);
+        return SelectMetaAsync(query);
+    }
+
+    public Task<int> GetPendingCountAsync(string? typeFilter = null) =>
+        PendingQuery(typeFilter).CountAsync();
+
+    private IQueryable<Document> PendingQuery(string? typeFilter)
+    {
+        var query = db.Documents
+            .Where(d => !d.JournalEntries.Any() && !d.SupplierInvoices.Any() && !d.CustomerInvoices.Any());
+
+        return typeFilter switch
+        {
+            "unclassified" => query.Where(d => d.ClassifiedType == null),
+            null or "all"  => query,
+            var t          => query.Where(d => d.ClassifiedType == t)
+        };
+    }
 
     public Task<List<DocumentMeta>> GetLinkedAsync(DocumentEntityType entityType, int entityId)
     {

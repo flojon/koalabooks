@@ -1,4 +1,5 @@
 using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 
 namespace KoalaBooks.Tests;
@@ -129,6 +130,47 @@ public class DocumentServiceTests : IDisposable
         Assert.NotNull(result);
         Assert.Equal("application/pdf", result.Value.ContentType);
         Assert.Equal(new byte[] { 10, 20, 30 }, result.Value.Data);
+    }
+
+    [Fact]
+    public async Task UploadAsync_AcceptsImageJpgMimeType()
+    {
+        var svc = _fx.MakeDocumentService();
+        var (doc, err) = await svc.UploadAsync("photo.jpg", "image/jpg", [1, 2, 3]);
+
+        Assert.Null(err);
+        Assert.NotNull(doc);
+    }
+
+    [Fact]
+    public async Task PostSupplierInvoice_AutoLinksDocumentToJournalEntry()
+    {
+        var docSvc = _fx.MakeDocumentService();
+        var supplierSvc = new SupplierInvoiceService(_fx.Db);
+        var fy = _fx.CreateFiscalYear();
+        var (expense, payable, _, _, _) = _fx.CreateStandardAccounts(fy.Id);
+
+        var invoice = new SupplierInvoice
+        {
+            FiscalYearId = fy.Id,
+            SupplierName = "ACME AB",
+            InvoiceDate = DateOnly.FromDateTime(DateTime.Today),
+            DueDate = DateOnly.FromDateTime(DateTime.Today.AddDays(30)),
+            AmountExclVat = 800m,
+            VatAmount = 200m,
+            TotalAmount = 1000m
+        };
+        var (created, _) = await supplierSvc.CreateAsync(invoice);
+
+        var (doc, _) = await docSvc.UploadAsync("faktura.pdf", "application/pdf", [1]);
+        await docSvc.LinkAsync(doc!.Id, DocumentEntityType.SupplierInvoice, created!.Id);
+
+        var (posted, err) = await supplierSvc.PostAsync(created.Id, expense.Id, payable.Id, null);
+        Assert.Null(err);
+
+        var linked = await docSvc.GetLinkedAsync(DocumentEntityType.JournalEntry, posted!.JournalEntryId!.Value);
+        Assert.Single(linked);
+        Assert.Equal("faktura.pdf", linked[0].FileName);
     }
 
     [Fact]

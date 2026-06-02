@@ -44,13 +44,13 @@
                     <label style="font-weight:600;">Typ <span style="color:#ef4444;">*</span></label>
                     <select @bind="_type" style="width:100%;">
                         <option value="">— Välj typ —</option>
-                        <option value="SupplierInvoice">Leverantörsfaktura</option>
-                        <option value="CustomerInvoice">Kundfaktura</option>
-                        <option value="JournalEntry">Verifikation</option>
+                        <option value="@nameof(DocumentEntityType.SupplierInvoice)">Leverantörsfaktura</option>
+                        <option value="@nameof(DocumentEntityType.CustomerInvoice)">Kundfaktura</option>
+                        <option value="@nameof(DocumentEntityType.JournalEntry)">Verifikation</option>
                     </select>
                 </div>
 
-                @if (_type == "SupplierInvoice")
+                @if (_type == nameof(DocumentEntityType.SupplierInvoice))
                 {
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem 1rem;">
                         <div class="form-group" style="grid-column:1/-1;">
@@ -79,7 +79,7 @@
                         </div>
                     </div>
                 }
-                else if (_type == "CustomerInvoice")
+                else if (_type == nameof(DocumentEntityType.CustomerInvoice))
                 {
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem 1rem;">
                         <div class="form-group" style="grid-column:1/-1;">
@@ -110,7 +110,7 @@
                         </div>
                     </div>
                 }
-                else if (_type == "JournalEntry")
+                else if (_type == nameof(DocumentEntityType.JournalEntry))
                 {
                     <div style="display:flex; gap:0.5rem; margin-bottom:0.5rem;">
                         <button class="btn btn-sm @(_jeMode == "new" ? "btn-primary" : "btn-secondary")"
@@ -289,9 +289,9 @@
         {
             switch (_type)
             {
-                case "SupplierInvoice": await ClassifyAsSupplierInvoiceAsync(); break;
-                case "CustomerInvoice": await ClassifyAsCustomerInvoiceAsync(); break;
-                case "JournalEntry":   await ClassifyAsJournalEntryAsync(); break;
+                case nameof(DocumentEntityType.SupplierInvoice): await ClassifyAsSupplierInvoiceAsync(); break;
+                case nameof(DocumentEntityType.CustomerInvoice): await ClassifyAsCustomerInvoiceAsync(); break;
+                case nameof(DocumentEntityType.JournalEntry):   await ClassifyAsJournalEntryAsync(); break;
                 default: _error = "Välj en typ."; break;
             }
         }

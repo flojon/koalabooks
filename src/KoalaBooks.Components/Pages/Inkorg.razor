@@ -34,7 +34,7 @@
     @foreach (var (label, val) in Filters)
     {
         <button class="btn btn-sm @(_filter == val ? "btn-primary" : "btn-secondary")"
-                @onclick="() => _filter = val">@label</button>
+                @onclick="() => SetFilterAsync(val)">@label</button>
     }
 </div>
 
@@ -42,7 +42,7 @@
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
 }
-else if (!Filtered.Any())
+else if (!_docs.Any())
 {
     <p style="color:#94a3b8; font-style:italic;">Inga dokument i inkorgen.</p>
 }
@@ -60,7 +60,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var doc in Filtered)
+                @foreach (var doc in _docs)
                 {
                     <tr>
                         <td style="font-weight:500;">@doc.FileName</td>
@@ -71,9 +71,9 @@ else
                                     value="@(doc.ClassifiedType ?? "")"
                                     @onchange="e => SetTypeAsync(doc.Id, e.Value?.ToString())">
                                 <option value="">— Välj typ —</option>
-                                <option value="SupplierInvoice">Leverantörsfaktura</option>
-                                <option value="CustomerInvoice">Kundfaktura</option>
-                                <option value="JournalEntry">Verifikation</option>
+                                <option value="@nameof(DocumentEntityType.SupplierInvoice)">Leverantörsfaktura</option>
+                                <option value="@nameof(DocumentEntityType.CustomerInvoice)">Kundfaktura</option>
+                                <option value="@nameof(DocumentEntityType.JournalEntry)">Verifikation</option>
                             </select>
                         </td>
                         <td style="display:flex; gap:0.3rem; flex-wrap:wrap;">
@@ -87,6 +87,19 @@ else
             </tbody>
         </table>
     </div>
+
+    @if (TotalPages > 1)
+    {
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem;">
+            <button class="btn btn-sm btn-secondary" @onclick="PrevPageAsync" disabled="@(_page <= 1)">← Föregående</button>
+            <span style="font-size:0.85rem; color:#64748b;">Sida @_page av @TotalPages (@_totalCount dokument)</span>
+            <button class="btn btn-sm btn-secondary" @onclick="NextPageAsync" disabled="@(_page >= TotalPages)">Nästa →</button>
+        </div>
+    }
+    else
+    {
+        <div style="font-size:0.8rem; color:#94a3b8; margin-top:0.5rem;">@_totalCount dokument</div>
+    }
 }
 
 @if (_classifyDoc is not null)
@@ -108,28 +121,50 @@ else
     private string? _error;
     private string _filter = "all";
     private DocumentMeta? _classifyDoc;
+    private int _page = 1;
+    private int _totalCount;
+    private const int PageSize = 50;
+
+    private int TotalPages => (_totalCount + PageSize - 1) / PageSize;
 
     private static (string Label, string Value)[] Filters =>
     [
         ("Alla", "all"),
         ("Oklassificerade", "unclassified"),
-        ("Leverantörsfaktura", "SupplierInvoice"),
-        ("Kundfaktura", "CustomerInvoice"),
-        ("Verifikation", "JournalEntry"),
+        ("Leverantörsfaktura", nameof(DocumentEntityType.SupplierInvoice)),
+        ("Kundfaktura", nameof(DocumentEntityType.CustomerInvoice)),
+        ("Verifikation", nameof(DocumentEntityType.JournalEntry)),
     ];
 
-    private IEnumerable<DocumentMeta> Filtered => _filter switch
-    {
-        "unclassified" => _docs.Where(d => d.ClassifiedType is null),
-        "all"          => _docs,
-        var t          => _docs.Where(d => d.ClassifiedType == t)
-    };
+    protected override async Task OnInitializedAsync() => await LoadPageAsync();
 
-    protected override async Task OnInitializedAsync()
+    private async Task LoadPageAsync()
     {
         _isLoading = true;
-        _docs = await DocumentService.GetPendingAsync();
+        var skip = (_page - 1) * PageSize;
+        var docsTask = DocumentService.GetPendingAsync(_filter, skip, PageSize);
+        var countTask = DocumentService.GetPendingCountAsync(_filter);
+        await Task.WhenAll(docsTask, countTask);
+        _docs = docsTask.Result;
+        _totalCount = countTask.Result;
         _isLoading = false;
+    }
+
+    private async Task SetFilterAsync(string filter)
+    {
+        _filter = filter;
+        _page = 1;
+        await LoadPageAsync();
+    }
+
+    private async Task PrevPageAsync()
+    {
+        if (_page > 1) { _page--; await LoadPageAsync(); }
+    }
+
+    private async Task NextPageAsync()
+    {
+        if (_page < TotalPages) { _page++; await LoadPageAsync(); }
     }
 
     private async Task UploadAsync(IReadOnlyList<IBrowserFile> files)
@@ -156,7 +191,8 @@ else
                 else
                     Snackbar.Add($"{file.Name} uppladdad.", Severity.Success);
             }
-            _docs = await DocumentService.GetPendingAsync();
+            _page = 1;
+            await LoadPageAsync();
         }
         finally { _uploading = false; }
     }
@@ -174,14 +210,15 @@ else
     private async Task OnDocumentClassified()
     {
         _classifyDoc = null;
-        _docs = await DocumentService.GetPendingAsync();
+        await LoadPageAsync();
         Snackbar.Add("Dokument klassificerat.", Severity.Success);
     }
 
     private async Task DeleteDocAsync(int docId)
     {
         await DocumentService.DeleteAsync(docId);
-        _docs = _docs.Where(d => d.Id != docId).ToList();
+        if (_docs.Count == 1 && _page > 1) _page--;
+        await LoadPageAsync();
         Snackbar.Add("Dokument raderat.", Severity.Success);
     }
 }
