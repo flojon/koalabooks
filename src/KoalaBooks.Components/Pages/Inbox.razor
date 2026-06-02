@@ -17,6 +17,7 @@
     <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="UploadAsync" Accept=".pdf,.png,.jpg,.jpeg" MaximumFileCount="10">
         <CustomContent>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload"
+                       OnClick="@context.OpenFilePickerAsync"
                        Disabled="@_uploading">
                 @(_uploading ? "Laddar upp..." : "Ladda upp dokument")
             </MudButton>
