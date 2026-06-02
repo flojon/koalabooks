@@ -142,11 +142,8 @@ else
     {
         _isLoading = true;
         var skip = (_page - 1) * PageSize;
-        var docsTask = DocumentService.GetPendingAsync(_filter, skip, PageSize);
-        var countTask = DocumentService.GetPendingCountAsync(_filter);
-        await Task.WhenAll(docsTask, countTask);
-        _docs = docsTask.Result;
-        _totalCount = countTask.Result;
+        _docs = await DocumentService.GetPendingAsync(_filter, skip, PageSize);
+        _totalCount = await DocumentService.GetPendingCountAsync(_filter);
         _isLoading = false;
     }
 
