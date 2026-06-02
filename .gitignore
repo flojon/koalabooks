@@ -15,3 +15,4 @@ obj/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 .env
+.superpowers/brainstorm/

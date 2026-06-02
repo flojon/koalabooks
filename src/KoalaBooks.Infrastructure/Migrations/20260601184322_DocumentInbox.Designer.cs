@@ -3,6 +3,7 @@ using System;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace KoalaBooks.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260601184322_DocumentInbox")]
+    partial class DocumentInbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -410,8 +413,6 @@ namespace KoalaBooks.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("OrganisationId");
 
                     b.ToTable("Documents");
                 });
@@ -1192,15 +1193,6 @@ namespace KoalaBooks.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("CustomerInvoice");
-                });
-
-            modelBuilder.Entity("KoalaBooks.Domain.Entities.Document", b =>
-                {
-                    b.HasOne("KoalaBooks.Domain.Entities.Organisation", null)
-                        .WithMany()
-                        .HasForeignKey("OrganisationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("KoalaBooks.Domain.Entities.DocumentData", b =>

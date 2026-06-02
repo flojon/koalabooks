@@ -1,6 +1,8 @@
 @page "/supplier-invoices"
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Enums
+@using Microsoft.AspNetCore.Components.Forms
 @using MudBlazor
 
 <PageTitle>Leverantörsfakturor — KoalaBooks</PageTitle>
@@ -187,6 +189,10 @@ else
                             }
                         </td>
                         <td>
+                            <button class="btn btn-sm @(_docPanelInvoiceId == inv.Id ? "btn-primary" : "btn-secondary")"
+                                    @onclick="() => ToggleDocPanel(inv.Id)">
+                                📎 @(_docPanelInvoiceId == inv.Id ? "Dölj" : "Dokument")
+                            </button>
                             @if (!inv.JournalEntryId.HasValue)
                             {
                                 <button class="btn btn-sm btn-primary"
@@ -308,6 +314,59 @@ else
                             </td>
                         </tr>
                     }
+
+                    @if (_docPanelInvoiceId == inv.Id)
+                    {
+                        <tr style="background:#f8fafc;">
+                            <td colspan="9" style="padding:1rem;">
+                                <div style="max-width:640px;">
+                                    <p style="margin:0 0 0.75rem; font-weight:600;">📎 Dokument — @inv.SupplierName</p>
+                                    @if (_docError is not null)
+                                    {
+                                        <div style="color:#ef4444; margin-bottom:0.5rem; font-size:0.875rem;">@_docError</div>
+                                    }
+                                    @if (_invoiceDocuments.Any())
+                                    {
+                                        <table style="font-size:0.85rem; margin-bottom:1rem;">
+                                            <thead>
+                                                <tr>
+                                                    <th>Filnamn</th>
+                                                    <th style="width:90px; text-align:right;">Storlek</th>
+                                                    <th style="width:140px;">Uppladdad</th>
+                                                    <th style="width:80px;"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var d in _invoiceDocuments)
+                                                {
+                                                    <tr>
+                                                        <td><a href="@DocumentProvider.GetDownloadUrl(d.Id)" target="_blank" style="color:#2563eb;">@d.FileName</a></td>
+                                                        <td style="text-align:right; color:#64748b;">@d.FileSizeDisplay</td>
+                                                        <td style="color:#64748b;">@d.UploadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                                        <td>
+                                                            <button class="btn btn-sm btn-danger"
+                                                                    @onclick="() => DeleteInvoiceDocAsync(d.Id)"
+                                                                    disabled="@_uploadingDoc">🗑️</button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+                                    else
+                                    {
+                                        <p style="color:#94a3b8; font-style:italic; margin:0 0 0.75rem;">Inga dokument ännu.</p>
+                                    }
+                                    <label class="btn btn-secondary" style="cursor:pointer; display:inline-block;">
+                                        @(_uploadingDoc ? "Laddar upp..." : "📁 Välj fil (max 10 MB)")
+                                        <InputFile OnChange="UploadInvoiceDocAsync" style="display:none"
+                                                   accept=".pdf,.png,.jpg,.jpeg"
+                                                   disabled="@_uploadingDoc" />
+                                    </label>
+                                </div>
+                            </td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>
@@ -321,6 +380,8 @@ else
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private AccountService AccountService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private DocumentService DocumentService { get; set; } = default!;
+    [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
 
     private FiscalYear? _fiscalYear;
     private List<SupplierInvoice> _invoices = [];
@@ -362,6 +423,12 @@ else
     private List<BankTransaction> _matchingSuggestions = [];
     private int? _linkedBankTransactionId;
     private List<string> _knownSuppliers = [];
+
+    // Document panel
+    private int? _docPanelInvoiceId;
+    private List<DocumentMeta> _invoiceDocuments = [];
+    private bool _uploadingDoc;
+    private string? _docError;
 
     private static (string Label, string Value)[] Filters =>
     [
@@ -559,5 +626,45 @@ else
         if (error is not null) { _error = error; return; }
         Snackbar.Add("Fakturan raderad.", Severity.Success);
         await LoadInvoices();
+    }
+
+    private async Task ToggleDocPanel(int invoiceId)
+    {
+        _docError = null;
+        if (_docPanelInvoiceId == invoiceId)
+        {
+            _docPanelInvoiceId = null;
+            _invoiceDocuments = [];
+            return;
+        }
+        _docPanelInvoiceId = invoiceId;
+        _invoiceDocuments = await DocumentService.GetLinkedAsync(DocumentEntityType.SupplierInvoice, invoiceId);
+    }
+
+    private async Task UploadInvoiceDocAsync(InputFileChangeEventArgs e)
+    {
+        _docError = null;
+        _uploadingDoc = true;
+        try
+        {
+            const long maxBytes = 10 * 1024 * 1024;
+            if (e.File.Size > maxBytes) { _docError = "Filen är för stor (max 10 MB)."; return; }
+            using var ms = new MemoryStream();
+            await e.File.OpenReadStream(maxBytes).CopyToAsync(ms);
+            var contentType = string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
+            var (doc, err) = await DocumentService.UploadAndLinkAsync(
+                e.File.Name, contentType, ms.ToArray(),
+                DocumentEntityType.SupplierInvoice, _docPanelInvoiceId!.Value);
+            if (doc is null) { _docError = err ?? "Uppladdning misslyckades."; return; }
+            _invoiceDocuments = await DocumentService.GetLinkedAsync(DocumentEntityType.SupplierInvoice, _docPanelInvoiceId.Value);
+            Snackbar.Add($"{e.File.Name} uppladdad.", Severity.Success);
+        }
+        finally { _uploadingDoc = false; }
+    }
+
+    private async Task DeleteInvoiceDocAsync(int documentId)
+    {
+        await DocumentService.DeleteAsync(documentId);
+        _invoiceDocuments = await DocumentService.GetLinkedAsync(DocumentEntityType.SupplierInvoice, _docPanelInvoiceId!.Value);
     }
 }

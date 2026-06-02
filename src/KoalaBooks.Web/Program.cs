@@ -108,9 +108,16 @@ builder.Services.AddScoped<SupplierInvoiceService>();
 builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<CustomerInvoiceService>();
 builder.Services.AddScoped<OrganisationService>();
-builder.Services.AddScoped<AttachmentService>();
+builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.FilenameExtractor>();
+builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.PdfTextExtractor>();
+builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.CompositeExtractor>();
+builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractor>(sp =>
+    sp.GetRequiredService<KoalaBooks.Infrastructure.Services.CompositeExtractor>());
+builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentStorage,
+    KoalaBooks.Infrastructure.Services.DbDocumentStorage>();
+builder.Services.AddScoped<DocumentService>();
+builder.Services.AddScoped<IDocumentProvider, WebDocumentProvider>();
 builder.Services.AddSingleton<VatReportCsvExporter>();
-builder.Services.AddScoped<IAttachmentProvider, WebAttachmentProvider>();
 
 builder.Services.AddMudServices(config =>
 {
@@ -165,10 +172,12 @@ if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"
 
 app.MapDefaultEndpoints();
 
-app.MapGet("/attachments/{id:int}", async (int id, AttachmentService svc) =>
+app.MapGet("/documents/{id:int}", async (int id, DocumentService svc) =>
 {
-    var a = await svc.GetAsync(id);
-    return a is null ? Results.NotFound() : Results.File(a.Data, a.ContentType, a.FileName);
+    var result = await svc.GetDownloadAsync(id);
+    return result is null
+        ? Results.NotFound()
+        : Results.File(result.Value.Data, result.Value.ContentType, result.Value.FileName);
 }).RequireAuthorization();
 
 app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, CustomerInvoiceService svc) =>

@@ -6,6 +6,7 @@ using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace KoalaBooks.Tests;
 
@@ -180,5 +181,15 @@ public class TestFixture : IDisposable
         var revenue = CreateAccount(fiscalYearId, "3010", "Försäljning", AccountClass.Revenue);
         var expense = CreateAccount(fiscalYearId, "5010", "Lokalhyra", AccountClass.Expense);
         return (cash, liability, equity, revenue, expense);
+    }
+
+    public DocumentService MakeDocumentService() =>
+        MakeDocumentService(new DbDocumentStorage(Db));
+
+    public DocumentService MakeDocumentService(IDocumentStorage storage)
+    {
+        var extractor = new CompositeExtractor(new FilenameExtractor(), new PdfTextExtractor(
+            NullLogger<PdfTextExtractor>.Instance));
+        return new DocumentService(Db, storage, extractor, _currentUser, NullLogger<DocumentService>.Instance);
     }
 }

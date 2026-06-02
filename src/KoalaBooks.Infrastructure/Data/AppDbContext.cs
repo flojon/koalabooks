@@ -24,7 +24,8 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<CustomerInvoice> CustomerInvoices => Set<CustomerInvoice>();
     public DbSet<CustomerInvoiceLine> CustomerInvoiceLines => Set<CustomerInvoiceLine>();
-    public DbSet<JournalEntryAttachment> JournalEntryAttachments => Set<JournalEntryAttachment>();
+    public DbSet<Document> Documents => Set<Document>();
+    public DbSet<DocumentData> DocumentData => Set<DocumentData>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -53,9 +54,6 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
 
         modelBuilder.Entity<SupplierInvoice>()
             .HasQueryFilter(s => _currentUser.OrganisationId != null && s.FiscalYear.OrganisationId == _currentUser.OrganisationId);
-
-        modelBuilder.Entity<JournalEntryAttachment>()
-            .HasQueryFilter(a => _currentUser.OrganisationId != null && a.JournalEntry.FiscalYear.OrganisationId == _currentUser.OrganisationId);
 
         modelBuilder.Entity<Customer>()
             .HasQueryFilter(c => _currentUser.OrganisationId != null && c.OrganisationId == _currentUser.OrganisationId);
@@ -205,13 +203,40 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<JournalEntryAttachment>(entity =>
+        modelBuilder.Entity<Document>(entity =>
         {
-            entity.Property(a => a.FileName).HasMaxLength(260);
-            entity.Property(a => a.ContentType).HasMaxLength(100);
-            entity.HasOne(a => a.JournalEntry)
+            entity.Property(d => d.FileName).HasMaxLength(260);
+            entity.Property(d => d.ContentType).HasMaxLength(100);
+            entity.Property(d => d.StorageKey).HasMaxLength(500);
+            entity.Property(d => d.SuggestedType).HasMaxLength(50);
+            entity.Property(d => d.ClassifiedType).HasMaxLength(50);
+            entity.HasQueryFilter(d => _currentUser.OrganisationId != null && d.OrganisationId == _currentUser.OrganisationId);
+
+            entity.HasOne<Organisation>()
                   .WithMany()
-                  .HasForeignKey(a => a.JournalEntryId)
+                  .HasForeignKey(d => d.OrganisationId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(d => d.OrganisationId);
+
+            entity.HasMany(d => d.JournalEntries)
+                  .WithMany(j => j.Documents)
+                  .UsingEntity("DocumentJournalEntries");
+
+            entity.HasMany(d => d.SupplierInvoices)
+                  .WithMany(s => s.Documents)
+                  .UsingEntity("DocumentSupplierInvoices");
+
+            entity.HasMany(d => d.CustomerInvoices)
+                  .WithMany(c => c.Documents)
+                  .UsingEntity("DocumentCustomerInvoices");
+        });
+
+        modelBuilder.Entity<DocumentData>(entity =>
+        {
+            entity.HasKey(d => d.DocumentId);
+            entity.HasOne(d => d.Document)
+                  .WithOne()
+                  .HasForeignKey<DocumentData>(d => d.DocumentId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 

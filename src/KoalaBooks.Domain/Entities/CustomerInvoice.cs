@@ -39,4 +39,5 @@ public class CustomerInvoice
     public JournalEntry? PaymentJournalEntry { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public List<Document> Documents { get; set; } = [];
 }

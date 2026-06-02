@@ -144,6 +144,19 @@ public class CustomerInvoiceService
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
 
+        // Propagate document links to the new journal entry
+        var docs = await _db.Documents
+            .Include(d => d.JournalEntries)
+            .Where(d => d.CustomerInvoices.Any(c => c.Id == invoiceId))
+            .ToListAsync();
+
+        foreach (var doc in docs)
+            if (!doc.JournalEntries.Any(j => j.Id == journalEntry.Id))
+                doc.JournalEntries.Add(journalEntry);
+
+        if (docs.Count > 0)
+            await _db.SaveChangesAsync();
+
         return (invoice, null);
     }
 
