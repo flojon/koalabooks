@@ -177,7 +177,7 @@ app.MapGet("/documents/{id:int}", async (int id, DocumentService svc) =>
     var result = await svc.GetDownloadAsync(id);
     return result is null
         ? Results.NotFound()
-        : Results.File(result.Value.Data, result.Value.ContentType, result.Value.FileName);
+        : Results.File(result.Value.Data, result.Value.ContentType);
 }).RequireAuthorization();
 
 app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, CustomerInvoiceService svc) =>
