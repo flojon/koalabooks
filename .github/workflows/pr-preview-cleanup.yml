@@ -1,0 +1,89 @@
+name: PR Preview Cleanup
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Get open PR numbers
+        id: open-prs
+        uses: actions/github-script@v7
+        with:
+          result-encoding: string
+          script: |
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            return prs.map(pr => String(pr.number)).join(',');
+
+      - name: Delete stale GHCR images
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const openSet = new Set('${{ steps.open-prs.outputs.result }}'.split(',').filter(Boolean));
+            try {
+              const { data: versions } = await github.rest.packages.getAllPackageVersionsForPackageOwnedByUser({
+                package_type: 'container',
+                package_name: 'koalabooks-web',
+                username: context.repo.owner,
+                per_page: 100,
+              });
+              for (const v of versions) {
+                const prTag = (v.metadata?.container?.tags ?? []).find(t => /^pr-\d+$/.test(t));
+                if (!prTag) continue;
+                const prNum = prTag.replace('pr-', '');
+                if (!openSet.has(prNum)) {
+                  console.log(`Deleting stale GHCR image ${prTag}`);
+                  await github.rest.packages.deletePackageVersionForUser({
+                    package_type: 'container',
+                    package_name: 'koalabooks-web',
+                    username: context.repo.owner,
+                    package_version_id: v.id,
+                  });
+                }
+              }
+            } catch (e) {
+              console.log(`GHCR cleanup error: ${e.message}`);
+            }
+
+      - name: Prune orphaned VM directories and Caddy snippets
+        uses: appleboy/ssh-action@v1
+        env:
+          OPEN_PR_NUMBERS: ${{ steps.open-prs.outputs.result }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: OPEN_PR_NUMBERS
+          script: |
+            IFS=',' read -ra OPEN_PRS <<< "$OPEN_PR_NUMBERS"
+            RELOADED=0
+            for snippet in /opt/koalabooks/caddy-snippets/pr-*.caddy; do
+              [ -f "$snippet" ] || continue
+              pr_num=$(basename "$snippet" .caddy | sed 's/pr-//')
+              is_open=0
+              for open in "${OPEN_PRS[@]}"; do
+                [ "$open" = "$pr_num" ] && is_open=1 && break
+              done
+              if [ "$is_open" = "0" ]; then
+                echo "Pruning stale PR ${pr_num}"
+                if [ -d /opt/koalabooks/pr-${pr_num} ]; then
+                  cd /opt/koalabooks/pr-${pr_num}
+                  docker compose -p pr-${pr_num} down -v || true
+                fi
+                rm -f /opt/koalabooks/caddy-snippets/pr-${pr_num}.caddy
+                rm -rf /opt/koalabooks/pr-${pr_num}
+                RELOADED=1
+              fi
+            done
+            [ "$RELOADED" = "1" ] && docker exec koalabooks-caddy-1 caddy reload --config /etc/caddy/Caddyfile || true
