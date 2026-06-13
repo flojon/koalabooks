@@ -197,10 +197,11 @@ else
 
     private async Task SetTypeAsync(int docId, string? type)
     {
-        var err = await DocumentService.SetTypeAsync(docId, string.IsNullOrEmpty(type) ? null : type);
-        if (err is not null) { _error = err; return; }
         var doc = _docs.FirstOrDefault(d => d.Id == docId);
-        if (doc is not null) doc.ClassifiedType = string.IsNullOrEmpty(type) ? null : type;
+        var classifiedType = string.IsNullOrEmpty(type) ? null : type;
+        var err = await DocumentService.UpdateMetadataAsync(docId, classifiedType, doc?.DocumentDate);
+        if (err is not null) { _error = err; return; }
+        if (doc is not null) doc.ClassifiedType = classifiedType;
     }
 
     private void OpenClassifyDialog(DocumentMeta doc) => _classifyDoc = doc;
