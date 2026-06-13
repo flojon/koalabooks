@@ -75,6 +75,9 @@ public class DocumentService(
         return (doc, null);
     }
 
+    public Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
+        => throw new NotImplementedException();
+
     public async Task<string?> SetTypeAsync(int documentId, string? classifiedType)
     {
         var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
@@ -84,7 +87,12 @@ public class DocumentService(
         return null;
     }
 
-    public Task<List<DocumentMeta>> GetPendingAsync(string? typeFilter = null, int skip = 0, int? take = null)
+    public Task<List<DocumentMeta>> GetPendingAsync(
+        string? typeFilter = null,
+        int skip = 0,
+        int? take = null,
+        string sortBy = "uploadedAt",
+        bool sortAsc = false)
     {
         var query = PendingQuery(typeFilter).OrderByDescending(d => d.UploadedAt).Skip(skip);
         if (take.HasValue) query = query.Take(take.Value);
@@ -195,7 +203,8 @@ public class DocumentService(
             UploadedAt = d.UploadedAt,
             ClassifiedType = d.ClassifiedType,
             SuggestedType = d.SuggestedType,
-            ExtractedDataJson = d.ExtractedDataJson
+            ExtractedDataJson = d.ExtractedDataJson,
+            DocumentDate = d.DocumentDate
         }).ToListAsync();
 }
 
@@ -209,6 +218,7 @@ public class DocumentMeta
     public string? ClassifiedType { get; set; }
     public string? SuggestedType { get; set; }
     public string? ExtractedDataJson { get; set; }
+    public DateOnly? DocumentDate { get; set; }
 
     public string FileSizeDisplay => FileSize switch
     {

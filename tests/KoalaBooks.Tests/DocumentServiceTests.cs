@@ -88,6 +88,54 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdateMetadataAsync_SetsTypeAndDate()
+    {
+        var svc = _fx.MakeDocumentService();
+        var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", []);
+        var date = new DateOnly(2026, 3, 15);
+
+        var err = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
+
+        Assert.Null(err);
+        var pending = await svc.GetPendingAsync();
+        var updated = pending.First(d => d.Id == doc.Id);
+        Assert.Equal("CustomerInvoice", updated.ClassifiedType);
+        Assert.Equal(date, updated.DocumentDate);
+    }
+
+    [Fact]
+    public async Task UploadAsync_PopulatesDocumentDateFromExtractor()
+    {
+        var expectedDate = new DateOnly(2026, 3, 15);
+        var extractor = new StubExtractor(new ExtractionResult(
+            "SupplierInvoice", "ACME AB", 1000m, 250m, expectedDate, null, "INV-001"));
+        var svc = _fx.MakeDocumentService(extractor);
+
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", [1]);
+
+        Assert.Equal(expectedDate, doc!.DocumentDate);
+    }
+
+    [Fact]
+    public async Task GetPendingAsync_SortsByDocumentDate()
+    {
+        var svc = _fx.MakeDocumentService();
+        var (d1, _) = await svc.UploadAsync("a.pdf", "application/pdf", [1]);
+        var (d2, _) = await svc.UploadAsync("b.pdf", "application/pdf", [2]);
+
+        await svc.UpdateMetadataAsync(d1!.Id, null, new DateOnly(2026, 1, 1));
+        await svc.UpdateMetadataAsync(d2!.Id, null, new DateOnly(2026, 6, 1));
+
+        var ascResult = await svc.GetPendingAsync(sortBy: "documentDate", sortAsc: true);
+        Assert.Equal(d1.Id, ascResult[0].Id);
+        Assert.Equal(d2.Id, ascResult[1].Id);
+
+        var descResult = await svc.GetPendingAsync(sortBy: "documentDate", sortAsc: false);
+        Assert.Equal(d2.Id, descResult[0].Id);
+        Assert.Equal(d1.Id, descResult[1].Id);
+    }
+
+    [Fact]
     public async Task GetLinkedAsync_ReturnsDocumentsForJournalEntry()
     {
         var svc = _fx.MakeDocumentService();
@@ -219,4 +267,10 @@ file class FailingStorage : IDocumentStorage
 
     public Task<byte[]> LoadAsync(string storageKey) => Task.FromResult(Array.Empty<byte>());
     public Task DeleteAsync(string storageKey) => Task.CompletedTask;
+}
+
+file class StubExtractor(ExtractionResult result) : IDocumentExtractor
+{
+    public Task<ExtractionResult> ExtractAsync(string fileName, string contentType, byte[] data) =>
+        Task.FromResult(result);
 }

@@ -192,4 +192,8 @@ public class TestFixture : IDisposable
             NullLogger<PdfTextExtractor>.Instance));
         return new DocumentService(Db, storage, extractor, _currentUser, NullLogger<DocumentService>.Instance);
     }
+
+    public DocumentService MakeDocumentService(IDocumentExtractor extractor) =>
+        new DocumentService(Db, new DbDocumentStorage(Db), extractor, _currentUser,
+            NullLogger<DocumentService>.Instance);
 }
