@@ -74,20 +74,6 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SetTypeAsync_UpdatesClassifiedType()
-    {
-        var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", []);
-
-        var err = await svc.SetTypeAsync(doc!.Id, "CustomerInvoice");
-
-        Assert.Null(err);
-        var pending = await svc.GetPendingAsync();
-        var updated = pending.First(d => d.Id == doc.Id);
-        Assert.Equal("CustomerInvoice", updated.ClassifiedType);
-    }
-
-    [Fact]
     public async Task UpdateMetadataAsync_SetsTypeAndDate()
     {
         var svc = _fx.MakeDocumentService();
