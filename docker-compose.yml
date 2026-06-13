@@ -57,8 +57,12 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy-snippets:/etc/caddy/snippets
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      - default
+      - pr-previews
     depends_on:
       - web
     restart: unless-stopped
@@ -67,3 +71,7 @@ volumes:
   postgres-data:
   caddy-data:
   caddy-config:
+
+networks:
+  pr-previews:
+    external: true
