@@ -53,11 +53,20 @@ else
         <table style="margin:0;">
             <thead>
                 <tr>
-                    <th>Filnamn</th>
+                    <th @onclick='() => SortByAsync("fileName")' style="cursor:pointer; user-select:none;">
+                        Filnamn@(SortIndicator("fileName"))
+                    </th>
                     <th style="width:90px; text-align:right;">Storlek</th>
-                    <th style="width:140px;">Uppladdad</th>
-                    <th style="width:180px;">Typ</th>
-                    <th style="width:160px;">Åtgärder</th>
+                    <th style="width:150px; cursor:pointer; user-select:none;"
+                        @onclick='() => SortByAsync("uploadedAt")'>
+                        Uppladdad@(SortIndicator("uploadedAt"))
+                    </th>
+                    <th style="width:150px; cursor:pointer; user-select:none;"
+                        @onclick='() => SortByAsync("documentDate")'>
+                        Bokföringsdatum@(SortIndicator("documentDate"))
+                    </th>
+                    <th style="width:140px;">Typ</th>
+                    <th style="width:150px;">Åtgärder</th>
                 </tr>
             </thead>
             <tbody>
@@ -67,20 +76,18 @@ else
                         <td style="font-weight:500;">@doc.FileName</td>
                         <td style="text-align:right; color:#64748b; font-size:0.875rem;">@doc.FileSizeDisplay</td>
                         <td style="color:#64748b; font-size:0.875rem;">@doc.UploadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td style="color:#64748b; font-size:0.875rem;">@(doc.DocumentDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                         <td>
-                            <select style="font-size:0.8rem; border:1px solid #e2e8f0; border-radius:4px; padding:2px 6px; width:100%;"
-                                    value="@(doc.ClassifiedType ?? "")"
-                                    @onchange="e => SetTypeAsync(doc.Id, e.Value?.ToString())">
-                                <option value="">— Välj typ —</option>
-                                <option value="@nameof(DocumentEntityType.SupplierInvoice)">Leverantörsfaktura</option>
-                                <option value="@nameof(DocumentEntityType.CustomerInvoice)">Kundfaktura</option>
-                                <option value="@nameof(DocumentEntityType.JournalEntry)">Verifikation</option>
-                            </select>
+                            @if (doc.ClassifiedType is not null)
+                            {
+                                <span style="font-size:0.75rem; padding:2px 8px; border-radius:9999px; background:#e2e8f0; color:#475569;">
+                                    @TypeLabel(doc.ClassifiedType)
+                                </span>
+                            }
                         </td>
                         <td style="display:flex; gap:0.3rem; flex-wrap:wrap;">
-                            <button class="btn btn-sm btn-primary" @onclick="() => OpenClassifyDialog(doc)">
-                                Klassificera
-                            </button>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => OpenPreviewDialog(doc)" title="Förhandsgranska">👁</button>
+                            <button class="btn btn-sm btn-primary" @onclick="() => OpenClassifyDialog(doc)">Bokför</button>
                             <button class="btn btn-sm btn-danger" @onclick="() => DeleteDocAsync(doc.Id)">🗑</button>
                         </td>
                     </tr>
@@ -111,6 +118,15 @@ else
                             OnClose="() => _classifyDoc = null" />
 }
 
+@if (_previewDoc is not null)
+{
+    <PreviewDocumentDialog Doc="_previewDoc"
+                           DocumentProvider="DocumentProvider"
+                           OnSaved="OnDocumentSaved"
+                           OnClose="() => _previewDoc = null"
+                           OnClassify="OpenClassifyFromPreview" />
+}
+
 @code {
     [Inject] private DocumentService DocumentService { get; set; } = default!;
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
@@ -122,6 +138,9 @@ else
     private string? _error;
     private string _filter = "all";
     private DocumentMeta? _classifyDoc;
+    private string _sortBy = "uploadedAt";
+    private bool _sortAsc = false;
+    private DocumentMeta? _previewDoc;
     private int _page = 1;
     private int _totalCount;
     private const int PageSize = 50;
@@ -143,7 +162,7 @@ else
     {
         _isLoading = true;
         var skip = (_page - 1) * PageSize;
-        _docs = await DocumentService.GetPendingAsync(_filter, skip, PageSize);
+        _docs = await DocumentService.GetPendingAsync(_filter, skip, PageSize, _sortBy, _sortAsc);
         _totalCount = await DocumentService.GetPendingCountAsync(_filter);
         _isLoading = false;
     }
@@ -195,14 +214,24 @@ else
         finally { _uploading = false; }
     }
 
-    private async Task SetTypeAsync(int docId, string? type)
+    private async Task SortByAsync(string column)
     {
-        var doc = _docs.FirstOrDefault(d => d.Id == docId);
-        var classifiedType = string.IsNullOrEmpty(type) ? null : type;
-        var err = await DocumentService.UpdateMetadataAsync(docId, classifiedType, doc?.DocumentDate);
-        if (err is not null) { _error = err; return; }
-        if (doc is not null) doc.ClassifiedType = classifiedType;
+        if (_sortBy == column) _sortAsc = !_sortAsc;
+        else { _sortBy = column; _sortAsc = false; }
+        _page = 1;
+        await LoadPageAsync();
     }
+
+    private string SortIndicator(string column) =>
+        _sortBy != column ? "" : _sortAsc ? " ▲" : " ▼";
+
+    private static string TypeLabel(string? type) => type switch
+    {
+        "SupplierInvoice" => "Leverantörsfaktura",
+        "CustomerInvoice" => "Kundfaktura",
+        "JournalEntry"    => "Verifikation",
+        _                 => ""
+    };
 
     private void OpenClassifyDialog(DocumentMeta doc) => _classifyDoc = doc;
 
@@ -211,6 +240,22 @@ else
         _classifyDoc = null;
         await LoadPageAsync();
         Snackbar.Add("Dokument klassificerat.", Severity.Success);
+    }
+
+    private void OpenPreviewDialog(DocumentMeta doc) => _previewDoc = doc;
+
+    private async Task OnDocumentSaved()
+    {
+        _previewDoc = null;
+        await LoadPageAsync();
+        Snackbar.Add("Sparat.", Severity.Success);
+    }
+
+    private void OpenClassifyFromPreview()
+    {
+        var doc = _previewDoc;
+        _previewDoc = null;
+        _classifyDoc = doc;
     }
 
     private async Task DeleteDocAsync(int docId)
