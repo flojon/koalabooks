@@ -13,6 +13,7 @@ public class Document
     public string? SuggestedType { get; set; }
     public string? ExtractedDataJson { get; set; }
     public string? ClassifiedType { get; set; }
+    public DateOnly? DocumentDate { get; set; }
 
     public List<JournalEntry> JournalEntries { get; set; } = [];
     public List<SupplierInvoice> SupplierInvoices { get; set; } = [];

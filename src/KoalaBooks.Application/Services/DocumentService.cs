@@ -65,6 +65,7 @@ public class DocumentService(
             doc.ExtractedDataJson = result.SuggestedType is not null
                 ? JsonSerializer.Serialize(result)
                 : null;
+            doc.DocumentDate = result.InvoiceDate;
         }
         catch (Exception ex)
         {
@@ -75,20 +76,36 @@ public class DocumentService(
         return (doc, null);
     }
 
-    public async Task<string?> SetTypeAsync(int documentId, string? classifiedType)
+    public async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
     {
         var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
         if (doc is null) return "Dokumentet hittades inte.";
         doc.ClassifiedType = classifiedType;
+        doc.DocumentDate = documentDate;
         await db.SaveChangesAsync();
         return null;
     }
 
-    public Task<List<DocumentMeta>> GetPendingAsync(string? typeFilter = null, int skip = 0, int? take = null)
+    public Task<List<DocumentMeta>> GetPendingAsync(
+        string? typeFilter = null,
+        int skip = 0,
+        int? take = null,
+        string sortBy = "uploadedAt",
+        bool sortAsc = false)
     {
-        var query = PendingQuery(typeFilter).OrderByDescending(d => d.UploadedAt).Skip(skip);
-        if (take.HasValue) query = query.Take(take.Value);
-        return SelectMetaAsync(query);
+        var base2 = PendingQuery(typeFilter);
+        IQueryable<Document> ordered = (sortBy, sortAsc) switch
+        {
+            ("fileName",     true)  => base2.OrderBy(d => d.FileName),
+            ("fileName",     false) => base2.OrderByDescending(d => d.FileName),
+            ("documentDate", true)  => base2.OrderBy(d => d.DocumentDate),
+            ("documentDate", false) => base2.OrderByDescending(d => d.DocumentDate),
+            (_,              true)  => base2.OrderBy(d => d.UploadedAt),
+            _                       => base2.OrderByDescending(d => d.UploadedAt),
+        };
+        var q = ordered.Skip(skip);
+        if (take.HasValue) q = q.Take(take.Value);
+        return SelectMetaAsync(q);
     }
 
     public Task<int> GetPendingCountAsync(string? typeFilter = null) =>
@@ -195,7 +212,8 @@ public class DocumentService(
             UploadedAt = d.UploadedAt,
             ClassifiedType = d.ClassifiedType,
             SuggestedType = d.SuggestedType,
-            ExtractedDataJson = d.ExtractedDataJson
+            ExtractedDataJson = d.ExtractedDataJson,
+            DocumentDate = d.DocumentDate
         }).ToListAsync();
 }
 
@@ -209,6 +227,7 @@ public class DocumentMeta
     public string? ClassifiedType { get; set; }
     public string? SuggestedType { get; set; }
     public string? ExtractedDataJson { get; set; }
+    public DateOnly? DocumentDate { get; set; }
 
     public string FileSizeDisplay => FileSize switch
     {
