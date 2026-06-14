@@ -1,0 +1,37 @@
+services:
+  web:
+    image: ghcr.io/__OWNER__/koalabooks-web:pr-__PR_NUMBER__
+    environment:
+      - ConnectionStrings__koalabooks=Host=postgres;Port=5432;Database=koalabooks;Username=koalabooks;Password=__POSTGRES_PASSWORD__
+      - ASPNETCORE_ENVIRONMENT=Staging
+      - ASPNETCORE_URLS=http://+:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+      - pr-previews
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: koalabooks
+      POSTGRES_PASSWORD: __POSTGRES_PASSWORD__
+      POSTGRES_DB: koalabooks
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koalabooks"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+networks:
+  internal:
+  pr-previews:
+    external: true
+
+volumes:
+  postgres-data:
