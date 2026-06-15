@@ -56,27 +56,10 @@ public class SieImportService
 
     public SieDocument Parse(Stream stream)
     {
-        var doc = new SieDocument();
-        doc.ReadDocument(TranscodeFromCP437(stream));
-        return doc;
-    }
-
-    /// <summary>
-    /// SIE files use CP437 encoding (#FORMAT PC8). JsiSie may fall back to Latin-1
-    /// if CP437 isn't available at runtime. We transcode CP437 → Unicode → Latin-1
-    /// to ensure Swedish characters (ö, ä, é, etc.) are preserved regardless.
-    /// </summary>
-    private static MemoryStream TranscodeFromCP437(Stream stream)
-    {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-
-        using var ms = new MemoryStream();
-        stream.CopyTo(ms);
-        var rawBytes = ms.ToArray();
-
-        var cp437 = Encoding.GetEncoding(437);
-        var unicode = cp437.GetString(rawBytes);
-        return new MemoryStream(Encoding.Latin1.GetBytes(unicode));
+        var doc = new SieDocument { Encoding = Encoding.GetEncoding(437) };
+        doc.ReadDocument(stream);
+        return doc;
     }
 
     public async Task<SieImportPreview> GetPreviewAsync(SieDocument doc)
