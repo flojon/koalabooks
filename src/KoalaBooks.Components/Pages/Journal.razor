@@ -347,7 +347,16 @@ else
 
 @if (!FilteredEntries.Any() && !_showForm)
 {
-    <MudAlert Severity="Severity.Info" Class="mt-4">Inga verifikationer ännu. Klicka "Ny verifikation" för att skapa en.</MudAlert>
+    <MudAlert Severity="Severity.Info" Class="mt-4">
+        @if (_entries.Any())
+        {
+            <span>Inga verifikationer för vald period.</span>
+        }
+        else
+        {
+            <span>Inga verifikationer ännu. @if (_activeFiscalYear is not null && _selectedFiscalYearId == _activeFiscalYear.Id) { <span>Klicka "Ny verifikation" för att skapa en.</span> }</span>
+        }
+    </MudAlert>
 }
 }
 
@@ -526,6 +535,8 @@ else
     {
         _selectedMonthStr = "";
         _showForm = false;
+        _isEditing = false;
+        _editingId = null;
         _attachmentEntryId = null;
         _attachmentMeta = [];
         _convertingEntryId = null;
@@ -655,7 +666,7 @@ else
         {
             var invoice = new SupplierInvoice
             {
-                FiscalYearId = _activeFiscalYear!.Id,
+                FiscalYearId = _selectedFiscalYearId,
                 SupplierName = _cSupplier.Trim(),
                 InvoiceNumber = string.IsNullOrWhiteSpace(_cInvoiceNumber) ? null : _cInvoiceNumber.Trim(),
                 InvoiceDate = DateOnly.FromDateTime(_cInvoiceDate),
