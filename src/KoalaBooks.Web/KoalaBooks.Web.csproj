@@ -16,7 +16,7 @@
     </PackageReference>
     <PackageReference Include="MudBlazor" Version="9.6.0" />
     <PackageReference Include="OpenIddict.AspNetCore" Version="7.5.0" />
-    <PackageReference Include="QuestPDF" Version="2026.6.0" />
+    <PackageReference Include="QuestPDF" Version="2026.6.1" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.4" />
 
   </ItemGroup>
