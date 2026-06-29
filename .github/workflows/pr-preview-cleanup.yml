@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Get open PR numbers
         id: open-prs
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           result-encoding: string
           script: |
@@ -27,7 +27,7 @@ jobs:
             return prs.map(pr => String(pr.number)).join(',');
 
       - name: Delete stale GHCR images
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const openSet = new Set('${{ steps.open-prs.outputs.result }}'.split(',').filter(Boolean));

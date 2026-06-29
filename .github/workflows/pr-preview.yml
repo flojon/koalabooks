@@ -81,7 +81,7 @@ jobs:
             docker exec koalabooks-caddy-1 caddy reload --config /etc/caddy/Caddyfile
 
       - name: Post or update PR comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
@@ -144,7 +144,7 @@ jobs:
             docker exec koalabooks-caddy-1 caddy reload --config /etc/caddy/Caddyfile
 
       - name: Delete GHCR package version
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
@@ -172,7 +172,7 @@ jobs:
             }
 
       - name: Delete PR preview comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
