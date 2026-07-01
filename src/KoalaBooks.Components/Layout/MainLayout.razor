@@ -41,6 +41,13 @@
                     }
                 </MudNavLink>
                 <MudNavLink Href="/journal" Icon="@Icons.Material.Outlined.MenuBook">Journal</MudNavLink>
+                <MudNavLink Href="/review" Icon="@Icons.Material.Outlined.PlaylistAddCheck">
+                    Att granska
+                    @if (_draftCount > 0)
+                    {
+                        <span style="display:inline-flex; align-items:center; margin-left:auto; background:var(--mud-palette-error); color:var(--mud-palette-error-text); border-radius:9999px; padding:1px 7px; font-size:0.7rem; font-weight:700; line-height:1.6;">@_draftCount</span>
+                    }
+                </MudNavLink>
                 <MudNavLink Href="/inbox" Icon="@Icons.Material.Outlined.Inbox">Inbox</MudNavLink>
                 <MudNavLink Href="/supplier-invoices" Icon="@Icons.Material.Outlined.Receipt">Leverantörsfakturor</MudNavLink>
                 <MudNavLink Href="/customer-invoices" Icon="@Icons.Material.Outlined.RequestPage">Kundfakturor</MudNavLink>
@@ -100,6 +107,8 @@
     private ErrorBoundary? _errorBoundary;
     private int _todoCount;
     private bool _loadingTodoCount;
+    private int _draftCount;
+    private bool _loadingDraftCount;
 
     // Collapse state — persists across badge refreshes within the session
     // Transaktioner and Rapporter start expanded; Inställningar and Data collapsed (lower-frequency)
@@ -112,16 +121,27 @@
     {
         Navigation.LocationChanged += OnLocationChanged;
         await LoadTodoCountAsync();
+        await LoadDraftCountAsync();
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        if (_loadingTodoCount) return;
-        _ = InvokeAsync(async () =>
+        if (!_loadingTodoCount)
         {
-            await LoadTodoCountAsync();
-            StateHasChanged();
-        });
+            _ = InvokeAsync(async () =>
+            {
+                await LoadTodoCountAsync();
+                StateHasChanged();
+            });
+        }
+        if (!_loadingDraftCount)
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await LoadDraftCountAsync();
+                StateHasChanged();
+            });
+        }
     }
 
     private async Task LoadTodoCountAsync()
@@ -152,6 +172,32 @@
         finally
         {
             _loadingTodoCount = false;
+        }
+    }
+
+    private async Task LoadDraftCountAsync()
+    {
+        if (_loadingDraftCount) return;
+        _loadingDraftCount = true;
+        try
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var fySvc = scope.ServiceProvider.GetRequiredService<FiscalYearService>();
+            var journalSvc = scope.ServiceProvider.GetRequiredService<JournalEntryService>();
+
+            var fy = await fySvc.GetActiveAsync();
+            if (fy is null) { _draftCount = 0; return; }
+
+            _draftCount = await journalSvc.CountDraftsAsync(fy.Id);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load draft count for nav badge");
+            _draftCount = 0;
+        }
+        finally
+        {
+            _loadingDraftCount = false;
         }
     }
 
