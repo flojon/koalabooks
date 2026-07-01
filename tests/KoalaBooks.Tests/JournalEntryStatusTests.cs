@@ -34,4 +34,45 @@ public class JournalEntryStatusTests : IDisposable
         Assert.Equal(JournalEntryStatus.Draft, reloaded!.Status);
         Assert.Null(reloaded.SourceJournalEntryId);
     }
+
+    [Fact]
+    public async Task PostAsync_SetsStatusToPosted()
+    {
+        var entry = _f.MakeEntry(_fy.Id, _cash.Id, _revenue.Id, 300m);
+        var (created, _) = await _f.JournalEntryService.CreateAsync(entry);
+
+        await _f.JournalEntryService.PostAsync(created!.Id);
+
+        var reloaded = await _f.Db.JournalEntries.FindAsync(created.Id);
+        Assert.Equal(JournalEntryStatus.Posted, reloaded!.Status);
+    }
+
+    [Fact]
+    public async Task CreateReversalAsync_MarksOriginalReversedAndLinksReversal()
+    {
+        var posted = await _f.CreateAndPostEntryAsync(_fy.Id, _cash.Id, _revenue.Id, 400m);
+
+        var (reversal, error) = await _f.JournalEntryService.CreateReversalAsync(posted.Id, "Wrong amount");
+
+        Assert.Null(error);
+        Assert.NotNull(reversal);
+        Assert.Equal(JournalEntryStatus.Correction, reversal!.Status);
+        Assert.Equal(posted.Id, reversal.SourceJournalEntryId);
+
+        var reloadedOriginal = await _f.Db.JournalEntries.FindAsync(posted.Id);
+        Assert.Equal(JournalEntryStatus.Reversed, reloadedOriginal!.Status);
+    }
+
+    [Fact]
+    public async Task CreateReversalAsync_AlreadyReversedEntry_ReturnsError()
+    {
+        var posted = await _f.CreateAndPostEntryAsync(_fy.Id, _cash.Id, _revenue.Id, 400m);
+        await _f.JournalEntryService.CreateReversalAsync(posted.Id, "First reversal");
+
+        var (secondReversal, error) = await _f.JournalEntryService.CreateReversalAsync(posted.Id, "Second attempt");
+
+        Assert.Null(secondReversal);
+        Assert.NotNull(error);
+        Assert.Contains("already been reversed", error, StringComparison.OrdinalIgnoreCase);
+    }
 }
