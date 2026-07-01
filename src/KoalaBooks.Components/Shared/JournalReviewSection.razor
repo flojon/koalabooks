@@ -10,7 +10,7 @@
 
         <JournalEntryForm Accounts="Accounts"
                           Date="_formDate" DateChanged="d => _formDate = d"
-                          Description="_formDescription" DescriptionChanged="d => _formDescription = d"
+                          Description="@_formDescription" DescriptionChanged="d => _formDescription = d"
                           Lines="_formLines"
                           IsBalancedChanged="b => _isBalanced = b" />
 
