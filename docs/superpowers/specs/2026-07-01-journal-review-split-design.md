@@ -108,6 +108,10 @@ Split `Journal.razor` into two pages:
   a different operation from today's link-while-posted flow — it would
   delete/replace the draft entry rather than just linking to it. Needs
   its own design, filed separately.
+- "Korrigera" (correct a posted entry): a combined Återför + create a
+  replacement journal entry action, as a single row menu item instead
+  of two separate manual steps. Needs its own design (e.g. pre-filling
+  the new entry from the reversed one). Filed separately.
 
 ## Testing
 
