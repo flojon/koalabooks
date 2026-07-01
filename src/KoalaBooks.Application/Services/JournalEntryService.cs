@@ -28,6 +28,9 @@ public class JournalEntryService
         return await query.OrderBy(j => j.EntryNumber).ToListAsync();
     }
 
+    public Task<int> CountDraftsAsync(int fiscalYearId) =>
+        _db.JournalEntries.CountAsync(j => j.FiscalYearId == fiscalYearId && !j.IsPosted);
+
     public async Task<JournalEntry?> GetByIdAsync(int id)
     {
         return await _db.JournalEntries
