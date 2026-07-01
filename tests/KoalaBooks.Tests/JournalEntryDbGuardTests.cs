@@ -1,5 +1,6 @@
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
 
@@ -53,5 +54,23 @@ public class JournalEntryDbGuardTests : IDisposable
 
         var remaining = await _f.Db.JournalEntries.FindAsync(created!.Id);
         Assert.Null(remaining);
+    }
+
+    [Fact]
+    public async Task DirectRemove_YearEndClosingEntry_ThrowsOnSaveChanges()
+    {
+        // Closing entries are created by YearEndClosingService, not JournalEntryService.PostAsync —
+        // this proves the DB guard protects posted vouchers regardless of which code path created them.
+        await _f.CreateAndPostEntryAsync(_fy.Id, _cash.Id, _revenue.Id, 10_000m);
+
+        var result = await _f.YearEndClosingService.ExecuteClosingAsync(_fy.Id);
+        Assert.True(result.Success);
+
+        var closingEntry = await _f.Db.JournalEntries
+            .FirstAsync(j => j.FiscalYearId == _fy.Id && j.IsClosingEntry);
+
+        _f.Db.JournalEntries.Remove(closingEntry);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _f.Db.SaveChangesAsync());
     }
 }

@@ -6,6 +6,8 @@
 
 **Prerequisite:** This plan assumes `docs/superpowers/plans/2026-07-01-journal-entry-storno-compliance.md` has already been executed and merged, so `JournalEntry.Status` (`JournalEntryStatus.Draft/Posted/Reversed/Correction`) and `JournalEntry.SourceJournalEntryId` already exist, `PostAsync` already sets `Status = Posted`, and `CreateReversalAsync` already sets the reversal's `Status = Correction` and the original's `Status = Reversed`. `IsPosted` is still present on the entity and still being read/written everywhere else — that's exactly what this plan removes.
 
+**Note on `IsPosted`/`Status` sync (post-merge fix):** the final whole-branch review of the prerequisite plan found that `IsPosted = true` was also being set — without a matching `Status = Posted` — at six further construction sites the prerequisite plan's Architecture section didn't audit: `SieImportService.cs` (imported historical vouchers), `SupplierInvoiceService.cs` (invoice posting and payment entries), `CustomerInvoiceService.cs` (invoice posting and payment entries), and `YearEndClosingService.cs` (both closing entries). Left unfixed, those entries silently defaulted to `Status = Draft`, so the Task 3 DB guard treated them as deletable drafts — a silent hole in the compliance backstop. A follow-up fix (prior to this plan's execution) added `Status = JournalEntryStatus.Posted` alongside `IsPosted = true` at all six sites, so by the time this plan runs, `IsPosted == true` and `Status != Draft` are genuinely synchronized everywhere `IsPosted` is written — the semantic mapping this plan relies on now holds for real, not just for the two sites originally documented.
+
 **Architecture:** `IsPosted` stays on the `JournalEntry` entity, unused, through Tasks 1–4 while every call site is moved onto `Status` layer by layer (Application → Infrastructure → Web → Blazor UI), so every intermediate task compiles and the full test suite passes. Task 5 deletes the property, its EF mapping implications, and generates the column-drop migration once nothing references it. Since this is a pure refactor (no new behavior), each task's test step is "run the existing suite, confirm no regressions" rather than a new red/green cycle — the mechanical edit and its test-fixture updates land together in one step because `Status != Draft` and `IsPosted == true` are equivalent for every entry that exists today, so there is nothing new to assert, only existing assertions to re-express.
 
 **Semantic mapping used throughout:**
@@ -24,13 +26,14 @@
 
 ---
 
-### Task 1: Application layer — `JournalEntryService`, `YearEndClosingService`, `AccountMappingService`, `SupplierInvoiceService`
+### Task 1: Application layer — `JournalEntryService`, `YearEndClosingService`, `AccountMappingService`, `SupplierInvoiceService`, `CustomerInvoiceService`
 
 **Files:**
 - Modify: `src/KoalaBooks.Application/Services/JournalEntryService.cs`
 - Modify: `src/KoalaBooks.Application/Services/YearEndClosingService.cs`
 - Modify: `src/KoalaBooks.Application/Services/AccountMappingService.cs`
 - Modify: `src/KoalaBooks.Application/Services/SupplierInvoiceService.cs`
+- Modify: `src/KoalaBooks.Application/Services/CustomerInvoiceService.cs` (only its `JournalEntry.IsPosted` writes — see Step 7; its unrelated `CustomerInvoice.IsPosted` entity-flag usages are out of scope, per Global Constraints)
 - Modify tests: `tests/KoalaBooks.Tests/AuditTrailTests.cs`, `PostFiscalYearGuardTests.cs`, `YearEndClosingServiceTests.cs`, `ReversalClosedYearTests.cs`, `BalanceSheetTests.cs`, `BookkeepingTests.cs`, `GetAccountIdsWithTransactionsTests.cs`, `IncomeStatementTests.cs`, `TenantIsolationTests.cs`, `GeneralLedgerTests.cs`, `VatReportTests.cs`, `DraftFilteringTests.cs`
 
 **Interfaces:**
@@ -263,7 +266,43 @@ to:
             .Where(j => j.FiscalYearId == fiscalYearId && j.Status != JournalEntryStatus.Draft && !j.IsClosingEntry)
 ```
 
-- [ ] **Step 7: Update dependent test fixtures/assertions**
+- [ ] **Step 7: Edit `CustomerInvoiceService.cs`**
+
+This file's two `JournalEntry.IsPosted` writes are in scope (they construct a `JournalEntry`, same as `SupplierInvoiceService.cs`'s Step 6). Its several `invoice.IsPosted` reads/writes (the `CustomerInvoice` entity's own flag) are a different, unrelated concept — do not touch them, per Global Constraints.
+
+Change (invoice posting journal entry):
+```csharp
+            Description = $"Kundfaktura {invoice.CustomerName} #{invoice.InvoiceNumber}",
+            FiscalYearId = invoice.FiscalYearId,
+            IsPosted = true,
+            CreatedAt = DateTime.UtcNow,
+            Lines = journalLines
+```
+to:
+```csharp
+            Description = $"Kundfaktura {invoice.CustomerName} #{invoice.InvoiceNumber}",
+            FiscalYearId = invoice.FiscalYearId,
+            Status = JournalEntryStatus.Posted,
+            CreatedAt = DateTime.UtcNow,
+            Lines = journalLines
+```
+
+Change (payment journal entry):
+```csharp
+            Description = $"Inbetalning {invoice.CustomerName} #{invoice.InvoiceNumber}",
+            FiscalYearId = invoice.FiscalYearId,
+            IsPosted = true,
+            CreatedAt = DateTime.UtcNow,
+```
+to:
+```csharp
+            Description = $"Inbetalning {invoice.CustomerName} #{invoice.InvoiceNumber}",
+            FiscalYearId = invoice.FiscalYearId,
+            Status = JournalEntryStatus.Posted,
+            CreatedAt = DateTime.UtcNow,
+```
+
+- [ ] **Step 8: Update dependent test fixtures/assertions**
 
 In `tests/KoalaBooks.Tests/AuditTrailTests.cs`:
 ```csharp
@@ -356,18 +395,19 @@ to:
 /// include ALL entries regardless of Status.
 ```
 
-- [ ] **Step 8: Run the full test suite**
+- [ ] **Step 9: Run the full test suite**
 
 Run: `dotnet test tests/KoalaBooks.Tests`
-Expected: PASS, same test count as the Step 1 baseline. `grep -rn "IsPosted" src/KoalaBooks.Application tests/KoalaBooks.Tests` should now only show hits in `CustomerInvoiceService.cs`-adjacent files (`CustomerInvoiceService.cs` itself isn't in `src/KoalaBooks.Application/Services`... actually it is — confirm the only remaining `Application`-layer hits are `CustomerInvoiceService.cs`'s own `CustomerInvoice.IsPosted` usages, which are out of scope and must remain).
+Expected: PASS, same test count as the Step 1 baseline. `grep -rn "IsPosted" src/KoalaBooks.Application tests/KoalaBooks.Tests` should now only show hits that are `CustomerInvoiceService.cs`'s own `CustomerInvoice.IsPosted` usages (the unrelated entity flag, out of scope, must remain) — confirm no `JournalEntry.IsPosted` hits remain anywhere in `src/KoalaBooks.Application`.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add src/KoalaBooks.Application/Services/JournalEntryService.cs \
         src/KoalaBooks.Application/Services/YearEndClosingService.cs \
         src/KoalaBooks.Application/Services/AccountMappingService.cs \
         src/KoalaBooks.Application/Services/SupplierInvoiceService.cs \
+        src/KoalaBooks.Application/Services/CustomerInvoiceService.cs \
         tests/KoalaBooks.Tests/AuditTrailTests.cs \
         tests/KoalaBooks.Tests/PostFiscalYearGuardTests.cs \
         tests/KoalaBooks.Tests/YearEndClosingServiceTests.cs \
@@ -380,7 +420,7 @@ git add src/KoalaBooks.Application/Services/JournalEntryService.cs \
         tests/KoalaBooks.Tests/GeneralLedgerTests.cs \
         tests/KoalaBooks.Tests/VatReportTests.cs \
         tests/KoalaBooks.Tests/DraftFilteringTests.cs
-git commit -m "refactor: move JournalEntryService/YearEndClosingService/AccountMappingService/SupplierInvoiceService off IsPosted onto Status"
+git commit -m "refactor: move JournalEntryService/YearEndClosingService/AccountMappingService/SupplierInvoiceService/CustomerInvoiceService off IsPosted onto Status"
 ```
 
 ---

@@ -241,6 +241,7 @@ public class SieImportService
                 FiscalYearId = fiscalYear.Id,
                 CreatedAt = DateTime.UtcNow,
                 IsPosted = true,
+                Status = JournalEntryStatus.Posted,
                 Lines = []
             };
 
