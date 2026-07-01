@@ -204,6 +204,10 @@ else
                             <span style="font-size:0.75rem; color:#16a34a; margin-left:0.25rem;">📄 Faktura</span>
                         }
                     }
+                    else if (entry.Status == JournalEntryStatus.Reversed)
+                    {
+                        <span style="color:#6b7280; font-size:0.85rem;">Återförd — inga åtgärder</span>
+                    }
                     else
                     {
                         <button class="btn btn-sm btn-secondary" @onclick="() => EditEntry(entry)">Redigera</button>
