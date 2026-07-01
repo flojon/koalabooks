@@ -398,6 +398,8 @@ else
 
         if (post)
         {
+            // Create and post are separate calls with no wrapping transaction. If post fails
+            // here, the entry is left as a draft — it's recoverable via the Review page, not lost.
             var postError = await JournalEntryService.PostAsync(result!.Id);
             if (postError is not null)
             {
