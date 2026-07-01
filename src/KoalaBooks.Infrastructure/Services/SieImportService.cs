@@ -175,11 +175,16 @@ public class SieImportService
 
         if (fiscalYear is not null && overwrite)
         {
-            // Delete existing journal entries and accounts for this fiscal year
             var existingEntries = await _db.JournalEntries
                 .Include(j => j.Lines)
                 .Where(j => j.FiscalYearId == fiscalYear.Id)
                 .ToListAsync();
+
+            if (existingEntries.Any(j => j.Status != JournalEntryStatus.Draft))
+                throw new InvalidOperationException(
+                    $"Cannot overwrite fiscal year {fyName}: it contains posted journal entries, which cannot be deleted. Reverse them first, or import into a new fiscal year.");
+
+            // Delete existing journal entries and accounts for this fiscal year
             _db.JournalEntries.RemoveRange(existingEntries);
 
             var existingAccounts = await _db.Accounts
