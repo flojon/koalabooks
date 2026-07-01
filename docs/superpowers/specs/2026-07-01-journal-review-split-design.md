@@ -97,21 +97,24 @@ Split `Journal.razor` into two pages:
 
 ## Out of scope (follow-up issue)
 
-- Customer-invoice-from-entry: `CustomerInvoiceService` requires
-  structured invoice line items (products/services, quantities, VAT
-  rates) and posts via a wizard requiring explicit account mappings
-  (`receivableAccountId`, `revenueAccountId`, per-VAT-rate accounts). A
-  flat journal entry has no structured lines to map from, and no
-  `CreateFromEntry`-equivalent exists for `CustomerInvoiceService` today.
-  Needs its own design.
-- "Convert draft journal entry → draft invoice" (supplier or customer):
-  a different operation from today's link-while-posted flow — it would
+Customer-invoice-from-entry is dropped entirely, not deferred:
+`CustomerInvoiceService` requires structured invoice line items
+(products/services, quantities, VAT rates) and posts via a wizard
+requiring explicit account mappings (`receivableAccountId`,
+`revenueAccountId`, per-VAT-rate accounts). A flat journal entry has no
+structured lines to map from, and no `CreateFromEntry`-equivalent exists
+for `CustomerInvoiceService` today. Not planned.
+
+Filed as a follow-up issue (see #171):
+
+- "Convert draft journal entry → draft supplier invoice": a different
+  operation from today's link-while-posted flow — it would
   delete/replace the draft entry rather than just linking to it. Needs
-  its own design, filed separately.
+  its own design.
 - "Korrigera" (correct a posted entry): a combined Återför + create a
   replacement journal entry action, as a single row menu item instead
   of two separate manual steps. Needs its own design (e.g. pre-filling
-  the new entry from the reversed one). Filed separately.
+  the new entry from the reversed one).
 
 ## Testing
 
