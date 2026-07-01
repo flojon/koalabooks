@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -94,6 +95,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(j => new { j.FiscalYearId, j.EntryNumber }).IsUnique();
             entity.Property(j => j.Description).HasMaxLength(500);
             entity.Property(j => j.IsClosingEntry).HasDefaultValue(false);
+            entity.Property(j => j.Status).HasDefaultValue(JournalEntryStatus.Draft);
+            entity.HasIndex(j => j.SourceJournalEntryId);
+            entity.HasOne<JournalEntry>()
+                  .WithMany()
+                  .HasForeignKey(j => j.SourceJournalEntryId)
+                  .OnDelete(DeleteBehavior.Restrict)
+                  .IsRequired(false);
             entity.HasOne(j => j.FiscalYear)
                   .WithMany(f => f.JournalEntries)
                   .HasForeignKey(j => j.FiscalYearId)
