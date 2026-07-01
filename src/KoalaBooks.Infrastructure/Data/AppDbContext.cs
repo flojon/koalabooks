@@ -15,6 +15,28 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         _currentUser = currentUser;
     }
 
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        GuardAgainstImmutableJournalEntryDeletion();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        GuardAgainstImmutableJournalEntryDeletion();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void GuardAgainstImmutableJournalEntryDeletion()
+    {
+        var deletingImmutableEntries = ChangeTracker.Entries<JournalEntry>()
+            .Any(e => e.State == EntityState.Deleted && e.Entity.Status != JournalEntryStatus.Draft);
+
+        if (deletingImmutableEntries)
+            throw new InvalidOperationException(
+                "Cannot delete a posted, reversed, or correction journal entry. Create a reversal instead.");
+    }
+
     public DbSet<Organisation> Organisations => Set<Organisation>();
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
