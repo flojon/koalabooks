@@ -48,7 +48,7 @@ else
 @if (_showForm)
 {
     <div class="card">
-        <h3>@(_isEditing ? "Redigera" : "Ny") verifikation</h3>
+        <h3>Ny verifikation</h3>
 
         <JournalEntryForm Accounts="_accounts"
                           Date="_formDate" DateChanged="d => _formDate = d"
@@ -57,7 +57,8 @@ else
                           IsBalancedChanged="b => _isBalanced = b" />
 
         <div style="margin-top:1rem; display:flex; gap:0.5rem;">
-            <button class="btn btn-success" @onclick="SaveEntry" disabled="@(!_isBalanced)">💾 Spara</button>
+            <button class="btn btn-success" @onclick="SaveAndPost" disabled="@(!_isBalanced)">💾 Bokför</button>
+            <button class="btn btn-secondary" @onclick="SaveAsDraft" disabled="@(!_isBalanced)">Spara som utkast</button>
             <button class="btn btn-secondary" @onclick="CancelForm">Avbryt</button>
         </div>
     </div>
@@ -76,16 +77,14 @@ else
             <th>Beskrivning</th>
             <th style="width:120px;">Debet</th>
             <th style="width:120px;">Kredit</th>
-            <th style="width:90px;">Status</th>
             <th style="width:40px;" title="Bilagor"></th>
-            <th style="width:180px;">Åtgärder</th>
+            <th style="width:120px;">Åtgärder</th>
         </tr>
     </thead>
     <tbody>
         @foreach (var entry in FilteredEntries)
         {
-            var canConvert = entry.IsPosted
-                && !entry.IsClosingEntry
+            var canConvert = !entry.IsClosingEntry
                 && !_linkedJournalEntryIds.Contains(entry.Id)
                 && entry.Lines.Any(l => l.CreditAmount > 0 && l.Account?.AccountNumber?.StartsWith("24") == true);
 
@@ -95,16 +94,6 @@ else
                 <td>@entry.Description</td>
                 <td>@entry.Lines.Sum(l => l.DebitAmount).ToString("N2")</td>
                 <td>@entry.Lines.Sum(l => l.CreditAmount).ToString("N2")</td>
-                <td>
-                    @if (entry.IsPosted)
-                    {
-                        <span style="color:#16a34a;">✅ Bokförd</span>
-                    }
-                    else
-                    {
-                        <span style="color:#f59e0b;">📝 Utkast</span>
-                    }
-                </td>
                 <td style="text-align:center;">
                     @{ var attachCount = _attachmentCounts.GetValueOrDefault(entry.Id); }
                     <button class="btn btn-sm @(_attachmentEntryId == entry.Id ? "btn-primary" : "btn-secondary")"
@@ -123,36 +112,23 @@ else
                             <button class="btn btn-sm btn-secondary" @onclick="CancelReversal">Avbryt</button>
                         </div>
                     }
-                    else if (_deletingEntryId == entry.Id)
-                    {
-                        <div style="display:flex; gap:0.25rem; align-items:center;">
-                            <span>Är du säker?</span>
-                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDelete(entry.Id)">Ja, radera</button>
-                            <button class="btn btn-sm btn-secondary" @onclick="CancelDelete">Avbryt</button>
-                        </div>
-                    }
                     else if (_convertingEntryId == entry.Id)
                     {
                         <button class="btn btn-sm btn-secondary" @onclick="CancelConvert">Avbryt</button>
                     }
-                    else if (entry.IsPosted)
+                    else
                     {
-                        <button class="btn btn-sm btn-warning" @onclick="() => StartReversal(entry.Id)">Återför</button>
-                        @if (canConvert)
-                        {
-                            <button class="btn btn-sm btn-primary" style="margin-left:0.25rem;"
-                                    @onclick="() => StartConvert(entry)">Konvertera</button>
-                        }
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
+                            <MudMenuItem OnClick="() => StartReversal(entry.Id)">Återför</MudMenuItem>
+                            @if (canConvert)
+                            {
+                                <MudMenuItem OnClick="() => StartConvert(entry)">Skapa leverantörsfaktura</MudMenuItem>
+                            }
+                        </MudMenu>
                         @if (_linkedJournalEntryIds.Contains(entry.Id))
                         {
                             <span style="font-size:0.75rem; color:#16a34a; margin-left:0.25rem;">📄 Faktura</span>
                         }
-                    }
-                    else
-                    {
-                        <button class="btn btn-sm btn-secondary" @onclick="() => EditEntry(entry)">Redigera</button>
-                        <button class="btn btn-sm btn-success" @onclick="() => PostEntry(entry.Id)">Bokför</button>
-                        <button class="btn btn-sm btn-danger" @onclick="() => StartDelete(entry.Id)">🗑️ Radera</button>
                     }
                 </td>
             </tr>
@@ -160,7 +136,7 @@ else
             @if (_attachmentEntryId == entry.Id)
             {
                 <tr style="background:#f8fafc;">
-                    <td colspan="8" style="padding:1rem;">
+                    <td colspan="7" style="padding:1rem;">
                         <div style="max-width:640px;">
                             <p style="margin:0 0 0.75rem; font-weight:600;">📎 Bilagor — Verifikation #@entry.EntryNumber</p>
 
@@ -218,9 +194,9 @@ else
             @if (_convertingEntryId == entry.Id)
             {
                 <tr style="background:#f0f9ff;">
-                    <td colspan="8" style="padding:1rem;">
+                    <td colspan="7" style="padding:1rem;">
                         <div style="max-width:700px;">
-                            <p style="margin:0 0 0.75rem; font-weight:600;">Konvertera till leverantörsfaktura</p>
+                            <p style="margin:0 0 0.75rem; font-weight:600;">Skapa leverantörsfaktura</p>
                             <p style="font-size:0.8rem; color:#64748b; margin:0 0 0.75rem;">
                                 Skapar en faktura kopplad till verifikation #@entry.EntryNumber — ingen ny verifikation skapas.
                             </p>
@@ -337,16 +313,13 @@ else
     private List<Account> _accounts = [];
     private List<JournalEntry> _entries = [];
     private bool _showForm;
-    private bool _isEditing;
     private bool _isLoading;
-    private int? _editingId;
     private DateTime _formDate = DateTime.Today;
     private string _formDescription = "";
     private List<JournalEntryForm.LineModel> _formLines = [];
     private bool _isBalanced;
     private int? _reversingEntryId;
     private string _reversalReason = "";
-    private int? _deletingEntryId;
     private HashSet<int> _linkedJournalEntryIds = [];
 
     // Attachment panel
@@ -389,36 +362,22 @@ else
 
     private void NewEntry()
     {
-        _isEditing = false;
-        _editingId = null;
         _formDate = DateTime.Today;
         _formDescription = "";
         _formLines = [new(), new()];
         _showForm = true;
     }
 
-    private void EditEntry(JournalEntry entry)
-    {
-        _isEditing = true;
-        _editingId = entry.Id;
-        _formDate = entry.Date.ToDateTime(TimeOnly.MinValue);
-        _formDescription = entry.Description;
-        _formLines = entry.Lines.Select(l => new JournalEntryForm.LineModel
-        {
-            AccountId = l.AccountId,
-            DebitAmount = l.DebitAmount,
-            CreditAmount = l.CreditAmount
-        }).ToList();
-        _showForm = true;
-    }
-
     private void CancelForm() => _showForm = false;
 
-    private async Task SaveEntry()
+    private async Task SaveAndPost() => await SaveEntryAsync(post: true);
+
+    private async Task SaveAsDraft() => await SaveEntryAsync(post: false);
+
+    private async Task SaveEntryAsync(bool post)
     {
         var entry = new JournalEntry
         {
-            Id = _editingId ?? 0,
             Date = DateOnly.FromDateTime(_formDate),
             Description = _formDescription,
             FiscalYearId = _activeFiscalYear!.Id,
@@ -430,17 +389,27 @@ else
             }).ToList()
         };
 
-        var (result, error) = _isEditing
-            ? await JournalEntryService.UpdateAsync(entry)
-            : await JournalEntryService.CreateAsync(entry);
-
+        var (result, error) = await JournalEntryService.CreateAsync(entry);
         if (error is not null)
         {
             Snackbar.Add(error, Severity.Error);
             return;
         }
 
-        Snackbar.Add(_isEditing ? "Verifikation uppdaterad." : $"Verifikation #{result!.EntryNumber} skapad.", Severity.Success);
+        if (post)
+        {
+            var postError = await JournalEntryService.PostAsync(result!.Id);
+            if (postError is not null)
+            {
+                Snackbar.Add(postError, Severity.Error);
+                return;
+            }
+        }
+
+        Snackbar.Add(post
+            ? $"Verifikation #{result!.EntryNumber} bokförd."
+            : $"Verifikation #{result!.EntryNumber} sparad som utkast.",
+            Severity.Success);
         _showForm = false;
         await ReloadEntriesAsync();
     }
@@ -448,7 +417,7 @@ else
     private async Task LoadForSelectedYearAsync()
     {
         _accounts = (await AccountService.GetAllAsync(_selectedFiscalYearId)).Where(a => a.IsActive).ToList();
-        _entries = await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId);
+        _entries = (await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId)).Where(e => e.IsPosted).ToList();
         _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_selectedFiscalYearId);
         _knownSuppliers = await InvoiceService.GetSuppliersAsync(_selectedFiscalYearId);
         _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
@@ -458,12 +427,9 @@ else
     {
         _selectedMonthStr = "";
         _showForm = false;
-        _isEditing = false;
-        _editingId = null;
         _attachmentEntryId = null;
         _attachmentMeta = [];
         _convertingEntryId = null;
-        _deletingEntryId = null;
         _reversingEntryId = null;
         _isReloading = true;
         await LoadForSelectedYearAsync();
@@ -472,37 +438,8 @@ else
 
     private async Task ReloadEntriesAsync()
     {
-        _entries = await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId);
+        _entries = (await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId)).Where(e => e.IsPosted).ToList();
         _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
-    }
-
-    private async Task PostEntry(int entryId)
-    {
-        var error = await JournalEntryService.PostAsync(entryId);
-        if (error is not null)
-        {
-            Snackbar.Add(error, Severity.Error);
-            return;
-        }
-        Snackbar.Add("Verifikation bokförd.", Severity.Success);
-        await ReloadEntriesAsync();
-    }
-
-    private void StartDelete(int entryId) => _deletingEntryId = entryId;
-
-    private void CancelDelete() => _deletingEntryId = null;
-
-    private async Task ConfirmDelete(int entryId)
-    {
-        var error = await JournalEntryService.DeleteDraftAsync(entryId);
-        _deletingEntryId = null;
-        if (error is not null)
-        {
-            Snackbar.Add(error, Severity.Error);
-            return;
-        }
-        Snackbar.Add("Utkastet raderat.", Severity.Success);
-        await ReloadEntriesAsync();
     }
 
     private void StartReversal(int entryId)
@@ -600,7 +537,7 @@ else
 
             Snackbar.Add($"Faktura för {result!.SupplierName} skapad och kopplad till verifikation.", Severity.Success);
             _convertingEntryId = null;
-            _entries = await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId);
+            _entries = (await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId)).Where(e => e.IsPosted).ToList();
             _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_selectedFiscalYearId);
             _knownSuppliers = await InvoiceService.GetSuppliersAsync(_selectedFiscalYearId);
         }
