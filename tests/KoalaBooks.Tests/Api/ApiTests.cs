@@ -2,6 +2,7 @@ using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Headers;
@@ -441,6 +442,91 @@ public class ApiTests : IAsyncLifetime
 
         var client = await AuthenticatedClientAsync();
         var response = await client.GetAsync($"/api/v1/journal-entries/{otherEntry.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Reverse_PostedEntry_ReturnsReversalLinkedToOriginal()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-09-01",
+            description = "To be reversed",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 600m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 600m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        // Posting goes through JournalEntryService.PostAsync, but that (and every other service
+        // method) relies on ICurrentUser.OrganisationId, which is sourced from the HTTP request's
+        // claims. A manually created IServiceScope has no ambient HttpContext, so calling the
+        // service directly here would silently fail the tenant query filter. Mark the entry
+        // posted via a raw DB write instead, matching the SeedAsync/SeedSecondTenantAsync pattern
+        // already used in this file for out-of-band setup.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entryToPost = await db.JournalEntries.IgnoreQueryFilters().FirstAsync(j => j.Id == entryId);
+        entryToPost.IsPosted = true;
+        entryToPost.Status = JournalEntryStatus.Posted;
+        await db.SaveChangesAsync();
+
+        var reverseResp = await client.PostAsJsonAsync($"/api/v1/journal-entries/{entryId}/reverse", new { reason = "Wrong account" });
+        Assert.Equal(HttpStatusCode.Created, reverseResp.StatusCode);
+
+        var reversal = await reverseResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Correction", reversal.GetProperty("status").GetString());
+        Assert.Equal(entryId, reversal.GetProperty("sourceJournalEntryId").GetInt32());
+
+        var originalResp = await client.GetAsync($"/api/v1/journal-entries/{entryId}");
+        var original = await originalResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Reversed", original.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task JournalEntries_Reverse_DraftEntry_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-09-02",
+            description = "Still a draft",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 100m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var reverseResp = await client.PostAsJsonAsync($"/api/v1/journal-entries/{entryId}/reverse", new { reason = "Nope" });
+        Assert.Equal(HttpStatusCode.BadRequest, reverseResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Reverse_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.PostAsJsonAsync("/api/v1/journal-entries/999999/reverse", new { reason = "Nope" });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }
