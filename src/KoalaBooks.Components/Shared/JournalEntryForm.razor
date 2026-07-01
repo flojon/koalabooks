@@ -77,11 +77,13 @@
     private decimal TotalCredit => Lines.Sum(l => l.CreditAmount);
     private bool IsBalanced => TotalDebit > 0 && TotalDebit == TotalCredit;
 
+    protected override void OnInitialized()
+    {
+        IsBalancedChanged.InvokeAsync(IsBalanced);
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-            await IsBalancedChanged.InvokeAsync(IsBalanced);
-
         if (_pendingFocusId is not null)
         {
             var id = _pendingFocusId;
