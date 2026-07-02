@@ -42,5 +42,7 @@ volumes:
   postgres-data:
 
 secrets:
+  # File must be owned by uid 1654 (the web image's non-root user) - Compose
+  # bind-mounts it preserving host ownership and ignores mode/uid/gid outside Swarm.
   postgres_password:
     file: ./secrets/postgres_password

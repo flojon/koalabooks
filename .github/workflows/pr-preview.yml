@@ -68,6 +68,11 @@ jobs:
             if [ ! -f /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password ]; then
               openssl rand -hex 24 > /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
               chmod 600 /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
+              # docker compose (non-Swarm) bind-mounts file secrets preserving host
+              # ownership; it ignores `mode`/`uid`/`gid` on the secret. The web image
+              # runs as uid 1654 (aspnet chiseled), so the file must be owned by that
+              # uid or the container can't read its own secret and crash-loops.
+              sudo chown 1654:1654 /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
             fi
             sed \
               -e "s/__PR_NUMBER__/${PR_NUMBER}/g" \
