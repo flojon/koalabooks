@@ -12,7 +12,7 @@ public class OidcClientSeedingTests : IDisposable
 {
     private readonly ServiceProvider _sp;
     private readonly string _dbName;
-    private static readonly Uri DashboardRedirectUri = new("http://localhost:18888/signin-oidc");
+    private static readonly Uri DashboardRedirectUri = new("http://localhost:18888/");
 
     public OidcClientSeedingTests()
     {
@@ -79,7 +79,7 @@ public class OidcClientSeedingTests : IDisposable
     }
 
     [Fact]
-    public async Task SeedAsync_RegistersBothHttpAndHttpsRedirectUris()
+    public async Task SeedAsync_RegistersRedirectUri()
     {
         using var scope = _sp.CreateScope();
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, DashboardRedirectUri, "test-secret");
@@ -89,16 +89,15 @@ public class OidcClientSeedingTests : IDisposable
         var descriptor = new OpenIddictApplicationDescriptor();
         await manager.PopulateAsync(descriptor, app);
 
-        Assert.Contains(new Uri("http://localhost:18888/signin-oidc"), descriptor.RedirectUris);
-        Assert.Contains(new Uri("https://localhost:18888/signin-oidc"), descriptor.RedirectUris);
-        Assert.Equal(2, descriptor.RedirectUris.Count);
+        Assert.Contains(DashboardRedirectUri, descriptor.RedirectUris);
+        Assert.Single(descriptor.RedirectUris);
     }
 
     [Fact]
     public async Task SeedAsync_UpdatesExistingClient()
     {
-        var originalUri = new Uri("http://localhost:18888/signin-oidc");
-        var updatedUri = new Uri("http://localhost:19999/signin-oidc");
+        var originalUri = new Uri("http://localhost:18888/");
+        var updatedUri = new Uri("http://localhost:19999/");
 
         using (var scope = _sp.CreateScope())
             await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, originalUri, "secret-v1");
