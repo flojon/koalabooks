@@ -5,10 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace KoalaBooks.Tests;
 
-// Regression test for #179: Development-mode startup (ASPNETCORE_ENVIRONMENT=Development,
-// which enables DI scope validation) used to crash resolving AppDbContext because the
-// context was registered pooled via AddNpgsqlDbContext, and the pool's activator resolves
-// constructor dependencies (ICurrentUser, scoped) against the root provider, not a scope.
+// Regression test for #179: pooled AppDbContext crashed resolving its scoped ICurrentUser
+// dependency whenever DI scope validation was enabled (the Development default).
 public class DevelopmentStartupTests
 {
     private class DevelopmentWebApiFactory(string connStr) : WebApplicationFactory<Program>

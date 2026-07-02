@@ -26,10 +26,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-// AppDbContext takes a scoped ICurrentUser in its constructor, which is incompatible with
-// EF Core's context pooling (AddNpgsqlDbContext's default): the pool's activator resolves
-// constructor dependencies against the app's root provider, not the caller's scope. Register
-// unpooled via AddDbContext, then enrich with Aspire's retries/health checks/telemetry.
+// Unpooled: AppDbContext's scoped ICurrentUser ctor dependency can't be resolved by a
+// pooled context's activator, which only has access to the root provider (see #179).
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("koalabooks")));
 builder.EnrichNpgsqlDbContext<AppDbContext>();
