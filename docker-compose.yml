@@ -23,10 +23,7 @@ services:
       - ASPNETCORE_URLS=http://+:8080
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
-      # Scheme here doesn't need to match exactly: AspireDashboardSeeder registers both
-      # http and https variants of this host+path, since the Aspire Dashboard container's
-      # forwarded-headers handling behind Caddy (Docker bridge) isn't reliable enough to
-      # guarantee which scheme it reports in its own OIDC redirect_uri.
+      # Scheme doesn't need to match exactly: AspireDashboardSeeder registers both http/https variants.
       - AspireDashboard__OidcRedirectUri=http://dashboard.koalasoft.se/signin-oidc
       - AspireDashboard__OidcClientSecret=${ASPIRE_DASHBOARD_OIDC_CLIENT_SECRET}
     depends_on:

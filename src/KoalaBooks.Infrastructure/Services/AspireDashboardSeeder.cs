@@ -32,11 +32,7 @@ public static class AspireDashboardSeeder
             }
         };
 
-        // The Aspire Dashboard container's forwarded-headers handling behind a
-        // non-loopback reverse proxy (e.g. Caddy on a Docker bridge network) is
-        // unreliable, so it isn't guaranteed to compute its OIDC redirect_uri
-        // with the same scheme the browser actually used. Register both scheme
-        // variants so the authorization request succeeds either way.
+        // Dashboard's forwarded-headers handling behind Caddy is unreliable, so its scheme is unpredictable.
         descriptor.RedirectUris.Add(redirectUri);
         descriptor.RedirectUris.Add(WithAlternateScheme(redirectUri));
 
