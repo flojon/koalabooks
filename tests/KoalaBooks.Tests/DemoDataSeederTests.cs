@@ -1,7 +1,7 @@
+using KoalaBooks.Application.Services;
 using KoalaBooks.Domain;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
-using KoalaBooks.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -117,6 +117,71 @@ public class DemoDataSeederTests : IDisposable
                 foreach (var expected in new[] { "1910", "2440", "2081", "3001", "5010" })
                     Assert.Contains(expected, accountNumbers);
             }
+        }
+    }
+
+    [Fact]
+    public async Task SeedAsync_LeavesOneVoucherGapInCurrentYear()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var currentFiscalYearId = await db.FiscalYears
+                .Where(f => !f.IsClosed)
+                .Select(f => f.Id)
+                .SingleAsync();
+
+            var entryNumbers = await db.JournalEntries
+                .Where(j => j.FiscalYearId == currentFiscalYearId)
+                .OrderBy(j => j.EntryNumber)
+                .Select(j => j.EntryNumber)
+                .ToListAsync();
+            Assert.Equal([1, 2, 4, 5, 6], entryNumbers);
+        }
+    }
+
+    [Fact]
+    public async Task SeedAsync_SpreadsCurrentYearEntriesAcrossMonths()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var currentFiscalYearId = await db.FiscalYears
+                .Where(f => !f.IsClosed)
+                .Select(f => f.Id)
+                .SingleAsync();
+
+            var months = await db.JournalEntries
+                .Where(j => j.FiscalYearId == currentFiscalYearId)
+                .Select(j => j.Date.Month)
+                .Distinct()
+                .ToListAsync();
+            Assert.True(months.Count >= 5, $"Expected entries spread across at least 5 distinct months, got {months.Count}.");
+        }
+    }
+
+    [Fact]
+    public async Task SeedAsync_ClosesPreviousYearWithFourEntries()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var previousFiscalYear = await db.FiscalYears
+                .Where(f => f.IsClosed)
+                .SingleAsync();
+            Assert.NotNull(previousFiscalYear.ClosedAt);
+
+            var entryCount = await db.JournalEntries.CountAsync(j => j.FiscalYearId == previousFiscalYear.Id);
+            Assert.Equal(4, entryCount);
         }
     }
 
