@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
+using Npgsql;
 using QuestPDF.Infrastructure;
 using System.Net;
 using System.Text;
@@ -28,8 +29,16 @@ builder.AddServiceDefaults();
 
 // Unpooled: AppDbContext's scoped ICurrentUser ctor dependency can't be resolved by a
 // pooled context's activator, which only has access to the root provider.
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("koalabooks")));
+var koalabooksConnectionString = builder.Configuration.GetConnectionString("koalabooks")!;
+var dbPasswordFile = Environment.GetEnvironmentVariable("KOALABOOKS_DB_PASSWORD_FILE");
+if (!string.IsNullOrEmpty(dbPasswordFile))
+{
+    koalabooksConnectionString = new NpgsqlConnectionStringBuilder(koalabooksConnectionString)
+    {
+        Password = File.ReadAllText(dbPasswordFile).Trim()
+    }.ConnectionString;
+}
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(koalabooksConnectionString));
 builder.EnrichNpgsqlDbContext<AppDbContext>();
 
 builder.Services.AddHttpContextAccessor();
