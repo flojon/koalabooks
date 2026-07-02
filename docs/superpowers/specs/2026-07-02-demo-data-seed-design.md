@@ -1,7 +1,7 @@
 # Demo Data Seed (Dev + PR Previews)
 
 **Date:** 2026-07-02
-**Status:** Draft
+**Status:** Implemented — see `docs/superpowers/plans/2026-07-02-demo-data-seed.md` for the as-built plan (some details below were corrected during implementation and are reflected here)
 
 ## Overview
 
@@ -40,20 +40,25 @@ All seeded under one organisation:
 
 ## Code Location
 
-New `DemoDataSeeder` class in `src/KoalaBooks.Infrastructure/Services/`, alongside the existing `AspireDashboardSeeder`, with a single entry point:
+New `DemoDataSeeder` class in `src/KoalaBooks.Application/Services/`, with a single entry point:
 
 ```csharp
 public static async Task SeedAsync(IServiceProvider services)
 ```
 
-Called from `Program.cs` in the same startup block as today's seed, replacing the inline org/user creation:
+It cannot live in `KoalaBooks.Infrastructure.Services` alongside `AspireDashboardSeeder` (the original plan) — it needs both `BasImportService` (Infrastructure) and `JournalEntryService` (Application), and `Application` already project-references `Infrastructure`, so placing it in Infrastructure would require a circular reference back to Application. `KoalaBooks.Application.Services` is the only location that can see both.
+
+Called from `Program.cs` in the same startup block as today's seed, replacing the inline org/user creation, with a hard `!IsProduction()` guard so seeding is structurally impossible in production even if `SEED_DEMO_DATA` were ever accidentally set there:
 
 ```csharp
-if (app.Environment.IsDevelopment() || builder.Configuration["SEED_DEMO_DATA"] == "true")
+if (!app.Environment.IsProduction() &&
+    (app.Environment.IsDevelopment() || builder.Configuration["SEED_DEMO_DATA"] == "true"))
 {
     await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
 }
 ```
+
+Within `SeedAsync`, the demo user is created last — after the organisation, both fiscal years, both BAS imports, and all journal entries are committed — so the idempotency guard (`FindByEmailAsync` at the top of the method) genuinely means "fully seeded." If seeding fails partway through, the user is never created, so the next startup retries from scratch instead of getting stuck half-seeded forever.
 
 ## Config Wiring
 
@@ -67,12 +72,13 @@ No other workflow or secret changes needed — this is an unauthenticated, non-s
 ## Testing
 
 - `DemoDataSeederTests` (new, using the existing `PostgresContainerFixture` pattern from `TestFixture`):
-  - `SeedAsync_CreatesLoginableUser` — asserts the seed user exists and can be found by `UserManager`.
+  - `SeedAsync_CreatesLoginableDemoUser` — asserts the seed user exists, can be found by `UserManager`, and its password checks out.
+  - `SeedAsync_CreatesTwoFiscalYears` — asserts exactly two fiscal years exist, named `(year - 1)` and `year`.
   - `SeedAsync_ImportsBasChartOfAccounts` — asserts both seeded fiscal years have a full BAS-sized chart of accounts (`Count > 1000`) and that the five accounts used for journal entries (1910, 2440, 2081, 3001, 5010) are present in both.
-  - `SeedAsync_CreatesTwoFiscalYears` — asserts one fiscal year is closed (previous year) and one is open (current year), with names `(year - 1)` and `year`.
+  - `SeedAsync_LeavesOneVoucherGapInCurrentYear` — asserts the current year's `JournalEntry.EntryNumber` values are exactly `[1, 2, 4, 5, 6]` (no dependency on the separate voucher-gap-detection feature/PR).
   - `SeedAsync_SpreadsCurrentYearEntriesAcrossMonths` — asserts the current year's posted entries span at least 5 distinct months.
-  - `SeedAsync_LeavesOneVoucherGap` — asserts the current year's `JournalEntry.EntryNumber` values are exactly `[1, 2, 4, 5, 6]` (no dependency on the separate voucher-gap-detection feature/PR). The previous year has no gap.
-  - `SeedAsync_IsIdempotent` — calling `SeedAsync` twice does not create a second organisation, duplicate fiscal years, or duplicate accounts.
+  - `SeedAsync_ClosesPreviousYearWithFourEntries` — asserts one fiscal year is closed with `ClosedAt` set and has exactly 4 posted entries (no gap).
+  - `SeedAsync_IsIdempotent` — calling `SeedAsync` twice does not create a second organisation.
 
 ## Out of Scope
 
