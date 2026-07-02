@@ -620,6 +620,8 @@ git commit -m "feat: wire DemoDataSeeder into app startup for dev and preview en
 **Interfaces:**
 - Consumes: the `SEED_DEMO_DATA` configuration key read in `Program.cs` (Task 4).
 
+> **Note (added post-implementation):** PR #182 replaced the `Password=__POSTGRES_PASSWORD__` connection-string substitution shown below with a Docker secrets file (`KOALABOOKS_DB_PASSWORD_FILE` / `secrets: postgres_password`), merged into this branch after Task 5 was originally implemented. The `SEED_DEMO_DATA=true` addition itself was unaffected — it merged cleanly alongside the new secrets block. This before/after snippet is left as the historical record of what Task 5 actually changed; see the live `docker-compose.pr-preview.yml` for the current full file.
+
 - [ ] **Step 1: Add the env var to the preview compose template**
 
 In `docker-compose.pr-preview.yml`, change:
