@@ -32,26 +32,18 @@ public static class AspireDashboardSeeder
             }
         };
 
-        // Dashboard's forwarded-headers handling behind Caddy is unreliable, so its scheme is unpredictable.
         descriptor.RedirectUris.Add(redirectUri);
-        descriptor.RedirectUris.Add(WithAlternateScheme(redirectUri));
 
         var existing = await manager.FindByClientIdAsync("aspire-dashboard");
         if (existing is null)
         {
             await manager.CreateAsync(descriptor);
-            logger.LogInformation("Created OpenIddict client 'aspire-dashboard' with redirect URIs {RedirectUris}", descriptor.RedirectUris);
+            logger.LogInformation("Created OpenIddict client 'aspire-dashboard' with redirect URI {RedirectUri}", redirectUri);
         }
         else
         {
             await manager.UpdateAsync(existing, descriptor);
-            logger.LogInformation("Updated OpenIddict client 'aspire-dashboard' with redirect URIs {RedirectUris}", descriptor.RedirectUris);
+            logger.LogInformation("Updated OpenIddict client 'aspire-dashboard' with redirect URI {RedirectUri}", redirectUri);
         }
-    }
-
-    private static Uri WithAlternateScheme(Uri uri)
-    {
-        var alternateScheme = uri.Scheme == Uri.UriSchemeHttps ? Uri.UriSchemeHttp : Uri.UriSchemeHttps;
-        return new Uri($"{alternateScheme}://{uri.Authority}{uri.PathAndQuery}");
     }
 }

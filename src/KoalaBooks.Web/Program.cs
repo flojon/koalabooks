@@ -240,7 +240,7 @@ using (var scope = app.Services.CreateScope())
         }
 
         var dashboardRedirectUri = builder.Configuration["AspireDashboard:OidcRedirectUri"]
-            ?? "http://localhost:18888/signin-oidc";
+            ?? "http://localhost:18888/";
         var dashboardClientSecret = builder.Configuration["AspireDashboard:OidcClientSecret"]
             ?? "aspire-dashboard-dev-secret";
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);
