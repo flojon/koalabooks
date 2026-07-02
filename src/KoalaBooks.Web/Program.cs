@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
+using Npgsql;
 using QuestPDF.Infrastructure;
 using System.Net;
 using System.Text;
@@ -24,7 +25,19 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.AddNpgsqlDbContext<AppDbContext>("koalabooks");
+// Unpooled: AppDbContext's scoped ICurrentUser ctor dependency can't be resolved by a
+// pooled context's activator, which only has access to the root provider.
+var koalabooksConnectionString = builder.Configuration.GetConnectionString("koalabooks")!;
+var dbPasswordFile = Environment.GetEnvironmentVariable("KOALABOOKS_DB_PASSWORD_FILE");
+if (!string.IsNullOrEmpty(dbPasswordFile))
+{
+    koalabooksConnectionString = new NpgsqlConnectionStringBuilder(koalabooksConnectionString)
+    {
+        Password = File.ReadAllText(dbPasswordFile).Trim()
+    }.ConnectionString;
+}
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(koalabooksConnectionString));
+builder.EnrichNpgsqlDbContext<AppDbContext>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
@@ -217,7 +230,7 @@ using (var scope = app.Services.CreateScope())
         }
 
         var dashboardRedirectUri = builder.Configuration["AspireDashboard:OidcRedirectUri"]
-            ?? "http://localhost:18888/signin-oidc";
+            ?? "http://localhost:18888/";
         var dashboardClientSecret = builder.Configuration["AspireDashboard:OidcClientSecret"]
             ?? "aspire-dashboard-dev-secret";
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);

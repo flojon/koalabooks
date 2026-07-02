@@ -18,7 +18,6 @@ public static class AspireDashboardSeeder
             ClientType = OpenIddictConstants.ClientTypes.Confidential,
             ClientSecret = clientSecret,
             DisplayName = "Aspire Dashboard",
-            RedirectUris = { redirectUri },
             Permissions =
             {
                 OpenIddictConstants.Permissions.Endpoints.Authorization,
@@ -32,6 +31,8 @@ public static class AspireDashboardSeeder
                 OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess,
             }
         };
+
+        descriptor.RedirectUris.Add(redirectUri);
 
         var existing = await manager.FindByClientIdAsync("aspire-dashboard");
         if (existing is null)

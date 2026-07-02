@@ -12,9 +12,9 @@
 
 <h1>📝 Verifikationer</h1>
 
-@if (_activeFiscalYear is null && !_isLoading)
+@if (!_allFiscalYears.Any() && !_isLoading)
 {
-    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
+    <MudAlert Severity="Severity.Info">Inga räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
     return;
 }
 
@@ -24,9 +24,26 @@
 }
 else
 {
-<div class="toolbar">
-    <button class="btn btn-primary" @onclick="NewEntry">+ Ny verifikation</button>
-    <span style="color:#64748b;">Räkenskapsår: <strong>@_activeFiscalYear!.Name</strong></span>
+<div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
+    <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
+    <select @bind="_selectedFiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:220px;">
+        @foreach (var fy in _allFiscalYears)
+        {
+            <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+        }
+    </select>
+    <label style="font-weight:600; color:#475569;">Period:</label>
+    <select @bind="_selectedMonthStr" style="width:180px;">
+        <option value="">Hela året</option>
+        @foreach (var (month, label) in AvailableMonths())
+        {
+            <option value="@month">@label</option>
+        }
+    </select>
+    @if (_activeFiscalYear is not null && _selectedFiscalYearId == _activeFiscalYear.Id)
+    {
+        <button class="btn btn-primary" @onclick="NewEntry">+ Ny verifikation</button>
+    }
 </div>
 
 @if (_showForm)
@@ -94,6 +111,11 @@ else
     </div>
 }
 
+@if (_isReloading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-2" />
+}
+
 <table>
     <thead>
         <tr>
@@ -108,7 +130,7 @@ else
         </tr>
     </thead>
     <tbody>
-        @foreach (var entry in _entries)
+        @foreach (var entry in FilteredEntries)
         {
             var canConvert = entry.IsPosted
                 && !entry.IsClosingEntry
@@ -323,9 +345,18 @@ else
     </tbody>
 </table>
 
-@if (!_entries.Any() && !_showForm)
+@if (!FilteredEntries.Any() && !_showForm)
 {
-    <MudAlert Severity="Severity.Info" Class="mt-4">Inga verifikationer ännu. Klicka "Ny verifikation" för att skapa en.</MudAlert>
+    <MudAlert Severity="Severity.Info" Class="mt-4">
+        @if (_entries.Any())
+        {
+            <span>Inga verifikationer för vald period.</span>
+        }
+        else
+        {
+            <span>Inga verifikationer ännu. @if (_activeFiscalYear is not null && _selectedFiscalYearId == _activeFiscalYear.Id) { <span>Klicka "Ny verifikation" för att skapa en.</span> }</span>
+        }
+    </MudAlert>
 }
 }
 
@@ -341,6 +372,16 @@ else
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
+    private List<FiscalYear> _allFiscalYears = [];
+    private int _selectedFiscalYearId;
+    private bool _isReloading;
+    private FiscalYear? _selectedFiscalYear => _allFiscalYears.FirstOrDefault(f => f.Id == _selectedFiscalYearId);
+    private string _selectedMonthStr = "";
+    private int? SelectedMonth => string.IsNullOrEmpty(_selectedMonthStr) ? null : int.Parse(_selectedMonthStr);
+    private IEnumerable<JournalEntry> FilteredEntries =>
+        SelectedMonth.HasValue
+            ? _entries.Where(e => e.Date.Month == SelectedMonth.Value)
+            : _entries;
     private List<Account> _accounts = [];
     private List<JournalEntry> _entries = [];
     private bool _showForm;
@@ -397,18 +438,15 @@ else
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        _activeFiscalYear = await FiscalYearService.GetActiveAsync();
-        if (_activeFiscalYear is null)
+        _allFiscalYears = await FiscalYearService.GetAllAsync();
+        _activeFiscalYear = _allFiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _allFiscalYears.FirstOrDefault();
+        if (!_allFiscalYears.Any())
         {
             _isLoading = false;
             return;
         }
-
-        _accounts = (await AccountService.GetAllAsync(_activeFiscalYear.Id)).Where(a => a.IsActive).ToList();
-        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
-        _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_activeFiscalYear.Id);
-        _knownSuppliers = await InvoiceService.GetSuppliersAsync(_activeFiscalYear.Id);
-        _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
+        _selectedFiscalYearId = _activeFiscalYear?.Id ?? _allFiscalYears.First().Id;
+        await LoadForSelectedYearAsync();
         _isLoading = false;
     }
 
@@ -484,9 +522,34 @@ else
         await ReloadEntriesAsync();
     }
 
+    private async Task LoadForSelectedYearAsync()
+    {
+        _accounts = (await AccountService.GetAllAsync(_selectedFiscalYearId)).Where(a => a.IsActive).ToList();
+        _entries = await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId);
+        _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_selectedFiscalYearId);
+        _knownSuppliers = await InvoiceService.GetSuppliersAsync(_selectedFiscalYearId);
+        _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
+    }
+
+    private async Task OnFiscalYearChangedAsync()
+    {
+        _selectedMonthStr = "";
+        _showForm = false;
+        _isEditing = false;
+        _editingId = null;
+        _attachmentEntryId = null;
+        _attachmentMeta = [];
+        _convertingEntryId = null;
+        _deletingEntryId = null;
+        _reversingEntryId = null;
+        _isReloading = true;
+        await LoadForSelectedYearAsync();
+        _isReloading = false;
+    }
+
     private async Task ReloadEntriesAsync()
     {
-        _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
+        _entries = await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId);
         _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
     }
 
@@ -603,7 +666,7 @@ else
         {
             var invoice = new SupplierInvoice
             {
-                FiscalYearId = _activeFiscalYear!.Id,
+                FiscalYearId = _selectedFiscalYearId,
                 SupplierName = _cSupplier.Trim(),
                 InvoiceNumber = string.IsNullOrWhiteSpace(_cInvoiceNumber) ? null : _cInvoiceNumber.Trim(),
                 InvoiceDate = DateOnly.FromDateTime(_cInvoiceDate),
@@ -621,9 +684,9 @@ else
 
             Snackbar.Add($"Faktura för {result!.SupplierName} skapad och kopplad till verifikation.", Severity.Success);
             _convertingEntryId = null;
-            _entries = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear.Id);
-            _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_activeFiscalYear.Id);
-            _knownSuppliers = await InvoiceService.GetSuppliersAsync(_activeFiscalYear.Id);
+            _entries = await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId);
+            _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_selectedFiscalYearId);
+            _knownSuppliers = await InvoiceService.GetSuppliersAsync(_selectedFiscalYearId);
         }
         finally { _converting = false; }
     }
@@ -683,5 +746,18 @@ else
         _attachmentCounts[_attachmentEntryId.Value] = _attachmentMeta.Count;
         if (_attachmentCounts[_attachmentEntryId.Value] == 0)
             _attachmentCounts.Remove(_attachmentEntryId.Value);
+    }
+
+    private IEnumerable<(int Month, string Label)> AvailableMonths()
+    {
+        var fy = _selectedFiscalYear;
+        if (fy is null) yield break;
+        var current = new DateOnly(fy.StartDate.Year, fy.StartDate.Month, 1);
+        var end = new DateOnly(fy.EndDate.Year, fy.EndDate.Month, 1);
+        while (current <= end)
+        {
+            yield return (current.Month, current.ToString("MMMM yyyy", new CultureInfo("sv-SE")));
+            current = current.AddMonths(1);
+        }
     }
 }
