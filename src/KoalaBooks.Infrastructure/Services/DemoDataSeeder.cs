@@ -23,9 +23,13 @@ public static class DemoDataSeeder
         var tenant = new LocalCurrentUser();
         await using var db = new AppDbContext(options, tenant);
 
-        var org = new Organisation { Name = "Demo AB", Slug = "demo", LegalForm = LegalForm.Aktiebolag };
-        db.Organisations.Add(org);
-        await db.SaveChangesAsync();
+        var org = await db.Organisations.FirstOrDefaultAsync(o => o.Slug == "demo");
+        if (org is null)
+        {
+            org = new Organisation { Name = "Demo AB", Slug = "demo", LegalForm = LegalForm.Aktiebolag };
+            db.Organisations.Add(org);
+            await db.SaveChangesAsync();
+        }
         tenant.OrganisationId = org.Id;
 
         var demoUser = new ApplicationUser
@@ -36,6 +40,9 @@ public static class DemoDataSeeder
             DisplayName = "Admin",
             OrganisationId = org.Id
         };
-        await userManager.CreateAsync(demoUser, DemoUserPassword);
+        var createResult = await userManager.CreateAsync(demoUser, DemoUserPassword);
+        if (!createResult.Succeeded)
+            throw new InvalidOperationException(
+                $"Failed to create demo user: {string.Join("; ", createResult.Errors.Select(e => e.Description))}");
     }
 }
