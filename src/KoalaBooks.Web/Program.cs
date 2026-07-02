@@ -26,7 +26,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.AddNpgsqlDbContext<AppDbContext>("koalabooks");
+// Unpooled: AppDbContext's scoped ICurrentUser ctor dependency can't be resolved by a
+// pooled context's activator, which only has access to the root provider.
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("koalabooks")));
+builder.EnrichNpgsqlDbContext<AppDbContext>();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
