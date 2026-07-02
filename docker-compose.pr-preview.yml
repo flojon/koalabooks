@@ -5,6 +5,7 @@ services:
       - ConnectionStrings__koalabooks=Host=postgres;Port=5432;Database=koalabooks;Username=koalabooks;Password=__POSTGRES_PASSWORD__
       - ASPNETCORE_ENVIRONMENT=Staging
       - ASPNETCORE_URLS=http://+:8080
+      - SEED_DEMO_DATA=true
     depends_on:
       postgres:
         condition: service_healthy
