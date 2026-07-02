@@ -116,6 +116,7 @@ builder.Services.AddScoped<SieImportService>();
 builder.Services.AddScoped<AccountService>();
 builder.Services.AddScoped<FiscalYearService>();
 builder.Services.AddScoped<JournalEntryService>();
+builder.Services.AddScoped<VoucherGapService>();
 builder.Services.AddScoped<SieExportService>();
 builder.Services.AddScoped<YearEndClosingService>();
 builder.Services.AddScoped<BasImportService>();
