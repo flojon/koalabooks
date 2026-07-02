@@ -33,19 +33,6 @@ public static class DemoDataSeeder
         }
         tenant.OrganisationId = org.Id;
 
-        var demoUser = new ApplicationUser
-        {
-            UserName = DemoUserEmail,
-            Email = DemoUserEmail,
-            EmailConfirmed = true,
-            DisplayName = "Admin",
-            OrganisationId = org.Id
-        };
-        var createResult = await userManager.CreateAsync(demoUser, DemoUserPassword);
-        if (!createResult.Succeeded)
-            throw new InvalidOperationException(
-                $"Failed to create demo user: {string.Join("; ", createResult.Errors.Select(e => e.Description))}");
-
         var currentYearNumber = DateTime.UtcNow.Year;
 
         var previousFiscalYear = new FiscalYear
@@ -72,6 +59,23 @@ public static class DemoDataSeeder
 
         await SeedPreviousYearEntriesAsync(db, previousFiscalYear);
         await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
+
+        // Demo user is created last, once all books data is committed, so its existence
+        // (the idempotency guard at the top of this method) is a true "fully seeded" marker.
+        // If seeding fails partway through, the user is never created, so the next startup
+        // retries from scratch instead of being permanently stuck half-seeded.
+        var demoUser = new ApplicationUser
+        {
+            UserName = DemoUserEmail,
+            Email = DemoUserEmail,
+            EmailConfirmed = true,
+            DisplayName = "Admin",
+            OrganisationId = org.Id
+        };
+        var createResult = await userManager.CreateAsync(demoUser, DemoUserPassword);
+        if (!createResult.Succeeded)
+            throw new InvalidOperationException(
+                $"Failed to create demo user: {string.Join("; ", createResult.Errors.Select(e => e.Description))}");
     }
 
     private static async Task<Dictionary<string, Account>> LoadDemoAccountsAsync(AppDbContext db, int fiscalYearId)
