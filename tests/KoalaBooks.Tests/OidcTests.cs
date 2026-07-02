@@ -79,6 +79,22 @@ public class OidcClientSeedingTests : IDisposable
     }
 
     [Fact]
+    public async Task SeedAsync_RegistersBothHttpAndHttpsRedirectUris()
+    {
+        using var scope = _sp.CreateScope();
+        await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, DashboardRedirectUri, "test-secret");
+
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        var app = (await manager.FindByClientIdAsync("aspire-dashboard"))!;
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(descriptor, app);
+
+        Assert.Contains(new Uri("http://localhost:18888/signin-oidc"), descriptor.RedirectUris);
+        Assert.Contains(new Uri("https://localhost:18888/signin-oidc"), descriptor.RedirectUris);
+        Assert.Equal(2, descriptor.RedirectUris.Count);
+    }
+
+    [Fact]
     public async Task SeedAsync_UpdatesExistingClient()
     {
         var originalUri = new Uri("http://localhost:18888/signin-oidc");
