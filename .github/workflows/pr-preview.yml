@@ -55,21 +55,23 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           OWNER: ${{ github.repository_owner }}
-          PR_POSTGRES_PASSWORD: ${{ secrets.PR_POSTGRES_PASSWORD }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: PR_NUMBER,OWNER,PR_POSTGRES_PASSWORD,GHCR_TOKEN,GHCR_USER
+          envs: PR_NUMBER,OWNER,GHCR_TOKEN,GHCR_USER
           script: |
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            mkdir -p /opt/koalabooks/pr-${PR_NUMBER}
+            mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/secrets
+            if [ ! -f /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password ]; then
+              openssl rand -hex 24 > /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
+              chmod 600 /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
+            fi
             sed \
               -e "s/__PR_NUMBER__/${PR_NUMBER}/g" \
               -e "s/__OWNER__/${OWNER}/g" \
-              -e "s/__POSTGRES_PASSWORD__/${PR_POSTGRES_PASSWORD}/g" \
               /opt/koalabooks/docker-compose.pr-preview.yml \
               > /opt/koalabooks/pr-${PR_NUMBER}/docker-compose.yml
             printf 'pr-%s.books.koalasoft.se {\n    reverse_proxy pr-%s-web-1:8080\n}\n' \
