@@ -305,8 +305,9 @@ git commit -m "feat: seed fiscal year and full BAS chart of accounts in DemoData
 - Modify: `tests/KoalaBooks.Tests/DemoDataSeederTests.cs`
 
 **Interfaces:**
-- Consumes: `JournalEntryService.CreateAsync(JournalEntry)` returning `(JournalEntry? Entry, string? Error)`, and `JournalEntryService.PostAsync(int entryId)` returning `string?` (error or null) — both from `KoalaBooks.Application.Services`. `VoucherGapService.FindGapsAsync(int fiscalYearId)` returning `List<int>` — from the same namespace, used only in the test.
+- Consumes: `JournalEntryService.CreateAsync(JournalEntry)` returning `(JournalEntry? Entry, string? Error)`, and `JournalEntryService.PostAsync(int entryId)` returning `string?` (error or null) — both from `KoalaBooks.Application.Services`.
 - Produces: after `SeedAsync` completes, the seeded fiscal year has 5 posted journal entries (numbers 1, 2, 4, 5, 6) with entry number 3 missing.
+- Note: this task has no dependency on the separate `VoucherGapService`/voucher-gap-detection feature (a different, unmerged PR) — the gap is verified purely as a fact about `JournalEntry.EntryNumber` values, so this builds and passes standalone against `main`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -322,14 +323,14 @@ Add to `DemoDataSeederTests.cs`:
         var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
         await using (db)
         {
-            var fiscalYearId = await db.FiscalYears.Select(f => f.Id).SingleAsync();
-            var gaps = await new VoucherGapService(db).FindGapsAsync(fiscalYearId);
-            Assert.Equal([3], gaps);
+            var entryNumbers = await db.JournalEntries
+                .OrderBy(j => j.EntryNumber)
+                .Select(j => j.EntryNumber)
+                .ToListAsync();
+            Assert.Equal([1, 2, 4, 5, 6], entryNumbers);
         }
     }
 ```
-
-Add `using KoalaBooks.Application.Services;` to the top of `DemoDataSeederTests.cs`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -607,5 +608,5 @@ This can't be fully covered by unit tests since it depends on a real deployed pr
 
 1. Open `https://pr-<n>.books.koalasoft.se`.
 2. Log in with `admin@koalabooks.local` / `Admin123!`.
-3. Confirm the "Demo AB" organisation is active, the current fiscal year exists with a full BAS chart of accounts, and the journal shows 5 posted entries.
-4. Navigate to the voucher gap detection feature (this branch, `voucher-gap-detection`) and confirm entry #3 shows up as an unexplained gap.
+3. Confirm the "Demo AB" organisation is active, the current fiscal year exists with a full BAS chart of accounts, and the journal shows 5 posted entries with voucher number 3 visibly skipped.
+4. If the separate voucher-gap-detection feature (PR #178) has since merged, also confirm entry #3 shows up there as an unexplained gap — this seed doesn't depend on that feature, but is designed to exercise it.
