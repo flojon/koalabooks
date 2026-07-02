@@ -30,8 +30,8 @@ All seeded under one organisation:
 - **Organisation**: `Name = "Demo AB"`, `Slug = "demo"`, `LegalForm = LegalForm.Aktiebolag`.
 - **User**: `admin@koalabooks.local` / `Admin123!` (unchanged credentials from today's dev seed), `EmailConfirmed = true`, `DisplayName = "Admin"`.
 - **Fiscal year**: current calendar year, `IsClosed = false`. (Computed from `DateTime.UtcNow.Year` at seed time, not hardcoded, so the seed stays useful without edits as time passes.)
-- **Chart of accounts**: the same five-account set already used in `TestFixture.CreateStandardAccounts` — 1910 Kassa (Asset), 2440 Leverantörsskulder (Liability), 2081 Aktiekapital (Equity), 3010 Försäljning (Revenue), 5010 Lokalhyra (Expense). Small and readable rather than importing the full 1 282-account BAS plan via `BasImportService` — enough to post believable entries without cluttering the account list a reviewer has to scroll through.
-- **Journal entries**: six entries posted through `JournalEntryService.CreateAsync` + `PostAsync` (normal validated path, same pattern as `TestFixture.CreateAndPostEntryAsync`), dated across the current month, alternating simple debit/credit pairs across the five accounts (e.g. cash sale, rent payment, capital contribution). This assigns sequential `EntryNumber`s 1–6.
+- **Chart of accounts**: the full BAS 2026 kontoplan (1 282 accounts), imported via the existing `BasImportService.ImportDefaultAsync(fiscalYearId)` — the same code path the "Importera BAS 2026 kontoplan" checkbox on fiscal year creation already uses. Reuses tested import logic instead of hand-maintaining a curated account list, and matches the real chart of accounts a reviewer would actually work with, rather than a stripped-down demo subset.
+- **Journal entries**: six entries posted through `JournalEntryService.CreateAsync` + `PostAsync` (normal validated path, same pattern as `TestFixture.CreateAndPostEntryAsync`), dated across the current month, alternating simple debit/credit pairs across five familiar standard BAS accounts already present in the imported plan — 1910 Kassa, 2440 Leverantörsskulder, 2081 Aktiekapital, 3010 Försäljning, 5010 Lokalhyra (e.g. cash sale, rent payment, capital contribution). This assigns sequential `EntryNumber`s 1–6.
 - **The gap**: after posting, entry #3 (and its lines) is deleted directly via `AppDbContext` — bypassing `JournalEntryService`, which by design doesn't allow deleting posted entries. This mirrors the real-world scenario the voucher-gap-detection feature exists to catch (a historical direct-DB deletion, from before this compliance feature existed) and makes the gap immediately visible to a reviewer testing that feature, with no manual setup.
 
 ## Code Location
@@ -64,7 +64,7 @@ No other workflow or secret changes needed — this is an unauthenticated, non-s
 
 - `DemoDataSeederTests` (new, using the existing `PostgresContainerFixture` pattern from `TestFixture`):
   - `SeedAsync_CreatesLoginableUser` — asserts the seed user exists and can be found by `UserManager`.
-  - `SeedAsync_CreatesFiveAccounts` — asserts the five expected account numbers exist under the seeded org.
+  - `SeedAsync_ImportsBasChartOfAccounts` — asserts the seeded fiscal year has a full BAS-sized chart of accounts (`Count > 1000`) and that the five accounts used for journal entries (1910, 2440, 2081, 3010, 5010) are present among them.
   - `SeedAsync_LeavesOneVoucherGap` — asserts `VoucherGapService.FindGapsAsync` returns exactly `[3]` for the seeded fiscal year.
   - `SeedAsync_IsIdempotent` — calling `SeedAsync` twice does not create a second organisation or duplicate accounts.
 
