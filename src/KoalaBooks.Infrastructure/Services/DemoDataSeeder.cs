@@ -44,5 +44,19 @@ public static class DemoDataSeeder
         if (!createResult.Succeeded)
             throw new InvalidOperationException(
                 $"Failed to create demo user: {string.Join("; ", createResult.Errors.Select(e => e.Description))}");
+
+        var year = DateTime.UtcNow.Year;
+        var fiscalYear = new FiscalYear
+        {
+            OrganisationId = org.Id,
+            Name = year.ToString(),
+            StartDate = new DateOnly(year, 1, 1),
+            EndDate = new DateOnly(year, 12, 31),
+            IsClosed = false
+        };
+        db.FiscalYears.Add(fiscalYear);
+        await db.SaveChangesAsync();
+
+        await new BasImportService(db).ImportDefaultAsync(fiscalYear.Id);
     }
 }

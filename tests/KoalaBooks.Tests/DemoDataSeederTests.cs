@@ -76,6 +76,22 @@ public class DemoDataSeederTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task SeedAsync_ImportsBasChartOfAccounts()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var accountNumbers = await db.Accounts.Select(a => a.AccountNumber).ToListAsync();
+            Assert.True(accountNumbers.Count > 1000, $"Expected a full BAS import, got {accountNumbers.Count} accounts.");
+            foreach (var expected in new[] { "1910", "2440", "2081", "3001", "5010" })
+                Assert.Contains(expected, accountNumbers);
+        }
+    }
+
     public void Dispose()
     {
         _sp.Dispose();
