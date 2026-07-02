@@ -443,7 +443,9 @@ public static class DemoDataSeeder
         if (error is not null)
             throw new InvalidOperationException($"Demo seed failed to create journal entry '{description}': {error}");
 
-        await journalEntryService.PostAsync(created!.Id);
+        var postError = await journalEntryService.PostAsync(created!.Id);
+        if (postError is not null)
+            throw new InvalidOperationException($"Demo seed failed to post journal entry '{description}': {postError}");
     }
 
     private static async Task SeedPreviousYearEntriesAsync(AppDbContext db, FiscalYear previousFiscalYear)
