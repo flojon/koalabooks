@@ -5,8 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace KoalaBooks.Tests;
 
-// Regression test for #179: pooled AppDbContext crashed resolving its scoped ICurrentUser
-// dependency whenever DI scope validation was enabled (the Development default).
+// Pooled AppDbContext used to crash resolving its scoped ICurrentUser dependency
+// whenever DI scope validation was enabled (the Development default).
 public class DevelopmentStartupTests
 {
     private class DevelopmentWebApiFactory(string connStr) : WebApplicationFactory<Program>
