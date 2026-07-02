@@ -77,6 +77,24 @@ public class DemoDataSeederTests : IDisposable
     }
 
     [Fact]
+    public async Task SeedAsync_CreatesTwoFiscalYears()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var years = await db.FiscalYears.OrderBy(f => f.Name).ToListAsync();
+            Assert.Equal(2, years.Count);
+
+            var currentYear = DateTime.UtcNow.Year;
+            Assert.Equal((currentYear - 1).ToString(), years[0].Name);
+            Assert.Equal(currentYear.ToString(), years[1].Name);
+        }
+    }
+
+    [Fact]
     public async Task SeedAsync_ImportsBasChartOfAccounts()
     {
         using var scope = _sp.CreateScope();
@@ -85,10 +103,20 @@ public class DemoDataSeederTests : IDisposable
         var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
         await using (db)
         {
-            var accountNumbers = await db.Accounts.Select(a => a.AccountNumber).ToListAsync();
-            Assert.True(accountNumbers.Count > 1000, $"Expected a full BAS import, got {accountNumbers.Count} accounts.");
-            foreach (var expected in new[] { "1910", "2440", "2081", "3001", "5010" })
-                Assert.Contains(expected, accountNumbers);
+            var fiscalYearIds = await db.FiscalYears.Select(f => f.Id).ToListAsync();
+            Assert.Equal(2, fiscalYearIds.Count);
+
+            foreach (var fiscalYearId in fiscalYearIds)
+            {
+                var accountNumbers = await db.Accounts
+                    .Where(a => a.FiscalYearId == fiscalYearId)
+                    .Select(a => a.AccountNumber)
+                    .ToListAsync();
+                Assert.True(accountNumbers.Count > 1000,
+                    $"Expected a full BAS import for fiscal year {fiscalYearId}, got {accountNumbers.Count} accounts.");
+                foreach (var expected in new[] { "1910", "2440", "2081", "3001", "5010" })
+                    Assert.Contains(expected, accountNumbers);
+            }
         }
     }
 

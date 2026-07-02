@@ -45,18 +45,28 @@ public static class DemoDataSeeder
             throw new InvalidOperationException(
                 $"Failed to create demo user: {string.Join("; ", createResult.Errors.Select(e => e.Description))}");
 
-        var year = DateTime.UtcNow.Year;
-        var fiscalYear = new FiscalYear
+        var currentYearNumber = DateTime.UtcNow.Year;
+
+        var previousFiscalYear = new FiscalYear
         {
             OrganisationId = org.Id,
-            Name = year.ToString(),
-            StartDate = new DateOnly(year, 1, 1),
-            EndDate = new DateOnly(year, 12, 31),
+            Name = (currentYearNumber - 1).ToString(),
+            StartDate = new DateOnly(currentYearNumber - 1, 1, 1),
+            EndDate = new DateOnly(currentYearNumber - 1, 12, 31),
             IsClosed = false
         };
-        db.FiscalYears.Add(fiscalYear);
+        var currentFiscalYear = new FiscalYear
+        {
+            OrganisationId = org.Id,
+            Name = currentYearNumber.ToString(),
+            StartDate = new DateOnly(currentYearNumber, 1, 1),
+            EndDate = new DateOnly(currentYearNumber, 12, 31),
+            IsClosed = false
+        };
+        db.FiscalYears.AddRange(previousFiscalYear, currentFiscalYear);
         await db.SaveChangesAsync();
 
-        await new BasImportService(db).ImportDefaultAsync(fiscalYear.Id);
+        await new BasImportService(db).ImportDefaultAsync(previousFiscalYear.Id);
+        await new BasImportService(db).ImportDefaultAsync(currentFiscalYear.Id);
     }
 }
