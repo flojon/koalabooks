@@ -4,7 +4,7 @@
 
 **Goal:** Replace the bare-bones dev-only seed (org + user, no books data) with a richer `DemoDataSeeder` that also seeds a full BAS chart of accounts, two fiscal years (a closed prior year and an open current year) with posted journal entries spread across different months, and one deliberate voucher-number gap in the current year — running automatically in local `Development` and via an explicit `SEED_DEMO_DATA=true` flag in PR previews.
 
-**Architecture:** A new static `DemoDataSeeder.SeedAsync(IServiceProvider)` class in `KoalaBooks.Infrastructure.Services`, following the exact pattern of the existing `AspireDashboardSeeder`. It builds its own tenant-scoped `AppDbContext` (via `LocalCurrentUser`) instead of the DI-resolved one, because the DI-resolved `AppDbContext` relies on `HttpContextCurrentUser`, which returns `null` for `OrganisationId` outside an HTTP request — and every tenant-scoped table (`FiscalYears`, `Accounts`, `JournalEntries`, `JournalEntryLines`) has a global EF Core query filter keyed on `ICurrentUser.OrganisationId`. Without this, every query the seeder makes after creating the org would silently return empty results.
+**Architecture:** A new static `DemoDataSeeder.SeedAsync(IServiceProvider)` class in `KoalaBooks.Application.Services`, following the exact pattern of the existing `AspireDashboardSeeder` (which lives in `KoalaBooks.Infrastructure.Services` — `DemoDataSeeder` cannot live there too, because `KoalaBooks.Application` already project-references `KoalaBooks.Infrastructure`, and the seeder needs both `BasImportService` (Infrastructure) and `JournalEntryService` (Application); placing it in Infrastructure would require Infrastructure to reference Application back, a circular project reference). It builds its own tenant-scoped `AppDbContext` (via `LocalCurrentUser`) instead of the DI-resolved one, because the DI-resolved `AppDbContext` relies on `HttpContextCurrentUser`, which returns `null` for `OrganisationId` outside an HTTP request — and every tenant-scoped table (`FiscalYears`, `Accounts`, `JournalEntries`, `JournalEntryLines`) has a global EF Core query filter keyed on `ICurrentUser.OrganisationId`. Without this, every query the seeder makes after creating the org would silently return empty results.
 
 **Tech Stack:** .NET / EF Core / ASP.NET Core Identity, xUnit + Testcontainers (existing `PostgresContainerFixture`), Docker Compose.
 
@@ -24,13 +24,13 @@
 **Status:** Already implemented and merged into this branch (commits through `e917497`). Included here only for reference — do not redo.
 
 **Files:**
-- Create: `src/KoalaBooks.Infrastructure/Services/DemoDataSeeder.cs`
+- Create: `src/KoalaBooks.Application/Services/DemoDataSeeder.cs`
 - Test: `tests/KoalaBooks.Tests/DemoDataSeederTests.cs`
 
 **Interfaces:**
 - Produces: `public static class DemoDataSeeder` with `public const string DemoUserEmail = "admin@koalabooks.local";`, `public const string DemoUserPassword = "Admin123!";`, and `public static Task SeedAsync(IServiceProvider services)`. Later tasks extend the body of `SeedAsync` in place — the signature does not change.
 
-Final state of `src/KoalaBooks.Infrastructure/Services/DemoDataSeeder.cs` after this task (org lookup-by-slug and `IdentityResult` check were added during task review — this is the as-built version):
+Final state of `src/KoalaBooks.Application/Services/DemoDataSeeder.cs` after this task (org lookup-by-slug and `IdentityResult` check were added during task review — this is the as-built version):
 
 ```csharp
 using KoalaBooks.Domain;
@@ -41,7 +41,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace KoalaBooks.Infrastructure.Services;
+namespace KoalaBooks.Application.Services;
 
 public static class DemoDataSeeder
 {
@@ -90,11 +90,11 @@ public static class DemoDataSeeder
 ### Task 2: Two fiscal years + full BAS chart of accounts in both
 
 **Files:**
-- Modify: `src/KoalaBooks.Infrastructure/Services/DemoDataSeeder.cs`
+- Modify: `src/KoalaBooks.Application/Services/DemoDataSeeder.cs`
 - Modify: `tests/KoalaBooks.Tests/DemoDataSeederTests.cs`
 
 **Interfaces:**
-- Consumes: `BasImportService.ImportDefaultAsync(int fiscalYearId)` from `src/KoalaBooks.Infrastructure/Services/BasImportService.cs` (same namespace, no new `using` needed).
+- Consumes: `BasImportService.ImportDefaultAsync(int fiscalYearId)` from `src/KoalaBooks.Infrastructure/Services/BasImportService.cs` — `DemoDataSeeder` lives in `KoalaBooks.Application.Services`, a different namespace, so this requires `using KoalaBooks.Infrastructure.Services;`.
 - Produces: `SeedAsync` now also creates two `FiscalYear` rows — previous calendar year and current calendar year, both still `IsClosed = false` at the end of this task (Task 3 closes the previous year after posting its entries) — and imports the full BAS 2026 chart of accounts into each.
 
 - [ ] **Step 1: Write the failing tests**
@@ -154,18 +154,19 @@ Expected: FAIL — the 2 new tests fail (no fiscal years exist yet); the 2 tests
 
 - [ ] **Step 3: Extend `DemoDataSeeder.SeedAsync`**
 
-Replace the entire contents of `src/KoalaBooks.Infrastructure/Services/DemoDataSeeder.cs` with:
+Replace the entire contents of `src/KoalaBooks.Application/Services/DemoDataSeeder.cs` with:
 
 ```csharp
 using KoalaBooks.Domain;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
+using KoalaBooks.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace KoalaBooks.Infrastructure.Services;
+namespace KoalaBooks.Application.Services;
 
 public static class DemoDataSeeder
 {
@@ -239,7 +240,7 @@ Expected: PASS (4 tests)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/KoalaBooks.Infrastructure/Services/DemoDataSeeder.cs tests/KoalaBooks.Tests/DemoDataSeederTests.cs
+git add src/KoalaBooks.Application/Services/DemoDataSeeder.cs tests/KoalaBooks.Tests/DemoDataSeederTests.cs
 git commit -m "feat: seed two fiscal years and full BAS chart of accounts in DemoDataSeeder"
 ```
 
@@ -248,11 +249,11 @@ git commit -m "feat: seed two fiscal years and full BAS chart of accounts in Dem
 ### Task 3: Posted journal entries across both years, spread by month, with a voucher gap in the current year
 
 **Files:**
-- Modify: `src/KoalaBooks.Infrastructure/Services/DemoDataSeeder.cs`
+- Modify: `src/KoalaBooks.Application/Services/DemoDataSeeder.cs`
 - Modify: `tests/KoalaBooks.Tests/DemoDataSeederTests.cs`
 
 **Interfaces:**
-- Consumes: `JournalEntryService.CreateAsync(JournalEntry)` returning `(JournalEntry? Entry, string? Error)`, and `JournalEntryService.PostAsync(int entryId)` returning `string?` (error or null) — both from `KoalaBooks.Application.Services`.
+- Consumes: `JournalEntryService.CreateAsync(JournalEntry)` returning `(JournalEntry? Entry, string? Error)`, and `JournalEntryService.PostAsync(int entryId)` returning `string?` (error or null) — both from `KoalaBooks.Application.Services`, the same namespace `DemoDataSeeder` now lives in (see Task 1's Architecture note), so no new `using` is needed for `JournalEntryService` itself.
 - Produces: the previous fiscal year ends up with 4 posted entries spread across 4 different months, no gap, and `IsClosed = true` / `ClosedAt` set. The current fiscal year ends up with 6 posted entries spread one-per-month January–June, with entry number 3 deleted afterward (numbers present: 1, 2, 4, 5, 6).
 - Note: this task has no dependency on the separate `VoucherGapService`/voucher-gap-detection feature (a different, unmerged PR) — the gap is verified purely as a fact about `JournalEntry.EntryNumber` values, so this builds and passes standalone against `main`.
 
@@ -334,19 +335,19 @@ Expected: FAIL — the 3 new tests fail (no journal entries exist yet, no fiscal
 
 - [ ] **Step 3: Extend `DemoDataSeeder`**
 
-Replace the entire contents of `src/KoalaBooks.Infrastructure/Services/DemoDataSeeder.cs` with:
+Replace the entire contents of `src/KoalaBooks.Application/Services/DemoDataSeeder.cs` with:
 
 ```csharp
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
+using KoalaBooks.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace KoalaBooks.Infrastructure.Services;
+namespace KoalaBooks.Application.Services;
 
 public static class DemoDataSeeder
 {
@@ -522,7 +523,7 @@ Expected: PASS (7 tests)
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/KoalaBooks.Infrastructure/Services/DemoDataSeeder.cs tests/KoalaBooks.Tests/DemoDataSeederTests.cs
+git add src/KoalaBooks.Application/Services/DemoDataSeeder.cs tests/KoalaBooks.Tests/DemoDataSeederTests.cs
 git commit -m "feat: seed journal entries across both years with a voucher gap in the current year"
 ```
 
