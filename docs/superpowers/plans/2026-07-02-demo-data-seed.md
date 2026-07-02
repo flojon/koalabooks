@@ -15,7 +15,7 @@
 - Reuse the existing `JournalEntryService.CreateAsync` / `PostAsync` validated path for posting entries — do not write entries directly via `SaveChangesAsync` (except for the one deliberate gap-creating deletion, which must bypass the service on purpose).
 - Account `3010` does **not** exist in the embedded BAS 2026 kontoplan (verified directly against the imported data — only 3000–3004 exist in the 30xx range). Use `3001` ("Försäljning inom Sverige, 25 % moms") as the revenue account everywhere instead.
 - Seeding must be idempotent: a second call to `SeedAsync` with the demo user already present must be a no-op.
-- Seeding must never run when `ASPNETCORE_ENVIRONMENT=Production` and must never run in the `Testing` environment (already guaranteed by the existing `if (app.Environment.IsEnvironment("Testing")) { ... } else { ... }` structure in `Program.cs`, which this plan does not change).
+- Seeding must never run when `ASPNETCORE_ENVIRONMENT=Production` and must never run in the `Testing` environment. `Testing` is excluded structurally by the existing `if (app.Environment.IsEnvironment("Testing")) { ... } else { ... }` in `Program.cs` (which this plan does not change). `Production` is excluded by an explicit `!app.Environment.IsProduction()` guard on the seed call itself (Task 4) — not left as a soft assumption that nobody sets `SEED_DEMO_DATA=true` on the production compose file, since seeding production would create a login (`admin@koalabooks.local` / `Admin123!`) with a publicly-documented password in a real customer database.
 
 ---
 
@@ -582,7 +582,8 @@ In `src/KoalaBooks.Web/Program.cs`, replace:
 with:
 
 ```csharp
-        if (app.Environment.IsDevelopment() || builder.Configuration["SEED_DEMO_DATA"] == "true")
+        if (!app.Environment.IsProduction() &&
+            (app.Environment.IsDevelopment() || builder.Configuration["SEED_DEMO_DATA"] == "true"))
         {
             await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
         }
