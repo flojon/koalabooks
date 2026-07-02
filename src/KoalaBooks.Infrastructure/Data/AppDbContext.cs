@@ -19,6 +19,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
+    public DbSet<VoucherGapExplanation> VoucherGapExplanations => Set<VoucherGapExplanation>();
     public DbSet<BankTransaction> BankTransactions => Set<BankTransaction>();
     public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
     public DbSet<Customer> Customers => Set<Customer>();
@@ -111,6 +112,18 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasOne(l => l.Account)
                   .WithMany()
                   .HasForeignKey(l => l.AccountId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VoucherGapExplanation>(entity =>
+        {
+            entity.HasQueryFilter(v => _currentUser.OrganisationId != null && v.FiscalYear.OrganisationId == _currentUser.OrganisationId);
+            entity.HasIndex(v => new { v.FiscalYearId, v.MissingEntryNumber }).IsUnique();
+            entity.Property(v => v.Explanation).HasMaxLength(1000);
+            entity.Property(v => v.ExplainedBy).HasMaxLength(200);
+            entity.HasOne(v => v.FiscalYear)
+                  .WithMany()
+                  .HasForeignKey(v => v.FiscalYearId)
                   .OnDelete(DeleteBehavior.Restrict);
         });
 
