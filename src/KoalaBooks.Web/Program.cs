@@ -210,7 +210,8 @@ using (var scope = app.Services.CreateScope())
             }
         }
 
-        if (app.Environment.IsDevelopment() || builder.Configuration["SEED_DEMO_DATA"] == "true")
+        if (!app.Environment.IsProduction() &&
+            (app.Environment.IsDevelopment() || builder.Configuration["SEED_DEMO_DATA"] == "true"))
         {
             await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
         }
