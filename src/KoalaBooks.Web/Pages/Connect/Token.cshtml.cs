@@ -31,6 +31,14 @@ public class TokenModel : PageModel
         var request = HttpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("The OpenIddict server request cannot be retrieved.");
 
+        // Redeems the code issued in Authorize.cshtml.cs, reusing the principal
+        // attached to it by the OpenIddict server middleware (e.g. the Aspire dashboard's OIDC login).
+        if (request.IsAuthorizationCodeGrantType())
+        {
+            var codeResult = await HttpContext.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+            return SignIn(codeResult.Principal!, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        }
+
         if (request.GrantType != OpenIddictConstants.GrantTypes.Password)
             return Forbid(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
