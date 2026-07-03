@@ -34,31 +34,47 @@ public static class DemoDataSeeder
         tenant.OrganisationId = org.Id;
 
         var currentYearNumber = DateTime.UtcNow.Year;
+        var previousYearName = (currentYearNumber - 1).ToString();
+        var currentYearName = currentYearNumber.ToString();
 
-        var previousFiscalYear = new FiscalYear
+        var previousFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == previousYearName);
+        var currentFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == currentYearName);
+
+        // Checking for both years up front (instead of only guarding on the demo user, as
+        // before) stops a retry after a partial failure from adding a second, duplicate pair
+        // of fiscal years on top of ones that already committed successfully. The pair itself
+        // is still created atomically, via one SaveChangesAsync call, so this can never see
+        // exactly one of the two.
+        if (previousFiscalYear is null || currentFiscalYear is null)
         {
-            OrganisationId = org.Id,
-            Name = (currentYearNumber - 1).ToString(),
-            StartDate = new DateOnly(currentYearNumber - 1, 1, 1),
-            EndDate = new DateOnly(currentYearNumber - 1, 12, 31),
-            IsClosed = false
-        };
-        var currentFiscalYear = new FiscalYear
-        {
-            OrganisationId = org.Id,
-            Name = currentYearNumber.ToString(),
-            StartDate = new DateOnly(currentYearNumber, 1, 1),
-            EndDate = new DateOnly(currentYearNumber, 12, 31),
-            IsClosed = false
-        };
-        db.FiscalYears.AddRange(previousFiscalYear, currentFiscalYear);
-        await db.SaveChangesAsync();
+            previousFiscalYear = new FiscalYear
+            {
+                OrganisationId = org.Id,
+                Name = previousYearName,
+                StartDate = new DateOnly(currentYearNumber - 1, 1, 1),
+                EndDate = new DateOnly(currentYearNumber - 1, 12, 31),
+                IsClosed = false
+            };
+            currentFiscalYear = new FiscalYear
+            {
+                OrganisationId = org.Id,
+                Name = currentYearName,
+                StartDate = new DateOnly(currentYearNumber, 1, 1),
+                EndDate = new DateOnly(currentYearNumber, 12, 31),
+                IsClosed = false
+            };
+            db.FiscalYears.AddRange(previousFiscalYear, currentFiscalYear);
+            await db.SaveChangesAsync();
 
-        await new BasImportService(db).ImportDefaultAsync(previousFiscalYear.Id);
-        await new BasImportService(db).ImportDefaultAsync(currentFiscalYear.Id);
+            currentFiscalYear.PreviousFiscalYearId = previousFiscalYear.Id;
+            await db.SaveChangesAsync();
 
-        await SeedPreviousYearEntriesAsync(db, previousFiscalYear);
-        await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
+            await new BasImportService(db).ImportDefaultAsync(previousFiscalYear.Id);
+            await new BasImportService(db).ImportDefaultAsync(currentFiscalYear.Id);
+
+            await SeedPreviousYearEntriesAsync(db, tenant, previousFiscalYear);
+            await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
+        }
 
         // Demo user is created last, once all books data is committed, so its existence
         // (the idempotency guard at the top of this method) is a true "fully seeded" marker.
@@ -112,7 +128,7 @@ public static class DemoDataSeeder
             throw new InvalidOperationException($"Demo seed failed to post journal entry '{description}': {postError}");
     }
 
-    private static async Task SeedPreviousYearEntriesAsync(AppDbContext db, FiscalYear previousFiscalYear)
+    private static async Task SeedPreviousYearEntriesAsync(AppDbContext db, LocalCurrentUser tenant, FiscalYear previousFiscalYear)
     {
         var accounts = await LoadDemoAccountsAsync(db, previousFiscalYear.Id);
         var cash = accounts["1910"].Id;
@@ -128,9 +144,17 @@ public static class DemoDataSeeder
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 8, 20), cash, revenue, 11000m, "Kontantförsäljning");
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 11, 5), expense, payables, 4000m, "Inköp material");
 
-        previousFiscalYear.IsClosed = true;
-        previousFiscalYear.ClosedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
+        // Close through the real closing service (not a direct IsClosed flip) so it posts the
+        // 8999/2099 closing entries and propagates outgoing balances into the next fiscal
+        // year's IncomingBalance — the same path a real year-end close goes through.
+        // ExecuteClosingAsync begins its own transaction internally, so the call must run
+        // inside the DbContext's execution strategy or a retrying Npgsql strategy rejects it.
+        var fiscalYearService = new FiscalYearService(db, tenant);
+        var closingService = new YearEndClosingService(db, fiscalYearService);
+        var strategy = db.Database.CreateExecutionStrategy();
+        var closingResult = await strategy.ExecuteAsync(() => closingService.ExecuteClosingAsync(previousFiscalYear.Id));
+        if (!closingResult.Success)
+            throw new InvalidOperationException($"Demo seed failed to close previous fiscal year: {closingResult.Error}");
     }
 
     private static async Task SeedCurrentYearEntriesAsync(AppDbContext db, int fiscalYearId)

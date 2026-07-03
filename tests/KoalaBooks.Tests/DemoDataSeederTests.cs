@@ -180,8 +180,64 @@ public class DemoDataSeederTests : IDisposable
                 .SingleAsync();
             Assert.NotNull(previousFiscalYear.ClosedAt);
 
-            var entryCount = await db.JournalEntries.CountAsync(j => j.FiscalYearId == previousFiscalYear.Id);
-            Assert.Equal(4, entryCount);
+            var operatingEntryCount = await db.JournalEntries
+                .CountAsync(j => j.FiscalYearId == previousFiscalYear.Id && !j.IsClosingEntry);
+            Assert.Equal(4, operatingEntryCount);
+
+            // Closed via YearEndClosingService, so it also posts the standard P&L-to-8999
+            // and 8999-to-2099 closing entries.
+            var closingEntryCount = await db.JournalEntries
+                .CountAsync(j => j.FiscalYearId == previousFiscalYear.Id && j.IsClosingEntry);
+            Assert.Equal(2, closingEntryCount);
+        }
+    }
+
+    [Fact]
+    public async Task SeedAsync_CarriesPreviousYearClosingBalanceIntoCurrentYear()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var previousFiscalYear = await db.FiscalYears.Where(f => f.IsClosed).SingleAsync();
+            var currentFiscalYear = await db.FiscalYears.Where(f => !f.IsClosed).SingleAsync();
+            Assert.Equal(previousFiscalYear.Id, currentFiscalYear.PreviousFiscalYearId);
+
+            var previousCash = await db.Accounts
+                .SingleAsync(a => a.FiscalYearId == previousFiscalYear.Id && a.AccountNumber == "1910");
+            var currentCash = await db.Accounts
+                .SingleAsync(a => a.FiscalYearId == currentFiscalYear.Id && a.AccountNumber == "1910");
+
+            Assert.NotEqual(0, previousCash.OutgoingBalance);
+            Assert.Equal(previousCash.OutgoingBalance, currentCash.IncomingBalance);
+        }
+    }
+
+    [Fact]
+    public async Task SeedAsync_DoesNotDuplicateFiscalYearsOnRetryAfterPartialFailure()
+    {
+        using (var scope = _sp.CreateScope())
+            await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        // Simulate the exact retry scenario a crash mid-seed produces: the organisation and
+        // its books were committed, but the demo user (the idempotency marker) wasn't.
+        using (var scope = _sp.CreateScope())
+        {
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var user = await userManager.FindByEmailAsync(DemoDataSeeder.DemoUserEmail);
+            await userManager.DeleteAsync(user!);
+        }
+
+        using (var scope = _sp.CreateScope())
+            await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        using var verifyScope = _sp.CreateScope();
+        var (db, _) = await OpenTenantDbAsync(verifyScope.ServiceProvider);
+        await using (db)
+        {
+            Assert.Equal(2, await db.FiscalYears.CountAsync());
         }
     }
 
