@@ -257,6 +257,8 @@ git commit -m "feat: seed two fiscal years and full BAS chart of accounts in Dem
 - Produces: the previous fiscal year ends up with 4 posted entries spread across 4 different months, no gap, and `IsClosed = true` / `ClosedAt` set. The current fiscal year ends up with 6 posted entries spread one-per-month January–June, with entry number 3 deleted afterward (numbers present: 1, 2, 4, 5, 6).
 - Note: this task has no dependency on the separate `VoucherGapService`/voucher-gap-detection feature (a different, unmerged PR) — the gap is verified purely as a fact about `JournalEntry.EntryNumber` values, so this builds and passes standalone against `main`.
 
+> **Note (added post-implementation):** Code review on PR #185 found that closing the previous fiscal year by hand-flipping `IsClosed`/`ClosedAt` (as `SeedPreviousYearEntriesAsync` does in the snippet below) skips posting the 8999/2099 closing entries and leaves every account's `OutgoingBalance` at 0 — so the "closed" year had no UB, and nothing propagated into the current year's `IncomingBalance`. The fix closes through `YearEndClosingService.ExecuteClosingAsync` instead (wrapped in the `DbContext`'s execution strategy, since it opens its own transaction) and links `currentFiscalYear.PreviousFiscalYearId` so balances carry forward. This snippet is left as the historical record of what Task 3 originally implemented; see the live `DemoDataSeeder.cs` for the current code.
+
 - [ ] **Step 1: Write the failing tests**
 
 Add to `DemoDataSeederTests.cs`:
