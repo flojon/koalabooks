@@ -244,6 +244,75 @@ public class DocumentServiceTests : IDisposable
         Assert.Equal(2, counts[e1.Id]);
         Assert.Equal(1, counts[e2.Id]);
     }
+
+    [Fact]
+    public async Task UploadZipAsync_ImportsAllValidEntries()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("a.pdf", new byte[] { 1, 2, 3 }), ("b.png", new byte[] { 4, 5 }));
+
+        var (result, err) = await svc.UploadZipAsync(zip);
+
+        Assert.Null(err);
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Imported.Count);
+        Assert.Contains(result.Imported, d => d.FileName == "a.pdf");
+        Assert.Contains(result.Imported, d => d.FileName == "b.png");
+        Assert.Empty(result.Skipped);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_FlattensNestedFolderPaths()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("invoices/2026/faktura.pdf", new byte[] { 1, 2, 3 }));
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("faktura.pdf", result.Imported[0].FileName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_SkipsDirectoryEntries()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZipWithDirectoryEntry();
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("faktura.pdf", result.Imported[0].FileName);
+    }
+
+    private static byte[] BuildZip(params (string Name, byte[] Data)[] entries)
+    {
+        using var ms = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (name, data) in entries)
+            {
+                var entry = archive.CreateEntry(name);
+                using var entryStream = entry.Open();
+                entryStream.Write(data, 0, data.Length);
+            }
+        }
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildZipWithDirectoryEntry()
+    {
+        using var ms = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            archive.CreateEntry("empty_folder/");
+            var entry = archive.CreateEntry("faktura.pdf");
+            using var entryStream = entry.Open();
+            var data = new byte[] { 1, 2, 3 };
+            entryStream.Write(data, 0, data.Length);
+        }
+        return ms.ToArray();
+    }
 }
 
 file class FailingStorage : IDocumentStorage

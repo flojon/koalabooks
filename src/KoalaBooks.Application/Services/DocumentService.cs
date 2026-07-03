@@ -4,6 +4,7 @@ using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.IO.Compression;
 using System.Text.Json;
 
 namespace KoalaBooks.Application.Services;
@@ -24,6 +25,14 @@ public class DocumentService(
         "image/jpeg",
         "image/jpg", // Some browsers report .jpg files as image/jpg rather than image/jpeg
     ];
+
+    private static readonly Dictionary<string, string> ZipEntryContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".pdf"] = "application/pdf",
+        [".png"] = "image/png",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+    };
 
     public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, byte[] data)
     {
@@ -202,6 +211,39 @@ public class DocumentService(
         return (doc, null);
     }
 
+    public async Task<(ZipImportResult? Result, string? Error)> UploadZipAsync(byte[] zipData)
+    {
+        using var ms = new MemoryStream(zipData);
+        using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+
+        var imported = new List<Document>();
+        var skipped = new List<(string FileName, string Reason)>();
+
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name))
+                continue; // directory entry — ZipArchiveEntry.Name is empty for these
+
+            if (!ZipEntryContentTypes.TryGetValue(Path.GetExtension(entry.Name), out var contentType))
+            {
+                skipped.Add((entry.Name, "Otillåten filtyp."));
+                continue;
+            }
+
+            using var entryStream = entry.Open();
+            using var buffer = new MemoryStream();
+            await entryStream.CopyToAsync(buffer);
+
+            var (doc, err) = await UploadAsync(entry.Name, contentType, buffer.ToArray());
+            if (doc is not null)
+                imported.Add(doc);
+            else
+                skipped.Add((entry.Name, err ?? "Okänt fel."));
+        }
+
+        return (new ZipImportResult(imported, skipped), null);
+    }
+
     private static Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query) =>
         query.Select(d => new DocumentMeta
         {
@@ -236,3 +278,5 @@ public class DocumentMeta
         _ => $"{FileSize / (1024.0 * 1024):N1} MB"
     };
 }
+
+public record ZipImportResult(IReadOnlyList<Document> Imported, IReadOnlyList<(string FileName, string Reason)> Skipped);
