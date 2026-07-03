@@ -34,36 +34,45 @@ public static class DemoDataSeeder
         tenant.OrganisationId = org.Id;
 
         var currentYearNumber = DateTime.UtcNow.Year;
+        var previousYearName = (currentYearNumber - 1).ToString();
+        var currentYearName = currentYearNumber.ToString();
 
-        var previousFiscalYear = new FiscalYear
+        var previousFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == previousYearName);
+        var currentFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == currentYearName);
+
+        // Existence-checked (not just the demo user) so a retry after a partial failure can't add a duplicate pair.
+        if (previousFiscalYear is null || currentFiscalYear is null)
         {
-            OrganisationId = org.Id,
-            Name = (currentYearNumber - 1).ToString(),
-            StartDate = new DateOnly(currentYearNumber - 1, 1, 1),
-            EndDate = new DateOnly(currentYearNumber - 1, 12, 31),
-            IsClosed = false
-        };
-        var currentFiscalYear = new FiscalYear
-        {
-            OrganisationId = org.Id,
-            Name = currentYearNumber.ToString(),
-            StartDate = new DateOnly(currentYearNumber, 1, 1),
-            EndDate = new DateOnly(currentYearNumber, 12, 31),
-            IsClosed = false
-        };
-        db.FiscalYears.AddRange(previousFiscalYear, currentFiscalYear);
-        await db.SaveChangesAsync();
+            previousFiscalYear = new FiscalYear
+            {
+                OrganisationId = org.Id,
+                Name = previousYearName,
+                StartDate = new DateOnly(currentYearNumber - 1, 1, 1),
+                EndDate = new DateOnly(currentYearNumber - 1, 12, 31),
+                IsClosed = false
+            };
+            currentFiscalYear = new FiscalYear
+            {
+                OrganisationId = org.Id,
+                Name = currentYearName,
+                StartDate = new DateOnly(currentYearNumber, 1, 1),
+                EndDate = new DateOnly(currentYearNumber, 12, 31),
+                IsClosed = false
+            };
+            db.FiscalYears.AddRange(previousFiscalYear, currentFiscalYear);
+            await db.SaveChangesAsync();
 
-        await new BasImportService(db).ImportDefaultAsync(previousFiscalYear.Id);
-        await new BasImportService(db).ImportDefaultAsync(currentFiscalYear.Id);
+            currentFiscalYear.PreviousFiscalYearId = previousFiscalYear.Id;
+            await db.SaveChangesAsync();
 
-        await SeedPreviousYearEntriesAsync(db, previousFiscalYear);
-        await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
+            await new BasImportService(db).ImportDefaultAsync(previousFiscalYear.Id);
+            await new BasImportService(db).ImportDefaultAsync(currentFiscalYear.Id);
 
-        // Demo user is created last, once all books data is committed, so its existence
-        // (the idempotency guard at the top of this method) is a true "fully seeded" marker.
-        // If seeding fails partway through, the user is never created, so the next startup
-        // retries from scratch instead of being permanently stuck half-seeded.
+            await SeedPreviousYearEntriesAsync(db, tenant, previousFiscalYear);
+            await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
+        }
+
+        // Created last so its existence is a true "fully seeded" marker for the idempotency guard above.
         var demoUser = new ApplicationUser
         {
             UserName = DemoUserEmail,
@@ -112,7 +121,7 @@ public static class DemoDataSeeder
             throw new InvalidOperationException($"Demo seed failed to post journal entry '{description}': {postError}");
     }
 
-    private static async Task SeedPreviousYearEntriesAsync(AppDbContext db, FiscalYear previousFiscalYear)
+    private static async Task SeedPreviousYearEntriesAsync(AppDbContext db, LocalCurrentUser tenant, FiscalYear previousFiscalYear)
     {
         var accounts = await LoadDemoAccountsAsync(db, previousFiscalYear.Id);
         var cash = accounts["1910"].Id;
@@ -128,9 +137,13 @@ public static class DemoDataSeeder
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 8, 20), cash, revenue, 11000m, "Kontantförsäljning");
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 11, 5), expense, payables, 4000m, "Inköp material");
 
-        previousFiscalYear.IsClosed = true;
-        previousFiscalYear.ClosedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
+        // Close via the real service so it posts closing entries and propagates balances forward; wrap in the execution strategy since it opens its own transaction.
+        var fiscalYearService = new FiscalYearService(db, tenant);
+        var closingService = new YearEndClosingService(db, fiscalYearService);
+        var strategy = db.Database.CreateExecutionStrategy();
+        var closingResult = await strategy.ExecuteAsync(() => closingService.ExecuteClosingAsync(previousFiscalYear.Id));
+        if (!closingResult.Success)
+            throw new InvalidOperationException($"Demo seed failed to close previous fiscal year: {closingResult.Error}");
     }
 
     private static async Task SeedCurrentYearEntriesAsync(AppDbContext db, int fiscalYearId)
@@ -160,11 +173,7 @@ public static class DemoDataSeeder
             await PostEntryAsync(journalEntryService, fiscalYearId, date, debitAccountId, creditAccountId, amount, description);
         }
 
-        // Leave voucher #3 as a gap: bypass JournalEntryService (which blocks deleting posted
-        // entries) to simulate a historical direct-DB deletion — the exact scenario BFNAR 2013:2
-        // gap detection exists to catch. Entry numbers are assigned sequentially by
-        // JournalEntryService.CreateAsync in the order entries were posted above, so re-querying
-        // ordered by EntryNumber and taking the 3rd one identifies the entry to delete.
+        // Bypass JournalEntryService to delete voucher #3, simulating the historical direct-DB deletion gap detection is meant to catch.
         var postedEntryIds = await db.JournalEntries
             .Where(j => j.FiscalYearId == fiscalYearId)
             .OrderBy(j => j.EntryNumber)
