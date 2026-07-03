@@ -327,6 +327,45 @@ public class DocumentServiceTests : IDisposable
         Assert.Equal("faktura.pdf", result.Skipped[0].FileName);
     }
 
+    [Fact]
+    public async Task UploadZipAsync_RejectsOversizedZipContainer()
+    {
+        var svc = _fx.MakeDocumentService();
+        var bigZip = new byte[51 * 1024 * 1024];
+
+        var (result, err) = await svc.UploadZipAsync(bigZip);
+
+        Assert.Null(result);
+        Assert.NotNull(err);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_RejectsZipWithTooManyEntries()
+    {
+        var svc = _fx.MakeDocumentService();
+        var entries = Enumerable.Range(1, 51)
+            .Select(i => ($"file{i}.pdf", new byte[] { 1 }))
+            .ToArray();
+        var zip = BuildZip(entries);
+
+        var (result, err) = await svc.UploadZipAsync(zip);
+
+        Assert.Null(result);
+        Assert.NotNull(err);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_RejectsCorruptZipFile()
+    {
+        var svc = _fx.MakeDocumentService();
+        var corruptBytes = new byte[] { 1, 2, 3, 4, 5 };
+
+        var (result, err) = await svc.UploadZipAsync(corruptBytes);
+
+        Assert.Null(result);
+        Assert.NotNull(err);
+    }
+
     private static byte[] BuildZip(params (string Name, byte[] Data)[] entries)
     {
         using var ms = new MemoryStream();

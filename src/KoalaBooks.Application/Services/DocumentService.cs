@@ -17,6 +17,8 @@ public class DocumentService(
     ILogger<DocumentService> logger)
 {
     private const long MaxBytes = 10 * 1024 * 1024;
+    private const long ZipMaxBytes = 50 * 1024 * 1024;
+    private const int ZipMaxEntries = 50;
 
     private static readonly HashSet<string> AllowedContentTypes =
     [
@@ -213,41 +215,55 @@ public class DocumentService(
 
     public async Task<(ZipImportResult? Result, string? Error)> UploadZipAsync(byte[] zipData)
     {
-        using var ms = new MemoryStream(zipData);
-        using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+        if (zipData.Length > ZipMaxBytes)
+            return (null, "Zip-filen är för stor (max 50 MB).");
 
-        var imported = new List<Document>();
-        var skipped = new List<(string FileName, string Reason)>();
-
-        foreach (var entry in archive.Entries)
+        ZipArchive archive;
+        try
         {
-            if (string.IsNullOrEmpty(entry.Name))
-                continue; // directory entry — ZipArchiveEntry.Name is empty for these
-
-            if (!ZipEntryContentTypes.TryGetValue(Path.GetExtension(entry.Name), out var contentType))
-            {
-                skipped.Add((entry.Name, "Otillåten filtyp."));
-                continue;
-            }
-
-            if (entry.Length > MaxBytes)
-            {
-                skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
-                continue;
-            }
-
-            using var entryStream = entry.Open();
-            using var buffer = new MemoryStream();
-            await entryStream.CopyToAsync(buffer);
-
-            var (doc, err) = await UploadAsync(entry.Name, contentType, buffer.ToArray());
-            if (doc is not null)
-                imported.Add(doc);
-            else
-                skipped.Add((entry.Name, err ?? "Okänt fel."));
+            archive = new ZipArchive(new MemoryStream(zipData), ZipArchiveMode.Read);
+        }
+        catch (InvalidDataException)
+        {
+            return (null, "Ogiltig zip-fil.");
         }
 
-        return (new ZipImportResult(imported, skipped), null);
+        using (archive)
+        {
+            var fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+            if (fileEntries.Count > ZipMaxEntries)
+                return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
+
+            var imported = new List<Document>();
+            var skipped = new List<(string FileName, string Reason)>();
+
+            foreach (var entry in fileEntries)
+            {
+                if (!ZipEntryContentTypes.TryGetValue(Path.GetExtension(entry.Name), out var contentType))
+                {
+                    skipped.Add((entry.Name, "Otillåten filtyp."));
+                    continue;
+                }
+
+                if (entry.Length > MaxBytes)
+                {
+                    skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
+                    continue;
+                }
+
+                using var entryStream = entry.Open();
+                using var buffer = new MemoryStream();
+                await entryStream.CopyToAsync(buffer);
+
+                var (doc, err) = await UploadAsync(entry.Name, contentType, buffer.ToArray());
+                if (doc is not null)
+                    imported.Add(doc);
+                else
+                    skipped.Add((entry.Name, err ?? "Okänt fel."));
+            }
+
+            return (new ZipImportResult(imported, skipped), null);
+        }
     }
 
     private static Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query) =>
