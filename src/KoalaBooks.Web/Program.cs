@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using MudBlazor;
 using MudBlazor.Services;
 using Npgsql;
+using OpenIddict.Abstractions;
 using QuestPDF.Infrastructure;
 using System.Net;
 using System.Text;
@@ -82,6 +83,11 @@ builder.Services.AddOpenIddict()
                .AllowRefreshTokenFlow()
                .AllowAuthorizationCodeFlow();
         options.AcceptAnonymousClients();
+        // Scopes other than "openid"/"offline_access" must be registered here, or OpenIddict
+        // rejects them with invalid_scope even when the client has the matching permission.
+        options.RegisterScopes(
+            OpenIddictConstants.Scopes.Profile,
+            OpenIddictConstants.Scopes.Email);
         options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
         if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
         {
