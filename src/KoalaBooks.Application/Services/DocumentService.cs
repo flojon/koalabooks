@@ -230,7 +230,16 @@ public class DocumentService(
 
         using (archive)
         {
-            var fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+            List<ZipArchiveEntry> fileEntries;
+            try
+            {
+                fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+            }
+            catch (InvalidDataException)
+            {
+                return (null, "Ogiltig zip-fil.");
+            }
+
             if (fileEntries.Count > ZipMaxEntries)
                 return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
 
@@ -251,11 +260,25 @@ public class DocumentService(
                     continue;
                 }
 
-                using var entryStream = entry.Open();
-                using var buffer = new MemoryStream();
-                await entryStream.CopyToAsync(buffer);
+                byte[] data;
+                try
+                {
+                    using var entryStream = entry.Open();
+                    var (readData, oversized) = await ReadBoundedAsync(entryStream, MaxBytes);
+                    if (oversized)
+                    {
+                        skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
+                        continue;
+                    }
+                    data = readData!;
+                }
+                catch (InvalidDataException)
+                {
+                    skipped.Add((entry.Name, "Skadad fil."));
+                    continue;
+                }
 
-                var (doc, err) = await UploadAsync(entry.Name, contentType, buffer.ToArray());
+                var (doc, err) = await UploadAsync(entry.Name, contentType, data);
                 if (doc is not null)
                     imported.Add(doc);
                 else
@@ -264,6 +287,22 @@ public class DocumentService(
 
             return (new ZipImportResult(imported, skipped), null);
         }
+    }
+
+    private static async Task<(byte[]? Data, bool Oversized)> ReadBoundedAsync(Stream stream, long maxBytes)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        long totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = await stream.ReadAsync(chunk)) > 0)
+        {
+            totalRead += bytesRead;
+            if (totalRead > maxBytes)
+                return (null, true);
+            await buffer.WriteAsync(chunk.AsMemory(0, bytesRead));
+        }
+        return (buffer.ToArray(), false);
     }
 
     private static Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query) =>

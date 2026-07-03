@@ -366,6 +366,44 @@ public class DocumentServiceTests : IDisposable
         Assert.NotNull(err);
     }
 
+    [Fact]
+    public async Task UploadZipAsync_SkipsCorruptEntry_RestOfBatchStillImports()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = CorruptEntryData(BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("bad.pdf", new byte[500])), "bad.pdf");
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("good.pdf", result.Imported[0].FileName);
+        Assert.Single(result.Skipped);
+        Assert.Equal("bad.pdf", result.Skipped[0].FileName);
+    }
+
+    private static byte[] CorruptEntryData(byte[] zipBytes, string entryName)
+    {
+        var corrupted = (byte[])zipBytes.Clone();
+        for (var i = 0; i < corrupted.Length - 4; i++)
+        {
+            if (corrupted[i] == 0x50 && corrupted[i + 1] == 0x4B && corrupted[i + 2] == 0x03 && corrupted[i + 3] == 0x04)
+            {
+                var nameLen = BitConverter.ToUInt16(corrupted, i + 26);
+                var extraLen = BitConverter.ToUInt16(corrupted, i + 28);
+                var nameStart = i + 30;
+                var name = System.Text.Encoding.UTF8.GetString(corrupted, nameStart, nameLen);
+                if (name == entryName)
+                {
+                    var compressedSize = BitConverter.ToInt32(corrupted, i + 18);
+                    var dataStart = nameStart + nameLen + extraLen;
+                    for (var j = dataStart; j < dataStart + compressedSize; j++)
+                        corrupted[j] = (byte)~corrupted[j];
+                    return corrupted;
+                }
+            }
+        }
+        throw new InvalidOperationException($"entry {entryName} not found in zip for corruption");
+    }
+
     private static byte[] BuildZip(params (string Name, byte[] Data)[] entries)
     {
         using var ms = new MemoryStream();
