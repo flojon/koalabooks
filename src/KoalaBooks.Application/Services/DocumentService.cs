@@ -230,6 +230,12 @@ public class DocumentService(
                 continue;
             }
 
+            if (entry.Length > MaxBytes)
+            {
+                skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
+                continue;
+            }
+
             using var entryStream = entry.Open();
             using var buffer = new MemoryStream();
             await entryStream.CopyToAsync(buffer);

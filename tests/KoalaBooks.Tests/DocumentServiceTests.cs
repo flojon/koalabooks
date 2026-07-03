@@ -285,6 +285,48 @@ public class DocumentServiceTests : IDisposable
         Assert.Equal("faktura.pdf", result.Imported[0].FileName);
     }
 
+    [Fact]
+    public async Task UploadZipAsync_SkipsInvalidEntriesAndReportsReasons()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("bad.exe", new byte[] { 1, 2, 3 }));
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("good.pdf", result.Imported[0].FileName);
+        Assert.Single(result.Skipped);
+        Assert.Equal("bad.exe", result.Skipped[0].FileName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_SkipsOversizedEntry()
+    {
+        var svc = _fx.MakeDocumentService();
+        var bigData = new byte[11 * 1024 * 1024];
+        var zip = BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("big.pdf", bigData));
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("good.pdf", result.Imported[0].FileName);
+        Assert.Single(result.Skipped);
+        Assert.Equal("big.pdf", result.Skipped[0].FileName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_SkipsEntryWhenStorageFails_RestOfBatchStillImports()
+    {
+        var svc = _fx.MakeDocumentService(new FailingStorage());
+        var zip = BuildZip(("faktura.pdf", new byte[] { 1, 2, 3 }));
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Empty(result!.Imported);
+        Assert.Single(result.Skipped);
+        Assert.Equal("faktura.pdf", result.Skipped[0].FileName);
+    }
+
     private static byte[] BuildZip(params (string Name, byte[] Data)[] entries)
     {
         using var ms = new MemoryStream();
