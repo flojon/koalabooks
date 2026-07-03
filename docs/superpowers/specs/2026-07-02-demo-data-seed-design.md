@@ -21,7 +21,7 @@ Seeding runs when **either**:
 
 It never runs in `Production` (no `SEED_DEMO_DATA` there) and never runs in a hypothetical future real `Staging` deployment unless someone deliberately sets the flag.
 
-Idempotency: skip entirely if the seed user (`admin@koalabooks.local`) already exists — same guard as today. This matters more now than before: PR preview containers can restart (e.g. redeploy on `synchronize` without the volume being wiped) without a fresh database, and local dev DBs persist across `dotnet run` restarts.
+Idempotency: skip entirely if the seed user (`admin@koalabooks.local`) already exists — same guard as today. This matters more now than before: PR preview containers can restart (e.g. redeploy on `synchronize` without the volume being wiped) without a fresh database, and local dev DBs persist across `dotnet run` restarts. Because the demo user is created last (see Code Location), a crash partway through seeding leaves the org and some books data committed but no user — so `SeedAsync` also checks for existing fiscal years before creating a new pair, not just the user, so a retry can't add a second, duplicate pair on top of the first.
 
 ## Seed Content
 
@@ -30,7 +30,7 @@ All seeded under one organisation:
 - **Organisation**: `Name = "Demo AB"`, `Slug = "demo"`, `LegalForm = LegalForm.Aktiebolag`.
 - **User**: `admin@koalabooks.local` / `Admin123!` (unchanged credentials from today's dev seed), `EmailConfirmed = true`, `DisplayName = "Admin"`.
 - **Two fiscal years**, both computed from `DateTime.UtcNow.Year` at seed time (not hardcoded, so the seed stays useful without edits as time passes):
-  - **Previous year** (`year - 1`, full calendar year): seeded with entries, then `IsClosed = true` / `ClosedAt` set directly once seeding is done — exercises the fiscal-year switcher (PR #157) and its "new entry disabled on closed years" behavior.
+  - **Previous year** (`year - 1`, full calendar year): seeded with entries, then closed via `YearEndClosingService.ExecuteClosingAsync` (not a direct `IsClosed`/`ClosedAt` flip — an earlier version of this seed did that, but it skipped posting the 8999/2099 closing entries and left every account's `OutgoingBalance` at 0, so the "closed" year had no UB and nothing propagated into the current year's opening balances) — exercises the fiscal-year switcher (PR #157) and its "new entry disabled on closed years" behavior, and gives the current year real `IncomingBalance`s carried forward via `FiscalYear.PreviousFiscalYearId` / `FiscalYearService.PropagateBalancesToNextYearAsync`.
   - **Current year** (`year`, full calendar year): `IsClosed = false`, the active year.
 - **Chart of accounts**: the full BAS 2026 kontoplan (1 282 accounts) imported into *each* fiscal year separately via the existing `BasImportService.ImportDefaultAsync(fiscalYearId)` — the same code path the "Importera BAS 2026 kontoplan" checkbox on fiscal year creation already uses. Accounts are per-fiscal-year in this schema, so both years need their own import call. Reuses tested import logic instead of hand-maintaining a curated account list.
 - **Journal entries**, posted through `JournalEntryService.CreateAsync` + `PostAsync` (normal validated path, same pattern as `TestFixture.CreateAndPostEntryAsync`), using five familiar accounts confirmed present in the imported BAS 2026 plan — 1910 Kassa, 2440 Leverantörsskulder, 2081 Aktiekapital, 3001 Försäljning inom Sverige 25% moms, 5010 Lokalhyra (account 3010, originally chosen for "revenue," does not exist in the embedded BAS 2026 file — verified directly against the imported data; 3001 is the real revenue account used instead):
@@ -77,8 +77,10 @@ No other workflow or secret changes needed — this is an unauthenticated, non-s
   - `SeedAsync_ImportsBasChartOfAccounts` — asserts both seeded fiscal years have a full BAS-sized chart of accounts (`Count > 1000`) and that the five accounts used for journal entries (1910, 2440, 2081, 3001, 5010) are present in both.
   - `SeedAsync_LeavesOneVoucherGapInCurrentYear` — asserts the current year's `JournalEntry.EntryNumber` values are exactly `[1, 2, 4, 5, 6]` (no dependency on the separate voucher-gap-detection feature/PR).
   - `SeedAsync_SpreadsCurrentYearEntriesAcrossMonths` — asserts the current year's posted entries span at least 5 distinct months.
-  - `SeedAsync_ClosesPreviousYearWithFourEntries` — asserts one fiscal year is closed with `ClosedAt` set and has exactly 4 posted entries (no gap).
+  - `SeedAsync_ClosesPreviousYearWithFourEntries` — asserts the previous fiscal year has exactly 4 non-closing posted entries (no gap) plus 2 posted closing entries (8999/2099), since it's now closed through `YearEndClosingService` rather than a direct `IsClosed` flip.
+  - `SeedAsync_CarriesPreviousYearClosingBalanceIntoCurrentYear` — asserts the previous year's cash account has a non-zero `OutgoingBalance` and that it equals the current year's cash account `IncomingBalance`.
   - `SeedAsync_IsIdempotent` — calling `SeedAsync` twice does not create a second organisation.
+  - `SeedAsync_DoesNotDuplicateFiscalYearsOnRetryAfterPartialFailure` — deletes the demo user after a successful seed (simulating a crash before that last step) and reseeds, asserting exactly 2 fiscal years exist afterward, not 4.
 
 ## Out of Scope
 
