@@ -40,11 +40,7 @@ public static class DemoDataSeeder
         var previousFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == previousYearName);
         var currentFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == currentYearName);
 
-        // Checking for both years up front (instead of only guarding on the demo user, as
-        // before) stops a retry after a partial failure from adding a second, duplicate pair
-        // of fiscal years on top of ones that already committed successfully. The pair itself
-        // is still created atomically, via one SaveChangesAsync call, so this can never see
-        // exactly one of the two.
+        // Existence-checked (not just the demo user) so a retry after a partial failure can't add a duplicate pair.
         if (previousFiscalYear is null || currentFiscalYear is null)
         {
             previousFiscalYear = new FiscalYear
@@ -76,10 +72,7 @@ public static class DemoDataSeeder
             await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
         }
 
-        // Demo user is created last, once all books data is committed, so its existence
-        // (the idempotency guard at the top of this method) is a true "fully seeded" marker.
-        // If seeding fails partway through, the user is never created, so the next startup
-        // retries from scratch instead of being permanently stuck half-seeded.
+        // Created last so its existence is a true "fully seeded" marker for the idempotency guard above.
         var demoUser = new ApplicationUser
         {
             UserName = DemoUserEmail,
@@ -144,11 +137,7 @@ public static class DemoDataSeeder
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 8, 20), cash, revenue, 11000m, "Kontantförsäljning");
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 11, 5), expense, payables, 4000m, "Inköp material");
 
-        // Close through the real closing service (not a direct IsClosed flip) so it posts the
-        // 8999/2099 closing entries and propagates outgoing balances into the next fiscal
-        // year's IncomingBalance — the same path a real year-end close goes through.
-        // ExecuteClosingAsync begins its own transaction internally, so the call must run
-        // inside the DbContext's execution strategy or a retrying Npgsql strategy rejects it.
+        // Close via the real service so it posts closing entries and propagates balances forward; wrap in the execution strategy since it opens its own transaction.
         var fiscalYearService = new FiscalYearService(db, tenant);
         var closingService = new YearEndClosingService(db, fiscalYearService);
         var strategy = db.Database.CreateExecutionStrategy();
@@ -184,11 +173,7 @@ public static class DemoDataSeeder
             await PostEntryAsync(journalEntryService, fiscalYearId, date, debitAccountId, creditAccountId, amount, description);
         }
 
-        // Leave voucher #3 as a gap: bypass JournalEntryService (which blocks deleting posted
-        // entries) to simulate a historical direct-DB deletion — the exact scenario BFNAR 2013:2
-        // gap detection exists to catch. Entry numbers are assigned sequentially by
-        // JournalEntryService.CreateAsync in the order entries were posted above, so re-querying
-        // ordered by EntryNumber and taking the 3rd one identifies the entry to delete.
+        // Bypass JournalEntryService to delete voucher #3, simulating the historical direct-DB deletion gap detection is meant to catch.
         var postedEntryIds = await db.JournalEntries
             .Where(j => j.FiscalYearId == fiscalYearId)
             .OrderBy(j => j.EntryNumber)

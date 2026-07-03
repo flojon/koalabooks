@@ -30,12 +30,7 @@ public class DemoDataSeederTests : IDisposable
         scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
     }
 
-    /// <summary>
-    /// The DI-registered AppDbContext is tied to a singleton LocalCurrentUser with
-    /// OrganisationId = null, so it can't see tenant-scoped rows. Organisations has no
-    /// tenant filter, so we read the seeded org id from it, then open a second
-    /// AppDbContext scoped to that org for verifying tenant-scoped data.
-    /// </summary>
+    /// <summary>Opens a second, org-scoped AppDbContext since the DI-registered one has no OrganisationId and can't see tenant-scoped rows.</summary>
     private async Task<(AppDbContext Db, int OrganisationId)> OpenTenantDbAsync(IServiceProvider services)
     {
         var options = services.GetRequiredService<DbContextOptions<AppDbContext>>();
@@ -184,8 +179,7 @@ public class DemoDataSeederTests : IDisposable
                 .CountAsync(j => j.FiscalYearId == previousFiscalYear.Id && !j.IsClosingEntry);
             Assert.Equal(4, operatingEntryCount);
 
-            // Closed via YearEndClosingService, so it also posts the standard P&L-to-8999
-            // and 8999-to-2099 closing entries.
+            // Closed via YearEndClosingService, which also posts the standard closing entries.
             var closingEntryCount = await db.JournalEntries
                 .CountAsync(j => j.FiscalYearId == previousFiscalYear.Id && j.IsClosingEntry);
             Assert.Equal(2, closingEntryCount);
@@ -221,8 +215,7 @@ public class DemoDataSeederTests : IDisposable
         using (var scope = _sp.CreateScope())
             await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
 
-        // Simulate the exact retry scenario a crash mid-seed produces: the organisation and
-        // its books were committed, but the demo user (the idempotency marker) wasn't.
+        // Simulate a crash mid-seed: org and books committed, demo user (the idempotency marker) didn't.
         using (var scope = _sp.CreateScope())
         {
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
