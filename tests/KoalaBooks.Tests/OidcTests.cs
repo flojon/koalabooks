@@ -2,11 +2,58 @@ using KoalaBooks.Domain;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
 
 namespace KoalaBooks.Tests;
+
+// Reproduces a production incident where the dashboard's authorize request (scope=openid profile)
+// was rejected with invalid_scope (OpenIddict ID2052) because "profile" was never registered as a
+// server-level scope via RegisterScopes, even though the client had the scp:profile permission.
+public class OidcAuthorizeScopeTests
+{
+    [Fact]
+    public async Task Authorize_WithOpenIdProfileScope_IsAcceptedByOpenIddict()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            // Startup seeding (AspireDashboardSeeder) runs asynchronously before app.Run(); re-run it
+            // here (it's an idempotent upsert, same as on every real restart) so the test isn't flaky
+            // about whether that startup task has completed by the time CreateClient() returns.
+            using (var scope = factory.Services.CreateScope())
+            {
+                await AspireDashboardSeeder.SeedAsync(
+                    scope.ServiceProvider,
+                    new Uri("http://localhost:18888/signin-oidc"),
+                    "aspire-dashboard-dev-secret");
+            }
+
+            var redirectUri = Uri.EscapeDataString("http://localhost:18888/signin-oidc");
+            var response = await client.GetAsync(
+                $"/connect/authorize?client_id=aspire-dashboard&response_type=code&redirect_uri={redirectUri}&scope=openid%20profile");
+
+            var location = response.Headers.Location?.ToString() ?? "";
+            var body = await response.Content.ReadAsStringAsync();
+
+            // A rejected request returns invalid_scope directly (or redirects with an error query
+            // string). An accepted-but-unauthenticated request is passed through to the app, which
+            // challenges the user by redirecting to the login page instead.
+            Assert.DoesNotContain("invalid_scope", body);
+            Assert.DoesNotContain("error=invalid_scope", location);
+            Assert.Contains("/account/login", location);
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
+    }
+}
 
 public class OidcClientSeedingTests : IDisposable
 {
