@@ -14,7 +14,7 @@
 }
 
 <div style="margin-bottom:1rem;">
-    <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="UploadAsync" Accept=".pdf,.png,.jpg,.jpeg" MaximumFileCount="10">
+    <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="UploadAsync" Accept=".pdf,.png,.jpg,.jpeg,.zip" MaximumFileCount="10">
         <CustomContent>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload"
                        OnClick="@context.OpenFilePickerAsync"
@@ -27,7 +27,7 @@
         </SelectedTemplate>
     </MudFileUpload>
     <div style="font-size:0.78rem; color:#94a3b8; margin-top:0.3rem;">
-        Dra och släpp filer här eller klicka — PDF, PNG, JPG · max 10 MB per fil · upp till 10 filer
+        Dra och släpp filer här eller klicka — PDF, PNG, JPG eller ZIP · max 10 MB per fil (50 MB för ZIP) · upp till 10 filer
     </div>
 </div>
 
@@ -194,13 +194,39 @@ else
             foreach (var file in files)
             {
                 const long maxBytes = 10 * 1024 * 1024;
-                if (file.Size > maxBytes)
+                const long zipMaxBytes = 50 * 1024 * 1024;
+                var isZip = Path.GetExtension(file.Name).Equals(".zip", StringComparison.OrdinalIgnoreCase);
+                var fileMaxBytes = isZip ? zipMaxBytes : maxBytes;
+
+                if (file.Size > fileMaxBytes)
                 {
-                    _error = $"{file.Name}: för stor (max 10 MB).";
+                    _error = isZip ? $"{file.Name}: för stor (max 50 MB)." : $"{file.Name}: för stor (max 10 MB).";
                     continue;
                 }
+
                 using var ms = new MemoryStream();
-                await file.OpenReadStream(maxBytes).CopyToAsync(ms);
+                await file.OpenReadStream(fileMaxBytes).CopyToAsync(ms);
+
+                if (isZip)
+                {
+                    var (result, zipErr) = await DocumentService.UploadZipAsync(ms.ToArray());
+                    if (zipErr is not null)
+                    {
+                        _error = $"{file.Name}: {zipErr}";
+                    }
+                    else
+                    {
+                        var summary = $"{file.Name}: {result!.Imported.Count} dokument importerade";
+                        if (result.Skipped.Count > 0)
+                        {
+                            var reasons = string.Join(", ", result.Skipped.Select(s => $"{s.FileName}: {s.Reason}"));
+                            summary += $", {result.Skipped.Count} hoppade över ({reasons})";
+                        }
+                        Snackbar.Add(summary, result.Skipped.Count > 0 ? Severity.Warning : Severity.Success);
+                    }
+                    continue;
+                }
+
                 var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
                 var (_, err) = await DocumentService.UploadAsync(file.Name, contentType, ms.ToArray());
                 if (err is not null)
