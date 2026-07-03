@@ -1,7 +1,5 @@
 using KoalaBooks.Application.Services;
 using Scalar.AspNetCore;
-using KoalaBooks.Domain.Entities;
-using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
@@ -231,27 +229,10 @@ using (var scope = app.Services.CreateScope())
             }
         }
 
-        if (app.Environment.IsDevelopment())
+        if (!app.Environment.IsProduction() &&
+            (app.Environment.IsDevelopment() || builder.Configuration["SEED_DEMO_DATA"] == "true"))
         {
-            // Seed a default org + dev user if none exists
-            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-            const string devEmail = "admin@koalabooks.local";
-            if (await userManager.FindByEmailAsync(devEmail) is null)
-            {
-                var org = new Organisation { Name = "Dev Organisation", Slug = "dev", LegalForm = LegalForm.Aktiebolag };
-                db.Organisations.Add(org);
-                await db.SaveChangesAsync();
-
-                var devUser = new ApplicationUser
-                {
-                    UserName = devEmail,
-                    Email = devEmail,
-                    EmailConfirmed = true,
-                    DisplayName = "Admin",
-                    OrganisationId = org.Id
-                };
-                await userManager.CreateAsync(devUser, "Admin123!");
-            }
+            await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
         }
 
         var dashboardRedirectUri = builder.Configuration["AspireDashboard:OidcRedirectUri"]

@@ -6,6 +6,7 @@ services:
       - KOALABOOKS_DB_PASSWORD_FILE=/run/secrets/postgres_password
       - ASPNETCORE_ENVIRONMENT=Staging
       - ASPNETCORE_URLS=http://+:8080
+      - SEED_DEMO_DATA=true
     secrets:
       - postgres_password
     depends_on:
