@@ -1,0 +1,53 @@
+@page "/review"
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@inject JournalEntryService JournalEntryService
+@inject FiscalYearService FiscalYearService
+@inject AccountService AccountService
+
+<PageTitle>Att granska — KoalaBooks</PageTitle>
+
+<h1>🔍 Att granska</h1>
+
+@if (_activeFiscalYear is null && !_isLoading)
+{
+    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
+    return;
+}
+
+@if (_isLoading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+}
+else
+{
+    <JournalReviewSection Entries="_drafts" Accounts="_accounts" OnEntriesChanged="ReloadDraftsAsync" />
+}
+
+@code {
+    private FiscalYear? _activeFiscalYear;
+    private List<Account> _accounts = [];
+    private List<JournalEntry> _drafts = [];
+    private bool _isLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _isLoading = true;
+        _activeFiscalYear = await FiscalYearService.GetActiveAsync();
+        if (_activeFiscalYear is null)
+        {
+            _isLoading = false;
+            return;
+        }
+
+        _accounts = (await AccountService.GetAllAsync(_activeFiscalYear.Id)).Where(a => a.IsActive).ToList();
+        await ReloadDraftsAsync();
+        _isLoading = false;
+    }
+
+    private async Task ReloadDraftsAsync()
+    {
+        var all = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
+        _drafts = all.Where(e => !e.IsPosted).ToList();
+    }
+}
