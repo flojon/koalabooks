@@ -65,14 +65,25 @@ jobs:
           script: |
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/secrets
-            if [ ! -f /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password ]; then
-              openssl rand -hex 24 > /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
-              chmod 600 /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
+            SECRET_FILE=/opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
+            # A prior redeploy's Postgres data volume can outlive the secrets file
+            # (e.g. the pr-${PR_NUMBER} directory got recreated without a matching
+            # `down -v`). Detect that case by Compose's own project/volume labels
+            # rather than guessing the generated volume name.
+            VOLUME_EXISTS=false
+            if [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=pr-${PR_NUMBER}" --filter "label=com.docker.compose.volume=postgres-data")" ]; then
+              VOLUME_EXISTS=true
+            fi
+            NEW_SECRET=false
+            if [ ! -f "$SECRET_FILE" ]; then
+              openssl rand -hex 24 > "$SECRET_FILE"
+              chmod 600 "$SECRET_FILE"
               # docker compose (non-Swarm) bind-mounts file secrets preserving host
               # ownership; it ignores `mode`/`uid`/`gid` on the secret. The web image
               # runs as uid 1654 (aspnet chiseled), so the file must be owned by that
               # uid or the container can't read its own secret and crash-loops.
-              sudo chown 1654:1654 /opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
+              sudo chown 1654:1654 "$SECRET_FILE"
+              NEW_SECRET=true
             fi
             sed \
               -e "s/__PR_NUMBER__/${PR_NUMBER}/g" \
@@ -84,6 +95,16 @@ jobs:
               > /opt/koalabooks/caddy-snippets/pr-${PR_NUMBER}.caddy
             cd /opt/koalabooks/pr-${PR_NUMBER}
             docker compose -p pr-${PR_NUMBER} pull
+            if [ "$NEW_SECRET" = true ] && [ "$VOLUME_EXISTS" = true ]; then
+              # Postgres only reads POSTGRES_PASSWORD_FILE while initializing a brand-new
+              # empty volume, so the freshly generated password above won't take effect
+              # on its own here. Bring Postgres up on whatever password is already baked
+              # into the volume, then explicitly sync it to the new value before starting
+              # the web container, so the two stay in sync.
+              docker compose -p pr-${PR_NUMBER} up -d --wait --wait-timeout 60 postgres
+              docker exec pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks -c \
+                "ALTER USER koalabooks WITH PASSWORD '$(cat "$SECRET_FILE")';"
+            fi
             docker compose -p pr-${PR_NUMBER} up -d
             docker exec koalabooks-caddy-1 caddy reload --config /etc/caddy/Caddyfile
 
