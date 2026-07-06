@@ -63,6 +63,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           envs: PR_NUMBER,OWNER,GHCR_TOKEN,GHCR_USER
           script: |
+            set -e
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/secrets
             SECRET_FILE=/opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
@@ -100,7 +101,12 @@ jobs:
               # empty volume, so the freshly generated password above won't take effect
               # on its own here. Bring Postgres up on whatever password is already baked
               # into the volume, then explicitly sync it to the new value before starting
-              # the web container, so the two stay in sync.
+              # the web container, so the two stay in sync. `set -e` above means this
+              # step aborts the deploy (rather than silently starting web with a password
+              # Postgres was never synced to) if the wait times out or the ALTER fails.
+              # Relies on the postgres image's default local-socket trust auth so this
+              # works without knowing the old password; would need adjusting if
+              # docker-compose.pr-preview.yml ever sets POSTGRES_HOST_AUTH_METHOD.
               docker compose -p pr-${PR_NUMBER} up -d --wait --wait-timeout 60 postgres
               docker exec pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks -c \
                 "ALTER USER koalabooks WITH PASSWORD '$(cat "$SECRET_FILE")';"
