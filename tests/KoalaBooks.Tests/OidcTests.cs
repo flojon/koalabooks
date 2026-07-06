@@ -2,12 +2,89 @@ using KoalaBooks.Domain;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
+using System.Net;
+using System.Text.RegularExpressions;
 
 namespace KoalaBooks.Tests;
+
+// Reproduces a production incident where dashboard.koalasoft.se returned 500: the token endpoint
+// (Token.cshtml.cs) only ever implemented the "password" grant, so the Aspire dashboard's real
+// login flow - which redeems its authorization code via the "authorization_code" grant - was
+// unconditionally Forbid()'d and surfaced to the dashboard as OpenIddict's generic invalid_grant.
+public class OidcAuthorizationCodeGrantTests
+{
+    [Fact]
+    public async Task TokenEndpoint_RedeemsAuthorizationCode_ReturnsAccessToken()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            const string email = "dashboard-user@test.com";
+            const string password = "ValidPass123!";
+            const string clientSecret = "aspire-dashboard-dev-secret";
+            var redirectUri = new Uri("http://localhost:18888/signin-oidc");
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                var created = await userManager.CreateAsync(
+                    new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true }, password);
+                Assert.True(created.Succeeded);
+
+                await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, redirectUri, clientSecret);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var antiforgeryToken = ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+
+            var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["Email"] = email,
+                    ["Password"] = password,
+                    ["__RequestVerificationToken"] = antiforgeryToken,
+                }));
+            Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
+
+            var authorizeResponse = await client.GetAsync(
+                $"/connect/authorize?client_id=aspire-dashboard&response_type=code&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile");
+            Assert.Equal(HttpStatusCode.Redirect, authorizeResponse.StatusCode);
+
+            var code = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["code"].ToString();
+            Assert.False(string.IsNullOrEmpty(code));
+
+            var tokenResponse = await client.PostAsync("/connect/token", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["grant_type"] = "authorization_code",
+                    ["code"] = code,
+                    ["redirect_uri"] = redirectUri.ToString(),
+                    ["client_id"] = "aspire-dashboard",
+                    ["client_secret"] = clientSecret,
+                }));
+
+            var body = await tokenResponse.Content.ReadAsStringAsync();
+            Assert.True(tokenResponse.IsSuccessStatusCode, body);
+            Assert.Contains("access_token", body);
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
+    }
+
+    private static string ExtractAntiforgeryToken(string html) =>
+        Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+}
 
 // Reproduces a production incident where the dashboard's authorize request (scope=openid profile)
 // was rejected with invalid_scope (OpenIddict ID2052) because "profile" was never registered as a

@@ -18,8 +18,8 @@
 
 <body>
     <MudThemeProvider Theme="_theme" />
-    <MudPopoverProvider />
-    <MudDialogProvider />
+    <MudPopoverProvider @rendermode="InteractiveServer" />
+    <MudDialogProvider @rendermode="InteractiveServer" />
     <MudSnackbarProvider />
     <Routes @rendermode="InteractiveServer" />
     <ReconnectModal />

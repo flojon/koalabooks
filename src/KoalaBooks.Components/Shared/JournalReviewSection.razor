@@ -1,0 +1,153 @@
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@inject JournalEntryService JournalEntryService
+@inject ISnackbar Snackbar
+
+@if (_editingEntry is not null)
+{
+    <div class="card">
+        <h3>Redigera verifikation #@_editingEntry.EntryNumber</h3>
+
+        <JournalEntryForm Accounts="Accounts"
+                          Date="_formDate" DateChanged="d => _formDate = d"
+                          Description="@_formDescription" DescriptionChanged="d => _formDescription = d"
+                          Lines="_formLines"
+                          IsBalancedChanged="b => _isBalanced = b" />
+
+        <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+            <button class="btn btn-success" @onclick="SaveEdit" disabled="@(!_isBalanced)">💾 Spara</button>
+            <button class="btn btn-secondary" @onclick="CancelEdit">Avbryt</button>
+        </div>
+    </div>
+}
+
+<table>
+    <thead>
+        <tr>
+            <th style="width:60px;">#</th>
+            <th style="width:110px;">Datum</th>
+            <th>Beskrivning</th>
+            <th style="width:120px;">Debet</th>
+            <th style="width:120px;">Kredit</th>
+            <th style="width:220px;">Åtgärder</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var entry in Entries)
+        {
+            <tr>
+                <td>@entry.EntryNumber</td>
+                <td>@entry.Date</td>
+                <td>@entry.Description</td>
+                <td>@entry.Lines.Sum(l => l.DebitAmount).ToString("N2")</td>
+                <td>@entry.Lines.Sum(l => l.CreditAmount).ToString("N2")</td>
+                <td>
+                    @if (_decliningEntryId == entry.Id)
+                    {
+                        <div style="display:flex; gap:0.25rem; align-items:center;">
+                            <span>Är du säker?</span>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDecline(entry.Id)">Ja, avvisa</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="CancelDecline">Avbryt</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <button class="btn btn-sm btn-secondary" @onclick="() => StartEdit(entry)">Redigera</button>
+                        <button class="btn btn-sm btn-success" @onclick="() => AcceptEntry(entry.Id)">Acceptera</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => StartDecline(entry.Id)">Avvisa</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@if (!Entries.Any())
+{
+    <MudAlert Severity="Severity.Info" Class="mt-4">Inga utkast att granska.</MudAlert>
+}
+
+@code {
+    [Parameter, EditorRequired] public List<JournalEntry> Entries { get; set; } = [];
+    [Parameter, EditorRequired] public List<Account> Accounts { get; set; } = [];
+    [Parameter] public EventCallback OnEntriesChanged { get; set; }
+
+    private JournalEntry? _editingEntry;
+    private DateTime _formDate;
+    private string _formDescription = "";
+    private List<JournalEntryForm.LineModel> _formLines = [];
+    private bool _isBalanced;
+    private int? _decliningEntryId;
+
+    private void StartEdit(JournalEntry entry)
+    {
+        _editingEntry = entry;
+        _formDate = entry.Date.ToDateTime(TimeOnly.MinValue);
+        _formDescription = entry.Description;
+        _formLines = entry.Lines.Select(l => new JournalEntryForm.LineModel
+        {
+            AccountId = l.AccountId,
+            DebitAmount = l.DebitAmount,
+            CreditAmount = l.CreditAmount
+        }).ToList();
+    }
+
+    private void CancelEdit() => _editingEntry = null;
+
+    private async Task SaveEdit()
+    {
+        var entry = new JournalEntry
+        {
+            Id = _editingEntry!.Id,
+            Date = DateOnly.FromDateTime(_formDate),
+            Description = _formDescription,
+            FiscalYearId = _editingEntry.FiscalYearId,
+            Lines = _formLines.Select(l => new JournalEntryLine
+            {
+                AccountId = l.AccountId,
+                DebitAmount = l.DebitAmount,
+                CreditAmount = l.CreditAmount
+            }).ToList()
+        };
+
+        var (_, error) = await JournalEntryService.UpdateAsync(entry);
+        if (error is not null)
+        {
+            Snackbar.Add(error, Severity.Error);
+            return;
+        }
+
+        Snackbar.Add("Verifikation uppdaterad.", Severity.Success);
+        _editingEntry = null;
+        await OnEntriesChanged.InvokeAsync();
+    }
+
+    private async Task AcceptEntry(int entryId)
+    {
+        var error = await JournalEntryService.PostAsync(entryId);
+        if (error is not null)
+        {
+            Snackbar.Add(error, Severity.Error);
+            return;
+        }
+        Snackbar.Add("Verifikation bokförd.", Severity.Success);
+        await OnEntriesChanged.InvokeAsync();
+    }
+
+    private void StartDecline(int entryId) => _decliningEntryId = entryId;
+
+    private void CancelDecline() => _decliningEntryId = null;
+
+    private async Task ConfirmDecline(int entryId)
+    {
+        var error = await JournalEntryService.DeleteDraftAsync(entryId);
+        _decliningEntryId = null;
+        if (error is not null)
+        {
+            Snackbar.Add(error, Severity.Error);
+            return;
+        }
+        Snackbar.Add("Utkastet avvisat.", Severity.Success);
+        await OnEntriesChanged.InvokeAsync();
+    }
+}

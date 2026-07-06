@@ -1,0 +1,133 @@
+@using KoalaBooks.Domain.Entities
+@inject IJSRuntime JS
+
+<div style="display:grid; grid-template-columns:150px 1fr; gap:0.5rem; margin-bottom:1rem;">
+    <div class="form-group">
+        <label>Datum</label>
+        <DateInput Value="Date" ValueChanged="SetDate" />
+    </div>
+    <div class="form-group">
+        <label>Beskrivning</label>
+        <input type="text" @bind:get="Description" @bind:set="SetDescription" placeholder="Beskrivning av transaktion" />
+    </div>
+</div>
+
+<table style="overflow:visible;">
+    <thead>
+        <tr>
+            <th>Konto</th>
+            <th style="width:160px;">Debet</th>
+            <th style="width:160px;">Kredit</th>
+            <th style="width:60px;"></th>
+        </tr>
+    </thead>
+    <tbody>
+        @for (int i = 0; i < Lines.Count; i++)
+        {
+            var idx = i;
+            <tr>
+                <td>
+                    <AccountSearchDropdown Accounts="Accounts"
+                                           @bind-SelectedAccountId="Lines[idx].AccountId"
+                                           InputId="@($"line-account-{idx}")"
+                                           OnAfterKeyboardSelect="() => FocusDebitAsync(idx)" />
+                </td>
+                <td><input id="@($"line-debit-{idx}")" type="number" step="0.01" min="0" @bind="Lines[idx].DebitAmount" @bind:after="NotifyBalance" /></td>
+                <td><input type="number" step="0.01" min="0" @bind="Lines[idx].CreditAmount" @bind:after="NotifyBalance"
+                           @onkeydown="e => HandleCreditKeyDown(e, idx)" /></td>
+                <td>
+                    @if (Lines.Count > 2)
+                    {
+                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(idx)">✕</button>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<div class="toolbar" style="margin-top:0.5rem;">
+    <button class="btn btn-sm btn-secondary" @onclick="AddLine">+ Lägg till rad</button>
+    <span>
+        Debet: <strong>@TotalDebit.ToString("N2")</strong> |
+        Kredit: <strong>@TotalCredit.ToString("N2")</strong> |
+        Saldo: <span class="@(IsBalanced ? "balance-ok" : "balance-err")">@((TotalDebit - TotalCredit).ToString("N2"))</span>
+    </span>
+</div>
+
+@code {
+    public class LineModel
+    {
+        public int AccountId { get; set; }
+        public decimal DebitAmount { get; set; }
+        public decimal CreditAmount { get; set; }
+    }
+
+    [Parameter, EditorRequired] public List<Account> Accounts { get; set; } = [];
+    [Parameter] public DateTime Date { get; set; } = DateTime.Today;
+    [Parameter] public EventCallback<DateTime> DateChanged { get; set; }
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public EventCallback<string> DescriptionChanged { get; set; }
+    [Parameter, EditorRequired] public List<LineModel> Lines { get; set; } = [];
+    [Parameter] public EventCallback<bool> IsBalancedChanged { get; set; }
+
+    private string? _pendingFocusId;
+
+    private decimal TotalDebit => Lines.Sum(l => l.DebitAmount);
+    private decimal TotalCredit => Lines.Sum(l => l.CreditAmount);
+    private bool IsBalanced => TotalDebit > 0 && TotalDebit == TotalCredit;
+
+    protected override void OnInitialized()
+    {
+        IsBalancedChanged.InvokeAsync(IsBalanced);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingFocusId is not null)
+        {
+            var id = _pendingFocusId;
+            _pendingFocusId = null;
+            await JS.InvokeVoidAsync("koala.focusId", id);
+        }
+    }
+
+    private async Task SetDate(DateTime value)
+    {
+        Date = value;
+        await DateChanged.InvokeAsync(value);
+    }
+
+    private async Task SetDescription(string value)
+    {
+        Description = value;
+        await DescriptionChanged.InvokeAsync(value);
+    }
+
+    private void AddLine()
+    {
+        Lines.Add(new());
+        NotifyBalance();
+    }
+
+    private void RemoveLine(int idx)
+    {
+        Lines.RemoveAt(idx);
+        NotifyBalance();
+    }
+
+    private void HandleCreditKeyDown(KeyboardEventArgs e, int idx)
+    {
+        if (e.Key == "Tab" && !e.ShiftKey && idx == Lines.Count - 1)
+        {
+            Lines.Add(new());
+            _pendingFocusId = $"line-account-{Lines.Count - 1}";
+            NotifyBalance();
+        }
+    }
+
+    private async Task FocusDebitAsync(int idx) =>
+        await JS.InvokeVoidAsync("koala.focusId", $"line-debit-{idx}");
+
+    private void NotifyBalance() => IsBalancedChanged.InvokeAsync(IsBalanced);
+}
