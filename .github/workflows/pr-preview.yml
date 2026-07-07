@@ -96,9 +96,13 @@ jobs:
             if [ "$NEW_SECRET" = true ] && [ "$VOLUME_EXISTS" = true ]; then
               # Existing volume ignores the new POSTGRES_PASSWORD_FILE, so sync it
               # into the DB directly (via local-socket trust auth) before starting web.
+              # Sent over stdin (not -c) so the password is never a process argument,
+              # and log_statement is disabled first so it never hits the Postgres log.
               docker compose -p pr-${PR_NUMBER} up -d --wait --wait-timeout 60 postgres
-              docker exec pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks -c \
-                "ALTER USER koalabooks WITH PASSWORD '$(cat "$SECRET_FILE")';"
+              printf '%s\n' \
+                "SET log_statement = 'none';" \
+                "ALTER USER koalabooks WITH PASSWORD '$(cat "$SECRET_FILE")';" \
+                | docker exec -i pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks
             fi
             docker compose -p pr-${PR_NUMBER} up -d
             docker exec koalabooks-caddy-1 caddy reload --config /etc/caddy/Caddyfile
