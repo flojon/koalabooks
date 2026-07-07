@@ -251,16 +251,66 @@ git commit -m "feat: add PreviewReversalAsync sharing CreateReversalAsync's buil
 
 ---
 
-### Task 2: `Shared/ReversalPreviewDialog.razor` component
+### Task 2: `Shared/JournalLinesTable.razor` and `Shared/ReversalPreviewDialog.razor` components
 
 **Files:**
+- Create: `src/KoalaBooks.Components/Shared/JournalLinesTable.razor`
 - Create: `src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor`
 
 **Interfaces:**
 - Consumes: `JournalEntryService.PreviewReversalAsync(int, string)` and `.CreateReversalAsync(int, string)` (Task 1). `JournalEntry`, `JournalEntryLine`, `Account` entities (existing).
-- Produces: `ReversalPreviewDialog` component with parameters `Entry` (`JournalEntry`, required), `Accounts` (`List<Account>`, required), `OnReversed` (`EventCallback<JournalEntry>`, required — invoked with the newly created reversal entry after a successful confirm), `OnClose` (`EventCallback`, required). Task 3 renders this component and wires these parameters.
+- Produces: `JournalLinesTable` component with parameters `Lines` (`List<JournalEntryLine>`, required) and `AccountsById` (`Dictionary<int, Account>`, required) — a small reusable renderer for a debit/credit line table, used twice by `ReversalPreviewDialog` below (once for the original entry, once for the preview) so the markup isn't duplicated. `ReversalPreviewDialog` component with parameters `Entry` (`JournalEntry`, required), `Accounts` (`List<Account>`, required), `OnReversed` (`EventCallback<JournalEntry>`, required — invoked with the newly created reversal entry after a successful confirm), `OnClose` (`EventCallback`, required). Task 3 renders `ReversalPreviewDialog` and wires these parameters.
 
-- [ ] **Step 1: Create the component**
+- [ ] **Step 1: Create the shared line-table component**
+
+Create `src/KoalaBooks.Components/Shared/JournalLinesTable.razor`:
+
+```razor
+@* src/KoalaBooks.Components/Shared/JournalLinesTable.razor *@
+@using KoalaBooks.Domain.Entities
+
+<table style="font-size:0.85rem; width:100%; margin-bottom:0.5rem;">
+    <thead>
+        <tr>
+            <th>Konto</th>
+            <th style="width:100px; text-align:right;">Debet</th>
+            <th style="width:100px; text-align:right;">Kredit</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var line in Lines)
+        {
+            <tr>
+                <td>@AccountDisplay(line.AccountId)</td>
+                <td style="text-align:right;">@(line.DebitAmount == 0 ? "" : line.DebitAmount.ToString("N2"))</td>
+                <td style="text-align:right;">@(line.CreditAmount == 0 ? "" : line.CreditAmount.ToString("N2"))</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public List<JournalEntryLine> Lines { get; set; } = [];
+    [Parameter, EditorRequired] public Dictionary<int, Account> AccountsById { get; set; } = [];
+
+    private string AccountDisplay(int accountId) =>
+        AccountsById.TryGetValue(accountId, out var a) ? $"{a.AccountNumber} {a.Name}" : $"Konto #{accountId}";
+}
+```
+
+- [ ] **Step 2: Verify it compiles**
+
+Run: `dotnet build src/KoalaBooks.Components/KoalaBooks.Components.csproj`
+Expected: `Build succeeded.`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/KoalaBooks.Components/Shared/JournalLinesTable.razor
+git commit -m "feat: add JournalLinesTable component"
+```
+
+- [ ] **Step 4: Create the dialog component**
 
 Create `src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor`:
 
@@ -296,25 +346,7 @@ Create `src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor`:
 
             <p style="margin:0 0 0.35rem; font-weight:600;">Original — #@Entry.EntryNumber, @Entry.Date</p>
             <p style="margin:0 0 0.5rem; color:#64748b; font-size:0.85rem;">@Entry.Description</p>
-            <table style="font-size:0.85rem; width:100%; margin-bottom:0.5rem;">
-                <thead>
-                    <tr>
-                        <th>Konto</th>
-                        <th style="width:100px; text-align:right;">Debet</th>
-                        <th style="width:100px; text-align:right;">Kredit</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var line in Entry.Lines)
-                    {
-                        <tr>
-                            <td>@AccountDisplay(line.AccountId)</td>
-                            <td style="text-align:right;">@(line.DebitAmount == 0 ? "" : line.DebitAmount.ToString("N2"))</td>
-                            <td style="text-align:right;">@(line.CreditAmount == 0 ? "" : line.CreditAmount.ToString("N2"))</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <JournalLinesTable Lines="Entry.Lines" AccountsById="_accountsById" />
 
             <div style="text-align:center; margin:0.5rem 0; color:#94a3b8;">↓ återförs som ↓</div>
 
@@ -324,25 +356,7 @@ Create `src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor`:
             <p style="margin:0 0 0.5rem; color:#64748b; font-size:0.85rem;">
                 Reversal of #@Entry.EntryNumber: @(_reason.Length > 0 ? _reason : "…")
             </p>
-            <table style="font-size:0.85rem; width:100%; margin-bottom:0.5rem;">
-                <thead>
-                    <tr>
-                        <th>Konto</th>
-                        <th style="width:100px; text-align:right;">Debet</th>
-                        <th style="width:100px; text-align:right;">Kredit</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var line in _preview.Lines)
-                    {
-                        <tr>
-                            <td>@AccountDisplay(line.AccountId)</td>
-                            <td style="text-align:right;">@(line.DebitAmount == 0 ? "" : line.DebitAmount.ToString("N2"))</td>
-                            <td style="text-align:right;">@(line.CreditAmount == 0 ? "" : line.CreditAmount.ToString("N2"))</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <JournalLinesTable Lines="_preview.Lines" AccountsById="_accountsById" />
 
             <div class="form-group" style="margin-top:1rem;">
                 <label>Anledning <span style="color:#ef4444;">*</span></label>
@@ -391,9 +405,6 @@ Create `src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor`:
         _loading = false;
     }
 
-    private string AccountDisplay(int accountId) =>
-        _accountsById.TryGetValue(accountId, out var a) ? $"{a.AccountNumber} {a.Name}" : $"Konto #{accountId}";
-
     private async Task ConfirmAsync()
     {
         _submitError = null;
@@ -413,12 +424,12 @@ Create `src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor`:
 }
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [ ] **Step 5: Verify it compiles**
 
 Run: `dotnet build src/KoalaBooks.Components/KoalaBooks.Components.csproj`
-Expected: `Build succeeded.` (The component isn't referenced by any page yet, so this only checks the file parses and compiles standalone — no runtime check yet; that happens in Task 3's manual verification.)
+Expected: `Build succeeded.` (Neither component is referenced by any page yet, so this only checks the files parse and compile standalone — no runtime check yet; that happens in Task 3's manual verification.)
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor
