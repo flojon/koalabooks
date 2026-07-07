@@ -173,18 +173,16 @@ public static class DemoDataSeeder
             await PostEntryAsync(journalEntryService, fiscalYearId, date, debitAccountId, creditAccountId, amount, description);
         }
 
-        // Bypass JournalEntryService to delete voucher #3, simulating the historical direct-DB deletion gap detection is meant to catch.
+        // Bypass JournalEntryService and the ChangeTracker (via ExecuteDelete) to delete voucher #3,
+        // simulating the historical direct-DB deletion gap detection is meant to catch.
         var postedEntryIds = await db.JournalEntries
             .Where(j => j.FiscalYearId == fiscalYearId)
             .OrderBy(j => j.EntryNumber)
             .Select(j => j.Id)
             .ToListAsync();
 
-        var gapEntry = await db.JournalEntries
-            .Include(j => j.Lines)
-            .FirstAsync(j => j.Id == postedEntryIds[2]);
-        db.JournalEntryLines.RemoveRange(gapEntry.Lines);
-        db.JournalEntries.Remove(gapEntry);
-        await db.SaveChangesAsync();
+        var gapEntryId = postedEntryIds[2];
+        await db.JournalEntryLines.Where(l => l.JournalEntryId == gapEntryId).ExecuteDeleteAsync();
+        await db.JournalEntries.Where(j => j.Id == gapEntryId).ExecuteDeleteAsync();
     }
 }

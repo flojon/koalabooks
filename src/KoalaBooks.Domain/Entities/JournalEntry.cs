@@ -1,3 +1,5 @@
+using KoalaBooks.Domain.Enums;
+
 namespace KoalaBooks.Domain.Entities;
 
 public class JournalEntry
@@ -9,6 +11,8 @@ public class JournalEntry
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool IsPosted { get; set; }
     public bool IsClosingEntry { get; set; }
+    public JournalEntryStatus Status { get; set; } = JournalEntryStatus.Draft;
+    public int? SourceJournalEntryId { get; set; }
 
     public int FiscalYearId { get; set; }
     public FiscalYear FiscalYear { get; set; } = null!;

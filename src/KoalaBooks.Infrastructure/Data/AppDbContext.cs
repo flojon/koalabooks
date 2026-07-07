@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,28 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser currentUser) : base(options)
     {
         _currentUser = currentUser;
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        GuardAgainstImmutableJournalEntryDeletion();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        GuardAgainstImmutableJournalEntryDeletion();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void GuardAgainstImmutableJournalEntryDeletion()
+    {
+        var deletingImmutableEntries = ChangeTracker.Entries<JournalEntry>()
+            .Any(e => e.State == EntityState.Deleted && e.Entity.Status != JournalEntryStatus.Draft);
+
+        if (deletingImmutableEntries)
+            throw new InvalidOperationException(
+                "Cannot delete a posted, reversed, or correction journal entry. Create a reversal instead.");
     }
 
     public DbSet<Organisation> Organisations => Set<Organisation>();
@@ -94,6 +117,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(j => new { j.FiscalYearId, j.EntryNumber }).IsUnique();
             entity.Property(j => j.Description).HasMaxLength(500);
             entity.Property(j => j.IsClosingEntry).HasDefaultValue(false);
+            entity.Property(j => j.Status).HasDefaultValue(JournalEntryStatus.Draft);
+            entity.HasIndex(j => j.SourceJournalEntryId);
+            entity.HasOne<JournalEntry>()
+                  .WithMany()
+                  .HasForeignKey(j => j.SourceJournalEntryId)
+                  .OnDelete(DeleteBehavior.Restrict)
+                  .IsRequired(false);
             entity.HasOne(j => j.FiscalYear)
                   .WithMany(f => f.JournalEntries)
                   .HasForeignKey(j => j.FiscalYearId)

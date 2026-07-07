@@ -282,6 +282,7 @@ public class YearEndClosingService
                     Description = $"Bokslut: Resultatdisposition {fiscalYear.Name}",
                     CreatedAt = DateTime.UtcNow,
                     IsPosted = true,
+                    Status = JournalEntryStatus.Posted,
                     IsClosingEntry = true,
                     Lines = []
                 };
@@ -327,6 +328,7 @@ public class YearEndClosingService
                     Description = $"Bokslut: Årets resultat till eget kapital {fiscalYear.Name}",
                     CreatedAt = DateTime.UtcNow,
                     IsPosted = true,
+                    Status = JournalEntryStatus.Posted,
                     IsClosingEntry = true,
                     Lines = []
                 };

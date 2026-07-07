@@ -134,6 +134,7 @@ public class JournalEntryService
             return "Cannot post entries in a closed fiscal year.";
 
         entry.IsPosted = true;
+        entry.Status = JournalEntryStatus.Posted;
         await _db.SaveChangesAsync();
 
         await PropagateAffectedAccountsAsync(
@@ -170,6 +171,8 @@ public class JournalEntryService
             return (null, "Journal entry not found.");
         if (!original.IsPosted)
             return (null, "Can only reverse posted entries.");
+        if (original.Status == JournalEntryStatus.Reversed)
+            return (null, "Journal entry has already been reversed.");
         if (original.FiscalYear.IsClosed)
             return (null, "Cannot create reversals in a closed fiscal year.");
 
@@ -190,6 +193,8 @@ public class JournalEntryService
             Description = $"Reversal of #{original.EntryNumber}: {reason}",
             CreatedAt = DateTime.UtcNow,
             IsPosted = true,
+            Status = JournalEntryStatus.Correction,
+            SourceJournalEntryId = original.Id,
             Lines = original.Lines.Select(l => new JournalEntryLine
             {
                 AccountId = l.AccountId,
@@ -197,6 +202,8 @@ public class JournalEntryService
                 CreditAmount = l.DebitAmount
             }).ToList()
         };
+
+        original.Status = JournalEntryStatus.Reversed;
 
         _db.JournalEntries.Add(reversal);
         await _db.SaveChangesAsync();

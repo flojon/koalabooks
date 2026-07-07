@@ -108,8 +108,25 @@ public class JournalEntriesController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("journal-entries/{id:int}/reverse")]
+    [ProducesResponseType<JournalEntryResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Reverse(int id, [FromBody] ReverseJournalEntryRequest request)
+    {
+        var entry = await _journalEntryService.GetByIdAsync(id);
+        if (entry is null) return NotFound();
+
+        var (reversal, error) = await _journalEntryService.CreateReversalAsync(id, request.Reason);
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return CreatedAtAction(nameof(GetById), new { id = reversal!.Id }, MapEntry(reversal));
+    }
+
     private static JournalEntryResponse MapEntry(JournalEntry e) =>
-        new(e.Id, e.EntryNumber, e.Date, e.Description, e.IsPosted, e.CreatedAt,
+        new(e.Id, e.EntryNumber, e.Date, e.Description, e.IsPosted, e.Status, e.SourceJournalEntryId, e.CreatedAt,
             e.Lines.Select(l => new JournalEntryLineResponse(
                 l.Id, l.AccountId,
                 l.Account?.AccountNumber ?? "",

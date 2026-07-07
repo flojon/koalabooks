@@ -84,6 +84,7 @@ public class SupplierInvoiceService
             Description = $"Leverantörsfaktura {invoice.SupplierName}" + (invoice.InvoiceNumber is not null ? $" #{invoice.InvoiceNumber}" : ""),
             FiscalYearId = invoice.FiscalYearId,
             IsPosted = true,
+            Status = JournalEntryStatus.Posted,
             CreatedAt = DateTime.UtcNow,
             Lines = lines
         };
@@ -157,6 +158,7 @@ public class SupplierInvoiceService
             Description = $"Betalning {invoice.SupplierName}" + (invoice.InvoiceNumber is not null ? $" #{invoice.InvoiceNumber}" : ""),
             FiscalYearId = invoice.FiscalYearId,
             IsPosted = true,
+            Status = JournalEntryStatus.Posted,
             CreatedAt = DateTime.UtcNow,
             Lines =
             [
