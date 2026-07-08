@@ -7,6 +7,8 @@ services:
       - ASPNETCORE_ENVIRONMENT=Staging
       - ASPNETCORE_URLS=http://+:8080
       - SEED_DEMO_DATA=true
+      # Matches DemoDataSeeder.DemoUserEmail, so the demo user it creates gets Admin.
+      - AdminSeed__Email=admin@koalabooks.local
     secrets:
       - postgres_password
     depends_on:
