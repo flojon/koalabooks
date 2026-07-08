@@ -4,6 +4,7 @@ using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.IO.Compression;
 using System.Text.Json;
 
 namespace KoalaBooks.Application.Services;
@@ -16,6 +17,8 @@ public class DocumentService(
     ILogger<DocumentService> logger)
 {
     private const long MaxBytes = 10 * 1024 * 1024;
+    private const long ZipMaxBytes = 50 * 1024 * 1024;
+    private const int ZipMaxEntries = 50;
 
     private static readonly HashSet<string> AllowedContentTypes =
     [
@@ -24,6 +27,14 @@ public class DocumentService(
         "image/jpeg",
         "image/jpg", // Some browsers report .jpg files as image/jpg rather than image/jpeg
     ];
+
+    private static readonly Dictionary<string, string> ZipEntryContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".pdf"] = "application/pdf",
+        [".png"] = "image/png",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+    };
 
     public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, byte[] data)
     {
@@ -202,6 +213,98 @@ public class DocumentService(
         return (doc, null);
     }
 
+    public async Task<(ZipImportResult? Result, string? Error)> UploadZipAsync(byte[] zipData)
+    {
+        if (zipData.Length > ZipMaxBytes)
+            return (null, "Zip-filen är för stor (max 50 MB).");
+
+        ZipArchive archive;
+        try
+        {
+            archive = new ZipArchive(new MemoryStream(zipData), ZipArchiveMode.Read);
+        }
+        catch (InvalidDataException)
+        {
+            return (null, "Ogiltig zip-fil.");
+        }
+
+        using (archive)
+        {
+            List<ZipArchiveEntry> fileEntries;
+            try
+            {
+                fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+            }
+            catch (InvalidDataException)
+            {
+                return (null, "Ogiltig zip-fil.");
+            }
+
+            if (fileEntries.Count > ZipMaxEntries)
+                return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
+
+            var imported = new List<Document>();
+            var skipped = new List<(string FileName, string Reason)>();
+
+            foreach (var entry in fileEntries)
+            {
+                if (!ZipEntryContentTypes.TryGetValue(Path.GetExtension(entry.Name), out var contentType))
+                {
+                    skipped.Add((entry.Name, "Otillåten filtyp."));
+                    continue;
+                }
+
+                if (entry.Length > MaxBytes)
+                {
+                    skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
+                    continue;
+                }
+
+                byte[] data;
+                try
+                {
+                    using var entryStream = entry.Open();
+                    var (readData, oversized) = await ReadBoundedAsync(entryStream, MaxBytes);
+                    if (oversized)
+                    {
+                        skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
+                        continue;
+                    }
+                    data = readData!;
+                }
+                catch (InvalidDataException)
+                {
+                    skipped.Add((entry.Name, "Skadad fil."));
+                    continue;
+                }
+
+                var (doc, err) = await UploadAsync(entry.Name, contentType, data);
+                if (doc is not null)
+                    imported.Add(doc);
+                else
+                    skipped.Add((entry.Name, err ?? "Okänt fel."));
+            }
+
+            return (new ZipImportResult(imported, skipped), null);
+        }
+    }
+
+    private static async Task<(byte[]? Data, bool Oversized)> ReadBoundedAsync(Stream stream, long maxBytes)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        long totalRead = 0;
+        int bytesRead;
+        while ((bytesRead = await stream.ReadAsync(chunk)) > 0)
+        {
+            totalRead += bytesRead;
+            if (totalRead > maxBytes)
+                return (null, true);
+            await buffer.WriteAsync(chunk.AsMemory(0, bytesRead));
+        }
+        return (buffer.ToArray(), false);
+    }
+
     private static Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query) =>
         query.Select(d => new DocumentMeta
         {
@@ -236,3 +339,5 @@ public class DocumentMeta
         _ => $"{FileSize / (1024.0 * 1024):N1} MB"
     };
 }
+
+public record ZipImportResult(IReadOnlyList<Document> Imported, IReadOnlyList<(string FileName, string Reason)> Skipped);

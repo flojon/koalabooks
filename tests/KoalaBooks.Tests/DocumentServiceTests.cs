@@ -244,6 +244,194 @@ public class DocumentServiceTests : IDisposable
         Assert.Equal(2, counts[e1.Id]);
         Assert.Equal(1, counts[e2.Id]);
     }
+
+    [Fact]
+    public async Task UploadZipAsync_ImportsAllValidEntries()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("a.pdf", new byte[] { 1, 2, 3 }), ("b.png", new byte[] { 4, 5 }));
+
+        var (result, err) = await svc.UploadZipAsync(zip);
+
+        Assert.Null(err);
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Imported.Count);
+        Assert.Contains(result.Imported, d => d.FileName == "a.pdf");
+        Assert.Contains(result.Imported, d => d.FileName == "b.png");
+        Assert.Empty(result.Skipped);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_FlattensNestedFolderPaths()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("invoices/2026/faktura.pdf", new byte[] { 1, 2, 3 }));
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("faktura.pdf", result.Imported[0].FileName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_SkipsDirectoryEntries()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZipWithDirectoryEntry();
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("faktura.pdf", result.Imported[0].FileName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_SkipsInvalidEntriesAndReportsReasons()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("bad.exe", new byte[] { 1, 2, 3 }));
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("good.pdf", result.Imported[0].FileName);
+        Assert.Single(result.Skipped);
+        Assert.Equal("bad.exe", result.Skipped[0].FileName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_SkipsOversizedEntry()
+    {
+        var svc = _fx.MakeDocumentService();
+        var bigData = new byte[11 * 1024 * 1024];
+        var zip = BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("big.pdf", bigData));
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("good.pdf", result.Imported[0].FileName);
+        Assert.Single(result.Skipped);
+        Assert.Equal("big.pdf", result.Skipped[0].FileName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_SkipsEntryWhenStorageFails_RestOfBatchStillImports()
+    {
+        var svc = _fx.MakeDocumentService(new FailingStorage());
+        var zip = BuildZip(("faktura.pdf", new byte[] { 1, 2, 3 }));
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Empty(result!.Imported);
+        Assert.Single(result.Skipped);
+        Assert.Equal("faktura.pdf", result.Skipped[0].FileName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_RejectsOversizedZipContainer()
+    {
+        var svc = _fx.MakeDocumentService();
+        var bigZip = new byte[51 * 1024 * 1024];
+
+        var (result, err) = await svc.UploadZipAsync(bigZip);
+
+        Assert.Null(result);
+        Assert.NotNull(err);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_RejectsZipWithTooManyEntries()
+    {
+        var svc = _fx.MakeDocumentService();
+        var entries = Enumerable.Range(1, 51)
+            .Select(i => ($"file{i}.pdf", new byte[] { 1 }))
+            .ToArray();
+        var zip = BuildZip(entries);
+
+        var (result, err) = await svc.UploadZipAsync(zip);
+
+        Assert.Null(result);
+        Assert.NotNull(err);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_RejectsCorruptZipFile()
+    {
+        var svc = _fx.MakeDocumentService();
+        var corruptBytes = new byte[] { 1, 2, 3, 4, 5 };
+
+        var (result, err) = await svc.UploadZipAsync(corruptBytes);
+
+        Assert.Null(result);
+        Assert.NotNull(err);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_SkipsCorruptEntry_RestOfBatchStillImports()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = CorruptEntryData(BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("bad.pdf", new byte[500])), "bad.pdf");
+
+        var (result, _) = await svc.UploadZipAsync(zip);
+
+        Assert.Single(result!.Imported);
+        Assert.Equal("good.pdf", result.Imported[0].FileName);
+        Assert.Single(result.Skipped);
+        Assert.Equal("bad.pdf", result.Skipped[0].FileName);
+    }
+
+    private static byte[] CorruptEntryData(byte[] zipBytes, string entryName)
+    {
+        var corrupted = (byte[])zipBytes.Clone();
+        for (var i = 0; i < corrupted.Length - 4; i++)
+        {
+            if (corrupted[i] == 0x50 && corrupted[i + 1] == 0x4B && corrupted[i + 2] == 0x03 && corrupted[i + 3] == 0x04)
+            {
+                var nameLen = BitConverter.ToUInt16(corrupted, i + 26);
+                var extraLen = BitConverter.ToUInt16(corrupted, i + 28);
+                var nameStart = i + 30;
+                var name = System.Text.Encoding.UTF8.GetString(corrupted, nameStart, nameLen);
+                if (name == entryName)
+                {
+                    var compressedSize = BitConverter.ToInt32(corrupted, i + 18);
+                    var dataStart = nameStart + nameLen + extraLen;
+                    for (var j = dataStart; j < dataStart + compressedSize; j++)
+                        corrupted[j] = (byte)~corrupted[j];
+                    return corrupted;
+                }
+            }
+        }
+        throw new InvalidOperationException($"entry {entryName} not found in zip for corruption");
+    }
+
+    private static byte[] BuildZip(params (string Name, byte[] Data)[] entries)
+    {
+        using var ms = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var (name, data) in entries)
+            {
+                var entry = archive.CreateEntry(name);
+                using var entryStream = entry.Open();
+                entryStream.Write(data, 0, data.Length);
+            }
+        }
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildZipWithDirectoryEntry()
+    {
+        using var ms = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            archive.CreateEntry("empty_folder/");
+            var entry = archive.CreateEntry("faktura.pdf");
+            using var entryStream = entry.Open();
+            var data = new byte[] { 1, 2, 3 };
+            entryStream.Write(data, 0, data.Length);
+        }
+        return ms.ToArray();
+    }
 }
 
 file class FailingStorage : IDocumentStorage
