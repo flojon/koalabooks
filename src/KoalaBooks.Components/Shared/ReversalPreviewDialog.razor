@@ -4,7 +4,7 @@
 @using KoalaBooks.Domain.Enums
 @using MudBlazor
 
-<MudDialog @ref="_dialog" Visible="true" Style="max-width:640px; width:95vw;">
+<MudDialog @ref="_dialog" Visible="true" Options="_dialogOptions" Style="max-width:640px; width:95vw;">
     <TitleContent>
         <MudText Typo="Typo.h6">Återför verifikation #@Entry.EntryNumber</MudText>
     </TitleContent>
@@ -79,6 +79,12 @@
     private bool _saving;
     private MudDialog _dialog = default!;
 
+    // Preview and reason are only ever loaded once per Entry (see OnInitializedAsync).
+    // A backdrop/Escape dismissal that bypassed our own close handling would leave this
+    // component instance alive with stale preview data if a different entry were opened
+    // next, so both are disabled to force every dismissal through CloseAsync/ConfirmAsync.
+    private static readonly DialogOptions _dialogOptions = new() { BackdropClick = false, CloseOnEscapeKey = false };
+
     protected override async Task OnInitializedAsync()
     {
         _accountsById = Accounts.ToDictionary(a => a.Id);
@@ -91,6 +97,11 @@
 
     private async Task ConfirmAsync()
     {
+        if (_saving)
+        {
+            return;
+        }
+
         _submitError = null;
         _saving = true;
         try
