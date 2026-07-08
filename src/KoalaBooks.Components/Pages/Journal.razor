@@ -123,15 +123,7 @@ else
                     </button>
                 </td>
                 <td>
-                    @if (_reversingEntryId == entry.Id)
-                    {
-                        <div style="display:flex; gap:0.25rem; align-items:center;">
-                            <input type="text" @bind="_reversalReason" placeholder="Anledning" style="width:120px;" />
-                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmReversal(entry.Id)">Bekräfta</button>
-                            <button class="btn btn-sm btn-secondary" @onclick="CancelReversal">Avbryt</button>
-                        </div>
-                    }
-                    else if (_convertingEntryId == entry.Id)
+                    @if (_convertingEntryId == entry.Id)
                     {
                         <button class="btn btn-sm btn-secondary" @onclick="CancelConvert">Avbryt</button>
                     }
@@ -142,7 +134,7 @@ else
                     else
                     {
                         <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
-                            <MudMenuItem OnClick="() => StartReversal(entry.Id)">Återför</MudMenuItem>
+                            <MudMenuItem OnClick="() => StartReversal(entry)">Återför</MudMenuItem>
                             @if (canConvert)
                             {
                                 <MudMenuItem OnClick="() => StartConvert(entry)">Skapa leverantörsfaktura</MudMenuItem>
@@ -309,6 +301,14 @@ else
         }
     </MudAlert>
 }
+
+@if (_reversingEntry is not null)
+{
+    <ReversalPreviewDialog Entry="_reversingEntry"
+                           Accounts="_accounts"
+                           OnReversed="OnReversedAsync"
+                           OnClose="() => _reversingEntry = null" />
+}
 }
 
 @code {
@@ -341,8 +341,7 @@ else
     private string _formDescription = "";
     private List<JournalEntryForm.LineModel> _formLines = [];
     private bool _isBalanced;
-    private int? _reversingEntryId;
-    private string _reversalReason = "";
+    private JournalEntry? _reversingEntry;
     private HashSet<int> _linkedJournalEntryIds = [];
 
     // Attachment panel
@@ -455,7 +454,7 @@ else
         _attachmentEntryId = null;
         _attachmentMeta = [];
         _convertingEntryId = null;
-        _reversingEntryId = null;
+        _reversingEntry = null;
         _isReloading = true;
         await LoadForSelectedYearAsync();
         _isReloading = false;
@@ -467,29 +466,12 @@ else
         _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
     }
 
-    private void StartReversal(int entryId)
-    {
-        _reversingEntryId = entryId;
-        _reversalReason = "";
-    }
+    private void StartReversal(JournalEntry entry) => _reversingEntry = entry;
 
-    private void CancelReversal()
+    private async Task OnReversedAsync(JournalEntry reversal)
     {
-        _reversingEntryId = null;
-        _reversalReason = "";
-    }
-
-    private async Task ConfirmReversal(int entryId)
-    {
-        var (result, error) = await JournalEntryService.CreateReversalAsync(entryId, _reversalReason);
-        if (error is not null)
-        {
-            Snackbar.Add(error, Severity.Error);
-            return;
-        }
-        Snackbar.Add($"Återföringsverifikation #{result!.EntryNumber} skapad.", Severity.Success);
-        _reversingEntryId = null;
-        _reversalReason = "";
+        _reversingEntry = null;
+        Snackbar.Add($"Återföringsverifikation #{reversal.EntryNumber} skapad.", Severity.Success);
         await ReloadEntriesAsync();
     }
 
