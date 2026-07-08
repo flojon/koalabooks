@@ -25,11 +25,13 @@ public class YearEndClosingService
 {
     private readonly AppDbContext _db;
     private readonly FiscalYearService _fiscalYearService;
+    private readonly VoucherGapService _voucherGapService;
 
-    public YearEndClosingService(AppDbContext db, FiscalYearService fiscalYearService)
+    public YearEndClosingService(AppDbContext db, FiscalYearService fiscalYearService, VoucherGapService voucherGapService)
     {
         _db = db;
         _fiscalYearService = fiscalYearService;
+        _voucherGapService = voucherGapService;
     }
 
     public async Task<ClosingValidationResult> ValidateForClosingAsync(int fiscalYearId)
@@ -53,6 +55,14 @@ public class YearEndClosingService
         if (draftCount > 0)
         {
             errors.Add($"Det finns {draftCount} ej bokförda verifikationer. Alla verifikationer måste bokföras innan bokslut.");
+        }
+
+        var unexplainedGaps = await _voucherGapService.GetUnexplainedGapsAsync(fiscalYearId);
+        if (unexplainedGaps.Count > 0)
+        {
+            errors.Add(
+                $"Det finns {unexplainedGaps.Count} lucka/luckor i verifikationsnumreringen (nr {string.Join(", ", unexplainedGaps)}) " +
+                "som saknar förklaring enligt BFNAR 2013:2. Ange en förklaring för varje lucka innan bokslutet kan stängas.");
         }
 
         return new ClosingValidationResult(errors.Count == 0, errors);

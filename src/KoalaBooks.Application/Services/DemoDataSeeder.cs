@@ -139,7 +139,8 @@ public static class DemoDataSeeder
 
         // Close via the real service so it posts closing entries and propagates balances forward; wrap in the execution strategy since it opens its own transaction.
         var fiscalYearService = new FiscalYearService(db, tenant);
-        var closingService = new YearEndClosingService(db, fiscalYearService);
+        var voucherGapService = new VoucherGapService(db);
+        var closingService = new YearEndClosingService(db, fiscalYearService, voucherGapService);
         var strategy = db.Database.CreateExecutionStrategy();
         var closingResult = await strategy.ExecuteAsync(() => closingService.ExecuteClosingAsync(previousFiscalYear.Id));
         if (!closingResult.Success)
