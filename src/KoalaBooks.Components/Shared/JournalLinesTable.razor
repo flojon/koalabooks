@@ -1,0 +1,30 @@
+@* src/KoalaBooks.Components/Shared/JournalLinesTable.razor *@
+@using KoalaBooks.Domain.Entities
+
+<table style="font-size:0.85rem; width:100%; margin-bottom:0.5rem;">
+    <thead>
+        <tr>
+            <th>Konto</th>
+            <th style="width:100px; text-align:right;">Debet</th>
+            <th style="width:100px; text-align:right;">Kredit</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var line in Lines)
+        {
+            <tr>
+                <td>@AccountDisplay(line.AccountId)</td>
+                <td style="text-align:right;">@(line.DebitAmount == 0 ? "" : line.DebitAmount.ToString("N2"))</td>
+                <td style="text-align:right;">@(line.CreditAmount == 0 ? "" : line.CreditAmount.ToString("N2"))</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public List<JournalEntryLine> Lines { get; set; } = [];
+    [Parameter, EditorRequired] public Dictionary<int, Account> AccountsById { get; set; } = [];
+
+    private string AccountDisplay(int accountId) =>
+        AccountsById.TryGetValue(accountId, out var a) ? $"{a.AccountNumber} {a.Name}" : $"Konto #{accountId}";
+}
