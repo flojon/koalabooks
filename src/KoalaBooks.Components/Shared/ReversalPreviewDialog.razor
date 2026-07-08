@@ -1,0 +1,107 @@
+@* src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor *@
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Enums
+@using MudBlazor
+
+<MudDialog Style="max-width:640px; width:95vw;">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Återför verifikation #@Entry.EntryNumber</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_loadError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">@_loadError</MudAlert>
+            <div style="margin-top:1rem;">
+                <button class="btn btn-secondary" @onclick="OnClose">Stäng</button>
+            </div>
+        }
+        else if (_loading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+        }
+        else
+        {
+            <p style="font-size:0.8rem; color:#64748b; margin:0 0 0.75rem;">
+                En bokförd verifikation kan inte tas bort — enligt BFL 5:7 / BFNAR 2013:2 rättas
+                den istället genom en spegelvänd återföringsverifikation, precis som nedan.
+            </p>
+
+            <p style="margin:0 0 0.35rem; font-weight:600;">Original — #@Entry.EntryNumber, @Entry.Date</p>
+            <p style="margin:0 0 0.5rem; color:#64748b; font-size:0.85rem;">@Entry.Description</p>
+            <JournalLinesTable Lines="Entry.Lines" AccountsById="_accountsById" />
+
+            <div style="text-align:center; margin:0.5rem 0; color:#94a3b8;">↓ återförs som ↓</div>
+
+            <p style="margin:0 0 0.35rem; font-weight:600;">
+                Återföring (preliminärt) — #@_preview!.EntryNumber, @_preview.Date
+            </p>
+            <p style="margin:0 0 0.5rem; color:#64748b; font-size:0.85rem;">
+                Reversal of #@Entry.EntryNumber: @(_reason.Length > 0 ? _reason : "…")
+            </p>
+            <JournalLinesTable Lines="_preview.Lines" AccountsById="_accountsById" />
+
+            <div class="form-group" style="margin-top:1rem;">
+                <label>Anledning <span style="color:#ef4444;">*</span></label>
+                <input type="text" @bind="_reason" placeholder="Anledning till återföring" style="width:100%;" />
+            </div>
+
+            @if (_submitError is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_submitError</MudAlert>
+            }
+
+            <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+                <button class="btn btn-danger" @onclick="ConfirmAsync"
+                        disabled="@(_saving || string.IsNullOrWhiteSpace(_reason))">
+                    @(_saving ? "Bokför..." : "Bekräfta återföring")
+                </button>
+                <button class="btn btn-secondary" @onclick="OnClose" disabled="@_saving">Avbryt</button>
+            </div>
+        }
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [Parameter, EditorRequired] public JournalEntry Entry { get; set; } = default!;
+    [Parameter, EditorRequired] public List<Account> Accounts { get; set; } = [];
+    [Parameter, EditorRequired] public EventCallback<JournalEntry> OnReversed { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
+
+    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+
+    private Dictionary<int, Account> _accountsById = [];
+    private JournalEntry? _preview;
+    private string _reason = "";
+    private string? _loadError;
+    private string? _submitError;
+    private bool _loading = true;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _accountsById = Accounts.ToDictionary(a => a.Id);
+
+        var (preview, error) = await JournalEntryService.PreviewReversalAsync(Entry.Id, "");
+        _preview = preview;
+        _loadError = error;
+        _loading = false;
+    }
+
+    private async Task ConfirmAsync()
+    {
+        _submitError = null;
+        _saving = true;
+        try
+        {
+            var (result, error) = await JournalEntryService.CreateReversalAsync(Entry.Id, _reason);
+            if (error is not null)
+            {
+                _submitError = error;
+                return;
+            }
+            await OnReversed.InvokeAsync(result);
+        }
+        finally { _saving = false; }
+    }
+}
