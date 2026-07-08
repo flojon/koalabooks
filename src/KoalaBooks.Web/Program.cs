@@ -1,5 +1,7 @@
 using KoalaBooks.Application.Services;
 using Scalar.AspNetCore;
+using Hangfire;
+using Hangfire.PostgreSql;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
@@ -39,6 +41,16 @@ if (!string.IsNullOrEmpty(dbPasswordFile))
 }
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(koalabooksConnectionString));
 builder.EnrichNpgsqlDbContext<AppDbContext>();
+
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(koalabooksConnectionString)));
+// Embedded in the Web process: each replica runs its own worker against the
+// shared Postgres storage, so scaling web replicas already scales workers.
+// See #209 for why (multi-instance-safe without a separate worker service).
+builder.Services.AddHangfireServer();
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
@@ -197,6 +209,11 @@ app.MapGet("/documents/{id:int}", async (int id, DocumentService svc) =>
         ? Results.NotFound()
         : Results.File(result.Value.Data, result.Value.ContentType);
 }).RequireAuthorization();
+
+app.MapHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = [new HangfireDashboardAuthorizationFilter()]
+});
 
 app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, CustomerInvoiceService svc) =>
 {
