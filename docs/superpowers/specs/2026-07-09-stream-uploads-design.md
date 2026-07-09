@@ -63,8 +63,7 @@ public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, s
     var bytes = await ReadBoundedAsync(data, MaxBytes);
     if (bytes is null) return (null, "Filen är för stor (max 10 MB).");
 
-    // unchanged from here: create Document row, storage.SaveAsync(doc.Id, contentType, new MemoryStream(bytes)),
-    // extractor.ExtractAsync(fileName, contentType, bytes)
+    // ...unchanged from here (create Document row, storage.SaveAsync, extractor.ExtractAsync)
 }
 ```
 
