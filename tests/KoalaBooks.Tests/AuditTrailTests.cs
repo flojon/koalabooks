@@ -1,3 +1,4 @@
+using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 
@@ -82,7 +83,7 @@ public class AuditTrailTests : IDisposable
 
         Assert.Null(error);
         Assert.NotNull(reversal);
-        Assert.Contains("Återföring av #", reversal.Description);
+        Assert.Equal(JournalEntryService.BuildReversalDescription(entry.EntryNumber, "correction"), reversal.Description);
 
         var reversalLines = reversal.Lines.OrderBy(l => l.AccountId).ToList();
         var originalLines = entry.Lines.OrderBy(l => l.AccountId).ToList();

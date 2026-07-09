@@ -7,6 +7,11 @@ namespace KoalaBooks.Application.Services;
 
 public class JournalEntryService
 {
+    // Single source of truth for the reversal entry's description text, so the live
+    // dialog preview, the persisted entry, and tests all stay in sync on wording/format.
+    public static string BuildReversalDescription(int originalEntryNumber, string reason) =>
+        $"Återföring av #{originalEntryNumber}: {reason}";
+
     private readonly AppDbContext _db;
 
     public JournalEntryService(AppDbContext db)
@@ -227,7 +232,7 @@ public class JournalEntryService
             EntryNumber = maxNumber + 1,
             FiscalYearId = original.FiscalYearId,
             Date = reversalDate,
-            Description = $"Återföring av #{original.EntryNumber}: {reason}",
+            Description = BuildReversalDescription(original.EntryNumber, reason),
             CreatedAt = DateTime.UtcNow,
             IsPosted = true,
             Status = JournalEntryStatus.Correction,
