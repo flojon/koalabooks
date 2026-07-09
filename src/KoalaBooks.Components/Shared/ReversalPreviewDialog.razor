@@ -37,7 +37,15 @@
                 Återföring (preliminärt) — #@_preview!.EntryNumber, @_preview.Date
             </p>
             <p style="margin:0 0 0.5rem; color:#64748b; font-size:0.85rem;">
-                @JournalEntryService.BuildReversalDescription(Entry.EntryNumber, _reason.Length > 0 ? _reason : "…")
+                @if (_reason.Length > 0)
+                {
+                    @JournalEntryService.BuildReversalDescription(Entry.EntryNumber, _reason)
+                }
+                else
+                {
+                    @JournalEntryService.BuildReversalDescription(Entry.EntryNumber, "")
+                    <em>(fylls i när du skriver anledningen nedan)</em>
+                }
             </p>
             <JournalLinesTable Lines="_preview.Lines" AccountsById="_accountsById" />
 
