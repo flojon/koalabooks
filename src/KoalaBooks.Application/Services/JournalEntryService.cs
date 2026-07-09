@@ -227,7 +227,7 @@ public class JournalEntryService
             EntryNumber = maxNumber + 1,
             FiscalYearId = original.FiscalYearId,
             Date = reversalDate,
-            Description = $"Reversal of #{original.EntryNumber}: {reason}",
+            Description = $"Återföring av #{original.EntryNumber}: {reason}",
             CreatedAt = DateTime.UtcNow,
             IsPosted = true,
             Status = JournalEntryStatus.Correction,
