@@ -228,8 +228,7 @@ public class DemoDataSeederTests : IDisposable
         using (var scope = _sp.CreateScope())
             await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
 
-        // Simulate a crash mid-seed: org, books and the admin user committed, the
-        // non-admin user (the idempotency marker, since it's created last) didn't.
+        // Simulate a crash mid-seed: everything but the non-admin user (now the idempotency marker) committed.
         using (var scope = _sp.CreateScope())
         {
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();

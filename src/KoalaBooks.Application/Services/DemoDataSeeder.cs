@@ -14,8 +14,7 @@ public static class DemoDataSeeder
     public const string DemoUserEmail = "admin@koalabooks.local";
     public const string DemoUserPassword = "Admin123!";
 
-    // Non-admin counterpart, so previewers can log in as someone without the Admin
-    // role and confirm admin-gated areas (e.g. /hangfire) correctly reject them too.
+    // Lets previewers verify admin-gated areas (e.g. /hangfire) reject a non-admin too.
     public const string DemoNonAdminUserEmail = "member@koalabooks.local";
     public const string DemoNonAdminUserPassword = "Member123!";
 
@@ -77,8 +76,7 @@ public static class DemoDataSeeder
             await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
         }
 
-        // Existence-checked so a retry after a partial failure (this user created, the
-        // non-admin one below didn't) doesn't try to recreate it and fail as a duplicate.
+        // Existence-checked so a retry after a partial failure can't fail as a duplicate.
         if (await userManager.FindByEmailAsync(DemoUserEmail) is null)
         {
             var demoUser = new ApplicationUser

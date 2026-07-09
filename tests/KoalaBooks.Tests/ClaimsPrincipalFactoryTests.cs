@@ -9,11 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace KoalaBooks.Tests;
 
-// Regression test for a production bug: ApplicationUserClaimsPrincipalFactory extended
-// UserClaimsPrincipalFactory<ApplicationUser> (no RoleManager), which never emits role
-// claims at all - so User.IsInRole("Admin") was always false regardless of what roles
-// were assigned in the database, and HangfireDashboardAuthorizationFilter 403'd every
-// user, admins included.
+// Regression test: the factory used to skip RoleManager entirely, so IsInRole("Admin")
+// was always false no matter what roles a user actually had.
 public class ClaimsPrincipalFactoryTests : IDisposable
 {
     private readonly ServiceProvider _sp;

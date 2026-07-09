@@ -5,9 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-// Bootstraps the "Admin" role and grants it to a configured operator email.
-// Needed because the app has no admin portal yet (see #212) to assign roles
-// through - this is the only way to grant the role that gates /hangfire.
+// Stopgap until #212 (admin portal) lands a real way to assign roles.
 public static class AdminRoleSeeder
 {
     public const string RoleName = "Admin";

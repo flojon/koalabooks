@@ -42,6 +42,8 @@ if (!string.IsNullOrEmpty(dbPasswordFile))
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(koalabooksConnectionString));
 builder.EnrichNpgsqlDbContext<AppDbContext>();
 
+// Excluded from Testing: eager Postgres schema-prep here corrupts EnsureCreated()'s
+// schema visibility under WebApplicationFactory (and exhausts connections under load).
 if (!builder.Environment.IsEnvironment("Testing"))
 {
     builder.Services.AddHangfire(config => config
