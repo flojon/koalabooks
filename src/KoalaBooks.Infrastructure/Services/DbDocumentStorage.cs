@@ -8,16 +8,20 @@ namespace KoalaBooks.Infrastructure.Services;
 
 public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
 {
-    public async Task<string> SaveAsync(int documentId, string contentType, byte[] data)
+    public async Task<string> SaveAsync(int documentId, string contentType, Stream data)
     {
+        using var ms = new MemoryStream();
+        await data.CopyToAsync(ms);
+        var bytes = ms.ToArray();
+
         var existing = await db.DocumentData.FindAsync(documentId);
         if (existing is not null)
         {
-            existing.Data = data;
+            existing.Data = bytes;
         }
         else
         {
-            db.DocumentData.Add(new DocumentData { DocumentId = documentId, Data = data });
+            db.DocumentData.Add(new DocumentData { DocumentId = documentId, Data = bytes });
         }
         await db.SaveChangesAsync();
         return documentId.ToString();

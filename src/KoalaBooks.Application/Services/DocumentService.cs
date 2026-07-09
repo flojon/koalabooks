@@ -36,21 +36,23 @@ public class DocumentService(
         [".jpeg"] = "image/jpeg",
     };
 
-    public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, byte[] data)
+    public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, Stream data)
     {
-        if (data.Length > MaxBytes)
-            return (null, "Filen är för stor (max 10 MB).");
         if (currentUser.OrganisationId is null)
             return (null, "Ingen aktiv organisation.");
         if (!AllowedContentTypes.Contains(contentType))
             return (null, "Otillåten filtyp. Tillåtna typer: PDF, PNG, JPEG.");
+
+        var (bytes, oversized) = await ReadBoundedAsync(data, MaxBytes);
+        if (oversized)
+            return (null, "Filen är för stor (max 10 MB).");
 
         var doc = new Document
         {
             OrganisationId = currentUser.OrganisationId.Value,
             FileName = fileName,
             ContentType = contentType,
-            FileSize = data.Length,
+            FileSize = bytes!.Length,
             UploadedAt = DateTime.UtcNow,
             StorageKey = ""
         };
@@ -59,7 +61,7 @@ public class DocumentService(
 
         try
         {
-            doc.StorageKey = await storage.SaveAsync(doc.Id, contentType, data);
+            doc.StorageKey = await storage.SaveAsync(doc.Id, contentType, new MemoryStream(bytes));
         }
         catch (Exception ex)
         {
@@ -71,7 +73,7 @@ public class DocumentService(
 
         try
         {
-            var result = await extractor.ExtractAsync(fileName, contentType, data);
+            var result = await extractor.ExtractAsync(fileName, contentType, bytes);
             doc.SuggestedType = result.SuggestedType;
             doc.ExtractedDataJson = result.SuggestedType is not null
                 ? JsonSerializer.Serialize(result)
@@ -205,7 +207,7 @@ public class DocumentService(
     }
 
     public async Task<(Document? Doc, string? Error)> UploadAndLinkAsync(
-        string fileName, string contentType, byte[] data, DocumentEntityType entityType, int entityId)
+        string fileName, string contentType, Stream data, DocumentEntityType entityType, int entityId)
     {
         var (doc, err) = await UploadAsync(fileName, contentType, data);
         if (doc is null) return (null, err);
@@ -278,7 +280,7 @@ public class DocumentService(
                     continue;
                 }
 
-                var (doc, err) = await UploadAsync(entry.Name, contentType, data);
+                var (doc, err) = await UploadAsync(entry.Name, contentType, new MemoryStream(data));
                 if (doc is not null)
                     imported.Add(doc);
                 else
