@@ -679,11 +679,10 @@ else
         {
             const long maxBytes = 10 * 1024 * 1024;
             if (e.File.Size > maxBytes) { _docError = "Filen är för stor (max 10 MB)."; return; }
-            using var ms = new MemoryStream();
-            await e.File.OpenReadStream(maxBytes).CopyToAsync(ms);
             var contentType = string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
+            await using var stream = e.File.OpenReadStream(maxBytes);
             var (doc, err) = await DocumentService.UploadAndLinkAsync(
-                e.File.Name, contentType, ms.ToArray(),
+                e.File.Name, contentType, stream,
                 DocumentEntityType.CustomerInvoice, _docPanelInvoiceId!.Value);
             if (doc is null) { _docError = err ?? "Uppladdning misslyckades."; return; }
             _invoiceDocuments = await DocumentService.GetLinkedAsync(DocumentEntityType.CustomerInvoice, _docPanelInvoiceId.Value);

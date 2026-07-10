@@ -594,11 +594,10 @@ else
                 _attachmentError = "Filen är för stor (max 10 MB).";
                 return;
             }
-            using var ms = new MemoryStream();
-            await e.File.OpenReadStream(maxBytes).CopyToAsync(ms);
             var contentType = string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
+            await using var stream = e.File.OpenReadStream(maxBytes);
             var (added, uploadErr) = await DocumentService.UploadAndLinkAsync(
-                e.File.Name, contentType, ms.ToArray(),
+                e.File.Name, contentType, stream,
                 DocumentEntityType.JournalEntry, _attachmentEntryId!.Value);
             if (added is null)
             {
