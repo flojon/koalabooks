@@ -264,7 +264,7 @@ using (var scope = app.Services.CreateScope())
             ?? "aspire-dashboard-dev-secret";
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);
 
-        // Stopgap until #212 (admin portal investigation) lands a real way to grant roles.
+        // Stopgap until there's a real UI to grant roles.
         await AdminRoleSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration["AdminSeed:Email"]);
     }
 }

@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-// Stopgap until #212 (admin portal) lands a real way to assign roles.
+// Stopgap until there's a real UI to assign roles.
 public static class AdminRoleSeeder
 {
     public const string RoleName = "Admin";
