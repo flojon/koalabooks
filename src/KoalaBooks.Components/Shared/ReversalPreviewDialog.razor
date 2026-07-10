@@ -51,7 +51,7 @@
 
             <div class="form-group" style="margin-top:1rem;">
                 <label>Anledning <span style="color:#ef4444;">*</span></label>
-                <input type="text" @bind="_reason" placeholder="Anledning till återföring" style="width:100%;" />
+                <input type="text" @bind="_reason" @bind:event="oninput" placeholder="Anledning till återföring" style="width:100%;" />
             </div>
 
             @if (_submitError is not null)
