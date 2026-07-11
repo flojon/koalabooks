@@ -1,3 +1,4 @@
+using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -64,7 +65,7 @@ public class ReversalClosedYearTests : IDisposable
         Assert.Null(error);
         Assert.NotNull(reversal);
         Assert.True(reversal.IsPosted);
-        Assert.Contains("Reversal", reversal.Description);
+        Assert.Equal(JournalEntryService.BuildReversalDescription(entry.EntryNumber, "Correction"), reversal.Description);
     }
 
     [Fact]
