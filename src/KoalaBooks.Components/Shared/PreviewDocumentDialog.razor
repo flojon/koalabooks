@@ -71,13 +71,13 @@
                     </div>
                 }
 
-                <div style="margin-top:auto; display:flex; gap:0.5rem; padding-top:0.75rem; border-top:1px solid #f1f5f9;">
+                <DialogActions>
+                    <button class="btn btn-secondary" @onclick="OnClose">Avbryt</button>
+                    <button class="btn btn-secondary" @onclick="OpenClassifyAsync">Bokför</button>
                     <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                         @(_saving ? "Sparar..." : "Spara")
                     </button>
-                    <button class="btn btn-secondary" @onclick="OpenClassifyAsync">Bokför</button>
-                    <button class="btn btn-secondary" @onclick="OnClose">Avbryt</button>
-                </div>
+                </DialogActions>
             </div>
         </div>
     </DialogContent>

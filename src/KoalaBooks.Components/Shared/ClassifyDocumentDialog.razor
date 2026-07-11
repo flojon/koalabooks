@@ -193,12 +193,12 @@
                     }
                 }
 
-                <div style="margin-top:auto; display:flex; gap:0.5rem; padding-top:0.75rem; border-top:1px solid #f1f5f9;">
+                <DialogActions>
+                    <button class="btn btn-secondary" @onclick="OnClose">Avbryt</button>
                     <button class="btn btn-success" @onclick="ClassifyAsync" disabled="@(_saving || string.IsNullOrEmpty(_type))">
                         @(_saving ? "Sparar..." : "Skapa & koppla")
                     </button>
-                    <button class="btn btn-secondary" @onclick="OnClose">Avbryt</button>
-                </div>
+                </DialogActions>
             </div>
         </div>
     </DialogContent>
