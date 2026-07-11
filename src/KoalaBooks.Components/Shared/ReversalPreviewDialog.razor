@@ -12,9 +12,9 @@
         @if (_loadError is not null)
         {
             <MudAlert Severity="Severity.Error" Dense="true">@_loadError</MudAlert>
-            <div style="margin-top:1rem;">
+            <DialogActions>
                 <button class="btn btn-secondary" @onclick="CloseAsync">Stäng</button>
-            </div>
+            </DialogActions>
         }
         else if (_loading)
         {
@@ -59,13 +59,13 @@
                 <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_submitError</MudAlert>
             }
 
-            <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+            <DialogActions>
+                <button class="btn btn-secondary" @onclick="CloseAsync" disabled="@_saving">Avbryt</button>
                 <button class="btn btn-danger" @onclick="ConfirmAsync"
                         disabled="@(_saving || string.IsNullOrWhiteSpace(_reason))">
                     @(_saving ? "Bokför..." : "Bekräfta återföring")
                 </button>
-                <button class="btn btn-secondary" @onclick="CloseAsync" disabled="@_saving">Avbryt</button>
-            </div>
+            </DialogActions>
         }
     </DialogContent>
 </MudDialog>
