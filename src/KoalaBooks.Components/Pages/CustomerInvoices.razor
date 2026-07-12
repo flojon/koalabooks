@@ -20,6 +20,8 @@ else if (_fiscalYear is null)
 else
 {
 
+<UnsavedChangesGuard IsDirty="_isDirty" />
+
 @if (_error is not null)
 {
     <MudAlert Severity="Severity.Error" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="() => _error = null">@_error</MudAlert>
@@ -62,7 +64,7 @@ else
             {
                 <div class="form-group">
                     <label>Kundnamn (fritext) <span style="color:#ef4444;">*</span></label>
-                    <input type="text" @bind="_fCustomerName" placeholder="Kundens namn" />
+                    <input type="text" @bind="_fCustomerName" @bind:after="MarkDirty" placeholder="Kundens namn" />
                 </div>
             }
             else
@@ -72,23 +74,23 @@ else
 
             <div class="form-group">
                 <label>Fakturadatum <span style="color:#ef4444;">*</span></label>
-                <DateInput @bind-Value="_fInvoiceDate" />
+                <DateInput @bind-Value="_fInvoiceDate" @bind-Value:after="MarkDirty" />
             </div>
             <div class="form-group">
                 <label>Förfallodatum <span style="color:#ef4444;">*</span></label>
-                <DateInput @bind-Value="_fDueDate" />
+                <DateInput @bind-Value="_fDueDate" @bind-Value:after="MarkDirty" />
             </div>
             <div class="form-group">
                 <label>Vår referens</label>
-                <input type="text" @bind="_fOurReference" placeholder="t.ex. Jonas F." />
+                <input type="text" @bind="_fOurReference" @bind:after="MarkDirty" placeholder="t.ex. Jonas F." />
             </div>
             <div class="form-group">
                 <label>Er referens</label>
-                <input type="text" @bind="_fYourReference" placeholder="t.ex. Inköpsnr" />
+                <input type="text" @bind="_fYourReference" @bind:after="MarkDirty" placeholder="t.ex. Inköpsnr" />
             </div>
             <div class="form-group" style="grid-column:1/-1;">
                 <label>Anteckningar</label>
-                <input type="text" @bind="_fNotes" placeholder="Valfri kommentar på fakturan" />
+                <input type="text" @bind="_fNotes" @bind:after="MarkDirty" placeholder="Valfri kommentar på fakturan" />
             </div>
         </div>
 
@@ -111,11 +113,11 @@ else
                     var line = _fLines[i];
                     var idx = i;
                     <tr>
-                        <td><input type="text" @bind="line.Description" style="width:100%;" /></td>
-                        <td><input type="number" step="0.001" @bind="line.Quantity" @bind:after="() => RecalcLine(idx)" style="width:100%; text-align:right;" /></td>
-                        <td><input type="number" step="0.01" @bind="line.UnitPrice" @bind:after="() => RecalcLine(idx)" style="width:100%; text-align:right;" /></td>
+                        <td><input type="text" @bind="line.Description" @bind:after="MarkDirty" style="width:100%;" /></td>
+                        <td><input type="number" step="0.001" @bind="line.Quantity" @bind:after="() => { RecalcLine(idx); MarkDirty(); }" style="width:100%; text-align:right;" /></td>
+                        <td><input type="number" step="0.01" @bind="line.UnitPrice" @bind:after="() => { RecalcLine(idx); MarkDirty(); }" style="width:100%; text-align:right;" /></td>
                         <td>
-                            <select @bind="line.VatRate" @bind:after="() => RecalcLine(idx)" style="width:100%;">
+                            <select @bind="line.VatRate" @bind:after="() => { RecalcLine(idx); MarkDirty(); }" style="width:100%;">
                                 <option value="0">0 %</option>
                                 <option value="6">6 %</option>
                                 <option value="12">12 %</option>
@@ -125,7 +127,7 @@ else
                         <td style="text-align:right; font-family:monospace; color:#64748b;">@line.AmountExclVat.ToString("N2")</td>
                         <td style="text-align:right; font-family:monospace; font-weight:600;">@line.TotalAmount.ToString("N2")</td>
                         <td>
-                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(idx)" style="padding:0 0.4rem;">✕</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => { RemoveLine(idx); MarkDirty(); }" style="padding:0 0.4rem;">✕</button>
                         </td>
                     </tr>
                 }
@@ -139,7 +141,7 @@ else
                 </tr>
             </tfoot>
         </table>
-        <button class="btn btn-sm btn-secondary" @onclick="AddLine" style="margin-bottom:1rem;">+ Lägg till rad</button>
+        <button class="btn btn-sm btn-secondary" @onclick="() => { AddLine(); MarkDirty(); }" style="margin-bottom:1rem;">+ Lägg till rad</button>
 
         <div style="display:flex; gap:0.5rem; align-items:center;">
             <button class="btn btn-success" @onclick="SaveInvoice" disabled="@_saving">
@@ -247,16 +249,16 @@ else
                                     <p style="margin:0 0 0.75rem; font-weight:600;">Bokför kundfaktura</p>
                                     <div style="display:grid; grid-template-columns:160px 1fr; gap:0.4rem 0.75rem; align-items:center; margin-bottom:0.75rem;">
                                         <label style="font-weight:600;">Kundfordringar <span style="color:#ef4444;">*</span></label>
-                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postReceivableAccountId" />
+                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postReceivableAccountId" @bind-SelectedAccountId:after="MarkDirty" />
                                         <label style="font-weight:600;">Intäktskonto <span style="color:#ef4444;">*</span></label>
-                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postRevenueAccountId" />
+                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_postRevenueAccountId" @bind-SelectedAccountId:after="MarkDirty" />
                                         @foreach (var rate in _postVatAccountIds.Keys.OrderBy(r => r))
                                         {
                                             var r = rate;
                                             <label style="font-weight:600;">Moms @r% <span style="color:#ef4444;">*</span></label>
                                             <AccountSearchDropdown Accounts="_allAccounts"
                                                 SelectedAccountId="_postVatAccountIds.GetValueOrDefault(r)"
-                                                SelectedAccountIdChanged="@(id => _postVatAccountIds[r] = id)" />
+                                                SelectedAccountIdChanged="@(id => { _postVatAccountIds[r] = id; MarkDirty(); })" />
                                         }
                                     </div>
                                     <button class="btn btn-success" @onclick="() => ConfirmPost(inv)"
@@ -295,7 +297,7 @@ else
                                                 {
                                                     var isSelected = _linkedBankTransactionId == bt.Id;
                                                     <tr style="cursor:pointer; @(isSelected ? "background:#dcfce7;" : "background:white;")"
-                                                        @onclick="() => SelectBankTransaction(bt)">
+                                                        @onclick="() => { SelectBankTransaction(bt); MarkDirty(); }">
                                                         <td>@bt.Date.ToString("yyyy-MM-dd")</td>
                                                         <td style="font-family:monospace; font-size:0.8rem;">@bt.Account.AccountNumber</td>
                                                         <td style="color:#475569;">@bt.Description</td>
@@ -311,13 +313,13 @@ else
 
                                     <div style="display:grid; grid-template-columns:130px 1fr; gap:0.5rem 1rem; align-items:center; margin-bottom:0.75rem;">
                                         <label style="font-weight:600;">Betalningsdatum</label>
-                                        <DateInput @bind-Value="_payDate" style="width:100%;" />
+                                        <DateInput @bind-Value="_payDate" @bind-Value:after="MarkDirty" style="width:100%;" />
 
                                         <label style="font-weight:600;">Bankkonto</label>
-                                        <AccountSearchDropdown Accounts="_bankAccounts" @bind-SelectedAccountId="_payBankAccountId" />
+                                        <AccountSearchDropdown Accounts="_bankAccounts" @bind-SelectedAccountId="_payBankAccountId" @bind-SelectedAccountId:after="MarkDirty" />
 
                                         <label style="font-weight:600;">Kundfordringar</label>
-                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_payReceivableAccountId" />
+                                        <AccountSearchDropdown Accounts="_allAccounts" @bind-SelectedAccountId="_payReceivableAccountId" @bind-SelectedAccountId:after="MarkDirty" />
                                     </div>
 
                                     @if (_linkedBankTransactionId.HasValue)
@@ -325,7 +327,7 @@ else
                                         <p style="font-size:0.8rem; color:#16a34a; margin:0 0 0.5rem 0;">
                                             ✅ Kopplar till vald banktransaktion.
                                             <button class="btn btn-sm btn-secondary" style="margin-left:0.5rem; padding:0 0.4rem;"
-                                                    @onclick="() => _linkedBankTransactionId = null">Lossa</button>
+                                                    @onclick="() => { _linkedBankTransactionId = null; MarkDirty(); }">Lossa</button>
                                         </p>
                                     }
 
@@ -424,6 +426,11 @@ else
     private enum InvoiceExpandMode { Post, Pay }
     private InvoiceExpandMode _expandMode;
 
+    // Unsaved-changes guard: true once the user has edited the add-invoice form
+    // or an open Post/Pay panel; cleared on save, cancel, or fresh (re)open.
+    private bool _isDirty;
+    private void MarkDirty() => _isDirty = true;
+
     // Add form
     private int _fCustomerId;
     private string _fCustomerName = "";
@@ -499,6 +506,7 @@ else
         _fDueDate = DateTime.Today.AddDays(30);
         _fOurReference = _fYourReference = _fNotes = "";
         _fLines = [new CustomerInvoiceLine { Quantity = 1, VatRate = 25 }];
+        _isDirty = false;
     }
 
     private void OnCustomerSelected()
@@ -514,7 +522,11 @@ else
         }
     }
 
-    private void CancelForm() => _showForm = false;
+    private void CancelForm()
+    {
+        _showForm = false;
+        _isDirty = false;
+    }
 
     private void AddLine()
     {
@@ -558,6 +570,7 @@ else
 
             Snackbar.Add($"Faktura #{result!.InvoiceNumber} till {result.CustomerName} skapad.", Severity.Success);
             _showForm = false;
+            _isDirty = false;
             await LoadInvoices();
         }
         finally { _saving = false; }
@@ -565,9 +578,10 @@ else
 
     private async Task ToggleExpand(int invoiceId, InvoiceExpandMode mode)
     {
-        if (_expandedId == invoiceId && _expandMode == mode) { _expandedId = null; return; }
+        if (_expandedId == invoiceId && _expandMode == mode) { _expandedId = null; _isDirty = false; return; }
         _expandedId = invoiceId;
         _expandMode = mode;
+        _isDirty = false;
 
         if (mode == InvoiceExpandMode.Post)
         {
@@ -609,6 +623,7 @@ else
             if (error is not null) { _error = error; return; }
 
             _expandedId = null;
+            _isDirty = false;
             Snackbar.Add($"Faktura #{inv.InvoiceNumber} bokförd.", Severity.Success);
             await LoadInvoices();
         }
@@ -641,6 +656,7 @@ else
 
             Snackbar.Add($"Inbetalning bokförd för faktura #{inv.InvoiceNumber}.", Severity.Success);
             _expandedId = null;
+            _isDirty = false;
             _linkedBankTransactionId = null;
             _matchingSuggestions = [];
             await LoadInvoices();

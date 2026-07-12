@@ -29,16 +29,17 @@
                 <td>
                     <AccountSearchDropdown Accounts="Accounts"
                                            @bind-SelectedAccountId="Lines[idx].AccountId"
+                                           @bind-SelectedAccountId:after="MarkDirty"
                                            InputId="@($"line-account-{idx}")"
                                            OnAfterKeyboardSelect="() => FocusDebitAsync(idx)" />
                 </td>
-                <td><input id="@($"line-debit-{idx}")" type="number" step="0.01" min="0" @bind="Lines[idx].DebitAmount" @bind:after="NotifyBalance" /></td>
-                <td><input type="number" step="0.01" min="0" @bind="Lines[idx].CreditAmount" @bind:after="NotifyBalance"
+                <td><input id="@($"line-debit-{idx}")" type="number" step="0.01" min="0" @bind="Lines[idx].DebitAmount" @bind:after="() => { NotifyBalance(); MarkDirty(); }" /></td>
+                <td><input type="number" step="0.01" min="0" @bind="Lines[idx].CreditAmount" @bind:after="() => { NotifyBalance(); MarkDirty(); }"
                            @onkeydown="e => HandleCreditKeyDown(e, idx)" /></td>
                 <td>
                     @if (Lines.Count > 2)
                     {
-                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveLine(idx)">✕</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => { RemoveLine(idx); MarkDirty(); }">✕</button>
                     }
                 </td>
             </tr>
@@ -47,7 +48,7 @@
 </table>
 
 <div class="toolbar" style="margin-top:0.5rem;">
-    <button class="btn btn-sm btn-secondary" @onclick="AddLine">+ Lägg till rad</button>
+    <button class="btn btn-sm btn-secondary" @onclick="() => { AddLine(); MarkDirty(); }">+ Lägg till rad</button>
     <span>
         Debet: <strong>@TotalDebit.ToString("N2")</strong> |
         Kredit: <strong>@TotalCredit.ToString("N2")</strong> |
@@ -70,6 +71,7 @@
     [Parameter] public EventCallback<string> DescriptionChanged { get; set; }
     [Parameter, EditorRequired] public List<LineModel> Lines { get; set; } = [];
     [Parameter] public EventCallback<bool> IsBalancedChanged { get; set; }
+    [Parameter] public EventCallback DirtyChanged { get; set; }
 
     private string? _pendingFocusId;
 
@@ -95,14 +97,18 @@
     private async Task SetDate(DateTime value)
     {
         Date = value;
+        MarkDirty();
         await DateChanged.InvokeAsync(value);
     }
 
     private async Task SetDescription(string value)
     {
         Description = value;
+        MarkDirty();
         await DescriptionChanged.InvokeAsync(value);
     }
+
+    private void MarkDirty() => DirtyChanged.InvokeAsync();
 
     private void AddLine()
     {

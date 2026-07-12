@@ -23,6 +23,7 @@
 }
 else
 {
+<UnsavedChangesGuard IsDirty="_isDirty" />
 <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
     <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
     <select @bind="_selectedFiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:220px;">
@@ -54,7 +55,8 @@ else
                           Date="_formDate" DateChanged="d => _formDate = d"
                           Description="@_formDescription" DescriptionChanged="d => _formDescription = d"
                           Lines="_formLines"
-                          IsBalancedChanged="b => _isBalanced = b" />
+                          IsBalancedChanged="b => _isBalanced = b"
+                          DirtyChanged="MarkDirty" />
 
         <div style="margin-top:1rem; display:flex; gap:0.5rem;">
             <button class="btn btn-success" @onclick="SaveAndPost" disabled="@(!_isBalanced)">💾 Bokför</button>
@@ -335,6 +337,10 @@ else
     private string _formDescription = "";
     private List<JournalEntryForm.LineModel> _formLines = [];
     private bool _isBalanced;
+
+    // Unsaved-changes guard for the new-entry form; cleared on save, cancel, or fresh open.
+    private bool _isDirty;
+    private void MarkDirty() => _isDirty = true;
     private HashSet<int> _linkedJournalEntryIds = [];
 
     // Attachment panel
@@ -381,9 +387,14 @@ else
         _formDescription = "";
         _formLines = [new(), new()];
         _showForm = true;
+        _isDirty = false;
     }
 
-    private void CancelForm() => _showForm = false;
+    private void CancelForm()
+    {
+        _showForm = false;
+        _isDirty = false;
+    }
 
     private async Task SaveAndPost() => await SaveEntryAsync(post: true);
 
@@ -428,6 +439,7 @@ else
             : $"Verifikation #{result!.EntryNumber} sparad som utkast.",
             Severity.Success);
         _showForm = false;
+        _isDirty = false;
         await ReloadEntriesAsync();
     }
 
@@ -444,6 +456,7 @@ else
     {
         _selectedMonthStr = "";
         _showForm = false;
+        _isDirty = false;
         _attachmentEntryId = null;
         _attachmentMeta = [];
         _convertingEntryId = null;

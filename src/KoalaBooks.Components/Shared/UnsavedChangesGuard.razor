@@ -1,0 +1,75 @@
+@* src/KoalaBooks.Components/Shared/UnsavedChangesGuard.razor
+   Drop this into any page/dialog that holds in-progress user input with no
+   autosave, to warn before that work is lost. Two layers:
+     - Tab close / hard refresh / external navigation: NavigationLock's
+       ConfirmExternalNavigation triggers the browser's own native
+       "leave site?" prompt (backed by beforeunload) whenever IsDirty is true.
+       No custom JS interop needed — this is the built-in Blazor mechanism.
+     - In-app route changes: OnBeforeInternalNavigation intercepts the
+       navigation, and — if dirty — shows a small MudBlazor confirm dialog
+       before letting it proceed. *@
+@using MudBlazor
+
+<NavigationLock ConfirmExternalNavigation="@IsDirty" OnBeforeInternalNavigation="OnBeforeInternalNavigationAsync" />
+
+@if (_showConfirm)
+{
+    <MudDialog Visible="true" Options="_dialogOptions" Style="max-width:420px; width:95vw;">
+        <TitleContent>
+            <MudText Typo="Typo.h6">Osparade ändringar</MudText>
+        </TitleContent>
+        <DialogContent>
+            <p style="margin:0 0 1rem;">@Message</p>
+            <DialogActions>
+                <button class="btn btn-secondary" @onclick="CancelLeave">Stanna kvar</button>
+                <button class="btn btn-danger" @onclick="ConfirmLeave">Lämna sidan</button>
+            </DialogActions>
+        </DialogContent>
+    </MudDialog>
+}
+
+@code {
+    /// <summary>True while the guarded form has unsaved changes.</summary>
+    [Parameter] public bool IsDirty { get; set; }
+
+    [Parameter] public string Message { get; set; } =
+        "Du har osparade ändringar som går förlorade om du lämnar sidan. Vill du fortsätta?";
+
+    private static readonly DialogOptions _dialogOptions = new() { BackdropClick = false, CloseOnEscapeKey = false };
+
+    private bool _showConfirm;
+    private string? _pendingTargetLocation;
+    private bool _allowNextNavigation;
+
+    private Task OnBeforeInternalNavigationAsync(LocationChangingContext context)
+    {
+        if (_allowNextNavigation || !IsDirty)
+        {
+            _allowNextNavigation = false;
+            return Task.CompletedTask;
+        }
+
+        context.PreventNavigation();
+        _pendingTargetLocation = context.TargetLocation;
+        _showConfirm = true;
+        return Task.CompletedTask;
+    }
+
+    private void CancelLeave()
+    {
+        _showConfirm = false;
+        _pendingTargetLocation = null;
+    }
+
+    private void ConfirmLeave()
+    {
+        _showConfirm = false;
+        if (_pendingTargetLocation is not null)
+        {
+            _allowNextNavigation = true;
+            Navigation.NavigateTo(_pendingTargetLocation);
+        }
+    }
+
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+}
