@@ -72,8 +72,8 @@
                 }
 
                 <DialogActions>
-                    <button class="btn btn-secondary" @onclick="OnClose">Avbryt</button>
-                    <button class="btn btn-secondary" @onclick="OpenClassifyAsync">Bokför</button>
+                    <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Avbryt</button>
+                    <button class="btn btn-secondary" @onclick="OpenClassify">Bokför</button>
                     <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                         @(_saving ? "Sparar..." : "Spara")
                     </button>
@@ -84,12 +84,12 @@
 </MudDialog>
 
 @code {
+    public enum PreviewOutcome { Saved, Classify }
+
     [Parameter, EditorRequired] public DocumentMeta Doc { get; set; } = default!;
     [Parameter, EditorRequired] public IDocumentProvider DocumentProvider { get; set; } = default!;
-    [Parameter, EditorRequired] public EventCallback OnSaved { get; set; }
-    [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
-    [Parameter, EditorRequired] public EventCallback OnClassify { get; set; }
 
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
     [Inject] private DocumentService DocumentService { get; set; } = default!;
 
     private string _type = "";
@@ -130,10 +130,10 @@
             var date = DateOnly.FromDateTime(_documentDate);
             var err = await DocumentService.UpdateMetadataAsync(Doc.Id, type, date);
             if (err is not null) { _error = err; return; }
-            await OnSaved.InvokeAsync();
+            MudDialog.Close(DialogResult.Ok(PreviewOutcome.Saved));
         }
         finally { _saving = false; }
     }
 
-    private async Task OpenClassifyAsync() => await OnClassify.InvokeAsync();
+    private void OpenClassify() => MudDialog.Close(DialogResult.Ok(PreviewOutcome.Classify));
 }
