@@ -4,7 +4,7 @@
 @using KoalaBooks.Domain.Enums
 @using MudBlazor
 
-<MudDialog @ref="_dialog" Visible="true" Options="_dialogOptions" Style="max-width:640px; width:95vw;">
+<MudDialog Style="max-width:640px; width:95vw;">
     <TitleContent>
         <MudText Typo="Typo.h6">Återför verifikation #@Entry.EntryNumber</MudText>
     </TitleContent>
@@ -13,7 +13,7 @@
         {
             <MudAlert Severity="Severity.Error" Dense="true">@_loadError</MudAlert>
             <DialogActions>
-                <button class="btn btn-secondary" @onclick="CloseAsync">Stäng</button>
+                <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Stäng</button>
             </DialogActions>
         }
         else if (_loading)
@@ -60,7 +60,7 @@
             }
 
             <DialogActions>
-                <button class="btn btn-secondary" @onclick="CloseAsync" disabled="@_saving">Avbryt</button>
+                <button class="btn btn-secondary" @onclick="MudDialog.Cancel" disabled="@_saving">Avbryt</button>
                 <button class="btn btn-danger" @onclick="ConfirmAsync"
                         disabled="@(_saving || string.IsNullOrWhiteSpace(_reason))">
                     @(_saving ? "Bokför..." : "Bekräfta återföring")
@@ -73,9 +73,8 @@
 @code {
     [Parameter, EditorRequired] public JournalEntry Entry { get; set; } = default!;
     [Parameter, EditorRequired] public List<Account> Accounts { get; set; } = [];
-    [Parameter, EditorRequired] public EventCallback<JournalEntry> OnReversed { get; set; }
-    [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
 
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
     [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
 
     private Dictionary<int, Account> _accountsById = [];
@@ -85,13 +84,6 @@
     private string? _submitError;
     private bool _loading = true;
     private bool _saving;
-    private MudDialog _dialog = default!;
-
-    // Preview and reason are only ever loaded once per Entry (see OnInitializedAsync).
-    // A backdrop/Escape dismissal that bypassed our own close handling would leave this
-    // component instance alive with stale preview data if a different entry were opened
-    // next, so both are disabled to force every dismissal through CloseAsync/ConfirmAsync.
-    private static readonly DialogOptions _dialogOptions = new() { BackdropClick = false, CloseOnEscapeKey = false };
 
     protected override async Task OnInitializedAsync()
     {
@@ -120,15 +112,8 @@
                 _submitError = error;
                 return;
             }
-            await _dialog.CloseAsync();
-            await OnReversed.InvokeAsync(result);
+            MudDialog.Close(DialogResult.Ok(result));
         }
         finally { _saving = false; }
-    }
-
-    private async Task CloseAsync()
-    {
-        await _dialog.CloseAsync();
-        await OnClose.InvokeAsync();
     }
 }
