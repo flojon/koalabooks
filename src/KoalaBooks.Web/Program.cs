@@ -127,7 +127,7 @@ builder.Services.AddOpenIddict()
     });
 
 builder.Services.AddScoped<SieImportService>();
-builder.Services.AddScoped<AccountService>();
+builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<FiscalYearService>();
 builder.Services.AddScoped<JournalEntryService>();
 builder.Services.AddScoped<VoucherGapService>();

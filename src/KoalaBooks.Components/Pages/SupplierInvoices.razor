@@ -378,7 +378,7 @@ else
 @code {
     [Inject] private SupplierInvoiceService InvoiceService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
-    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private DocumentService DocumentService { get; set; } = default!;
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;

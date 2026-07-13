@@ -204,7 +204,7 @@ else
 }
 
 @code {
-    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private BasImportService BasImportService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;

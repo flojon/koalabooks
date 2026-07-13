@@ -214,7 +214,7 @@
     [Inject] private CustomerInvoiceService CustomerInvoiceService { get; set; } = default!;
     [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
-    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private CustomerService CustomerService { get; set; } = default!;
 
     private string _type = "";
