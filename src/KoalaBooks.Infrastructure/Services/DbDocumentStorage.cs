@@ -18,15 +18,36 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
     public async Task<string> SaveAsync(int documentId, string contentType, Stream data)
     {
         var strategy = db.Database.CreateExecutionStrategy();
+        var attempt = 0;
         return await strategy.ExecuteAsync(async () =>
         {
+            attempt++;
+
             // A retry re-runs this whole delegate: a prior failed attempt may
             // have left a DocumentData row tracked (Added/Modified) without
             // committing — detach just that row before re-reading it, and
             // rewind the input (when possible). db is a shared, caller-owned
             // AppDbContext, so this must not touch entities outside our own.
             DetachTrackedDocumentData(documentId);
-            if (data.CanSeek) data.Position = 0;
+
+            if (data.CanSeek)
+            {
+                data.Position = 0;
+            }
+            else if (attempt > 1)
+            {
+                // A non-seekable stream can't be rewound, so a retry would resume
+                // reading wherever the failed attempt left off, silently writing a
+                // truncated/wrong Large Object instead of failing loudly. No current
+                // caller passes a non-seekable stream here (DocumentService buffers
+                // to a MemoryStream first), but fail fast rather than corrupt data
+                // if that ever changes.
+                throw new InvalidOperationException(
+                    $"DbDocumentStorage.SaveAsync cannot retry document {documentId}: " +
+                    "the source stream is not seekable, so a transient-failure retry " +
+                    "cannot be rewound to the start. Pass a seekable stream (e.g. buffer " +
+                    "to a MemoryStream) if the call may be retried.");
+            }
 
             try
             {
