@@ -1,4 +1,7 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.3.2">
+<!-- Keep this version in sync with the Aspire.Hosting.* PackageReference versions below.
+     Dependabot's "microsoft-aspire" group bumps those but can't touch this Sdk attribute,
+     and a mismatch makes DCP hang for 20s per resource and `aspire run` fail to start (#222). -->
+<Project Sdk="Aspire.AppHost.Sdk/13.4.6">
 
   <ItemGroup>
     <ProjectReference Include="..\KoalaBooks.Web\KoalaBooks.Web.csproj" />
