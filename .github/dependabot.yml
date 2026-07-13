@@ -6,6 +6,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
+    ignore:
+      # Aspire.Hosting.* packages must stay version-locked to the Aspire.AppHost.Sdk
+      # version in KoalaBooks.AppHost.csproj, which Dependabot can't see or bump
+      # (see #222 and #225). The aspire-update.yml workflow owns these instead,
+      # via `aspire update`, so the two can't drift apart again.
+      - dependency-name: "Aspire.Hosting.*"
     groups:
       microsoft-aspire:
         patterns:
