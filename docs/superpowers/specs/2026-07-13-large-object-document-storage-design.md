@@ -6,7 +6,7 @@
 
 ## Overview
 
-Follow-up to [#187](https://github.com/flojon/koalabooks/issues/187) / [#213](https://github.com/flojon/koalabooks/pull/213) (see [2026-07-09-stream-uploads-design.md](./2026-07-09-stream-uploads-design.md)), which moved `IDocumentStorage.SaveAsync` from `byte[]` to `Stream` at the interface level but left `DbDocumentStorage` buffering the full file into a `byte[]` before writing Postgres's `bytea` column. This spec removes that last buffer by migrating `DocumentData` storage from a `bytea` column to Postgres Large Objects (`NpgsqlLargeObjectManager`), with genuine chunked I/O for both writes and reads.
+Follow-up to [#187](https://github.com/flojon/koalabooks/issues/187) / [#213](https://github.com/flojon/koalabooks/pull/213) (see [2026-07-09-stream-uploads-design.md](./2026-07-09-stream-uploads-design.md)), which moved `IDocumentStorage.SaveAsync` from `byte[]` to `Stream` at the interface level but left `DbDocumentStorage` buffering the full file into a `byte[]` before writing Postgres's `bytea` column. This spec removes that last buffer by migrating `DocumentData` storage from a `bytea` column to Postgres Large Objects, with genuine chunked I/O for both writes and reads. (See "API choice" below on `NpgsqlLargeObjectManager` vs. the raw `lo_*` functions.)
 
 ## Goals / Non-Goals
 
@@ -48,25 +48,40 @@ modelBuilder.Entity<DocumentData>(entity =>
 
 ## `DbDocumentStorage`
 
-Postgres Large Objects require reads/writes to happen inside a transaction. Every method opens `db.Database.BeginTransactionAsync()` first, then drives a `NpgsqlLargeObjectManager` against the same underlying connection (`(NpgsqlConnection)db.Database.GetDbConnection()`) that EF Core's own queries in that method run on — so the LO operations and the `DocumentData` row change commit or roll back together atomically.
+Postgres Large Objects require reads/writes to happen inside a transaction. Every method opens `db.Database.BeginTransactionAsync()` first, then issues raw SQL against the same underlying connection (`(NpgsqlConnection)db.Database.GetDbConnection()`) that EF Core's own queries in that method run on — so the LO operations and the `DocumentData` row change commit or roll back together atomically.
+
+**API choice:** the issue names `NpgsqlLargeObjectManager`, but that class is marked `[Obsolete]` in the installed Npgsql version (10.0.3) — it still compiles (a CS0618 warning, and this repo has no `TreatWarningsAsErrors`), but Npgsql's own guidance is to call the underlying `lo_*` server-side functions directly instead. Verified by compiling both approaches against a scratch project: confirmed obsolete but functional, then confirmed the raw-SQL approach compiles warning-free. Decision: use the raw SQL functions (`lo_create`, `lo_open`, `loread`, `lowrite`, `lo_close`, `lo_unlink`) directly via `NpgsqlCommand`, matching current Npgsql guidance despite the extra code this requires over the wrapper class.
 
 ```csharp
 public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
 {
+    // https://www.postgresql.org/docs/current/lo-interfaces.html#LO-INTERFACES-OPEN
+    private const int InvWrite = 0x00020000;
+    private const int InvRead = 0x00040000;
+    private const int ChunkSize = 81920; // matches Stream.CopyToAsync's default buffer size
+
     public async Task<string> SaveAsync(int documentId, string contentType, Stream data)
     {
         await using var tx = await db.Database.BeginTransactionAsync();
-        var lom = new NpgsqlLargeObjectManager((NpgsqlConnection)db.Database.GetDbConnection());
+        var conn = (NpgsqlConnection)db.Database.GetDbConnection();
 
         var existing = await db.DocumentData.FindAsync(documentId);
         if (existing is not null)
-            await lom.UnlinkAsync(existing.Oid);
+            await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, existing.Oid));
 
-        var oid = await lom.CreateAsync(0);
-        await using (var loStream = await lom.OpenReadWriteAsync(oid))
+        var oid = await ExecuteScalarAsync<uint>(conn, "SELECT lo_create(0)");
+        var fd = await ExecuteScalarAsync<int>(conn, "SELECT lo_open(@oid, @mode)",
+            ("oid", NpgsqlDbType.Oid, oid), ("mode", NpgsqlDbType.Integer, InvWrite));
+
+        var buffer = new byte[ChunkSize];
+        int read;
+        while ((read = await data.ReadAsync(buffer)) > 0)
         {
-            await data.CopyToAsync(loStream);
+            var chunk = buffer[..read];
+            await ExecuteScalarAsync<int>(conn, "SELECT lowrite(@fd, @chunk)",
+                ("fd", NpgsqlDbType.Integer, fd), ("chunk", NpgsqlDbType.Bytea, chunk));
         }
+        await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd));
 
         if (existing is not null)
             existing.Oid = oid;
@@ -86,10 +101,19 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
         var row = await db.DocumentData.FindAsync(id);
         if (row is null) return [];
 
-        var lom = new NpgsqlLargeObjectManager((NpgsqlConnection)db.Database.GetDbConnection());
-        await using var loStream = await lom.OpenReadAsync(row.Oid);
+        var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+        var fd = await ExecuteScalarAsync<int>(conn, "SELECT lo_open(@oid, @mode)",
+            ("oid", NpgsqlDbType.Oid, row.Oid), ("mode", NpgsqlDbType.Integer, InvRead));
+
         using var ms = new MemoryStream();
-        await loStream.CopyToAsync(ms);
+        while (true)
+        {
+            var chunk = await ExecuteScalarAsync<byte[]>(conn, "SELECT loread(@fd, @len)",
+                ("fd", NpgsqlDbType.Integer, fd), ("len", NpgsqlDbType.Integer, ChunkSize));
+            if (chunk.Length > 0) await ms.WriteAsync(chunk);
+            if (chunk.Length < ChunkSize) break;
+        }
+        await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd));
         await tx.CommitAsync();
         return ms.ToArray();
     }
@@ -102,20 +126,30 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
         var row = await db.DocumentData.FindAsync(id);
         if (row is null) return;
 
-        var lom = new NpgsqlLargeObjectManager((NpgsqlConnection)db.Database.GetDbConnection());
-        await lom.UnlinkAsync(row.Oid);
+        var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+        await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, row.Oid));
         db.DocumentData.Remove(row);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
     }
+
+    private static async Task<T> ExecuteScalarAsync<T>(NpgsqlConnection conn, string sql,
+        params (string Name, NpgsqlDbType Type, object Value)[] parameters)
+    {
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        foreach (var (name, type, value) in parameters)
+            cmd.Parameters.Add(new NpgsqlParameter { ParameterName = name, NpgsqlDbType = type, Value = value });
+        var result = await cmd.ExecuteScalarAsync();
+        return (T)result!;
+    }
 }
 ```
 
-`SaveAsync`'s `data.CopyToAsync(loStream)` is the actual fix: `NpgsqlLargeObjectManager`'s read/write stream does chunked I/O against the server, so no full-file `byte[]`/`MemoryStream` is ever built for the write path.
+`SaveAsync`'s read/`lowrite` loop is the actual fix: each chunk read from `data` is written to the LO via its own `lowrite` call, so no full-file `byte[]`/`MemoryStream` is ever built for the write path. `LoadAsync`'s `loread` loop is the read-side counterpart — it still assembles a `byte[]` at the end (interface constraint, see Goals), but reads it from Postgres in bounded chunks rather than one unbounded transfer.
 
 ### Orphan-object safety
 
-- **Save failure mid-write:** the whole operation is one transaction: if `CopyToAsync` throws or `SaveChangesAsync` fails, the transaction rolls back, and Postgres discards any Large Object created within that uncommitted transaction — no orphan.
+- **Save failure mid-write:** the whole operation is one transaction: if a `lowrite` call throws or `SaveChangesAsync` fails, the transaction rolls back, and Postgres discards any Large Object created within that uncommitted transaction — no orphan.
 - **Save overwriting an existing document:** the old `Oid` is unlinked *before* the new one is created, inside the same transaction as the entity update, so a rollback restores the original LO rather than leaving two.
 - **Delete:** already unlinks before removing the row, matching `DocumentService.DeleteAsync`'s existing correct order (line 160-161: `storage.DeleteAsync(doc.StorageKey)` before `db.Documents.Remove(doc)`).
 - **Upload-failure rollback in `DocumentService.UploadAsync`** (line 53-58: `catch` removes the just-created `Document` row without calling `storage.DeleteAsync`): this only runs when `storage.SaveAsync` itself threw, i.e. by definition no LO was ever committed — no change needed here.
