@@ -131,7 +131,7 @@ else
 
 @code {
     [Inject] private SieImportService SieImportService { get; set; } = default!;
-    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private SieDocument? _sieDocument;

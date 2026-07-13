@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class JournalEntryService
+public class JournalEntryService : IJournalEntryService
 {
     private readonly AppDbContext _db;
 

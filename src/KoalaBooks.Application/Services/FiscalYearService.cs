@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class FiscalYearService
+public class FiscalYearService : IFiscalYearService
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;

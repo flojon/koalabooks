@@ -24,9 +24,9 @@ public record ClosingResult(bool Success, string? Error, int? ClosingEntry1Numbe
 public class YearEndClosingService
 {
     private readonly AppDbContext _db;
-    private readonly FiscalYearService _fiscalYearService;
+    private readonly IFiscalYearService _fiscalYearService;
 
-    public YearEndClosingService(AppDbContext db, FiscalYearService fiscalYearService)
+    public YearEndClosingService(AppDbContext db, IFiscalYearService fiscalYearService)
     {
         _db = db;
         _fiscalYearService = fiscalYearService;
