@@ -15,7 +15,7 @@ public class DocumentServiceTests : IDisposable
     public async Task UploadAsync_StoresDocumentAndReturnsIt()
     {
         var svc = _fx.MakeDocumentService();
-        var (doc, err) = await svc.UploadAsync("faktura.pdf", "application/pdf", new byte[] { 1, 2, 3 });
+        var (doc, err) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream(new byte[] { 1, 2, 3 }));
 
         Assert.Null(err);
         Assert.NotNull(doc);
@@ -28,7 +28,7 @@ public class DocumentServiceTests : IDisposable
     public async Task UploadAsync_SetsSuggestedTypeFromFilename_ClassifiedTypeRemainsNull()
     {
         var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("leverantörsfaktura.pdf", "application/pdf", []);
+        var (doc, _) = await svc.UploadAsync("leverantörsfaktura.pdf", "application/pdf", new MemoryStream());
 
         Assert.Equal("SupplierInvoice", doc!.SuggestedType);
         Assert.Null(doc.ClassifiedType);
@@ -38,7 +38,7 @@ public class DocumentServiceTests : IDisposable
     public async Task UploadAsync_RejectsDisallowedContentType()
     {
         var svc = _fx.MakeDocumentService();
-        var (doc, err) = await svc.UploadAsync("bad.html", "text/html", [1, 2, 3]);
+        var (doc, err) = await svc.UploadAsync("bad.html", "text/html", new MemoryStream([1, 2, 3]));
 
         Assert.Null(doc);
         Assert.NotNull(err);
@@ -49,7 +49,7 @@ public class DocumentServiceTests : IDisposable
     {
         var svc = _fx.MakeDocumentService();
         var bigData = new byte[11 * 1024 * 1024];
-        var (doc, err) = await svc.UploadAsync("big.pdf", "application/pdf", bigData);
+        var (doc, err) = await svc.UploadAsync("big.pdf", "application/pdf", new MemoryStream(bigData));
 
         Assert.Null(doc);
         Assert.NotNull(err);
@@ -63,8 +63,8 @@ public class DocumentServiceTests : IDisposable
         var (debit, credit, _, _, _) = _fx.CreateStandardAccounts(fy.Id);
         var entry = await _fx.CreateAndPostEntryAsync(fy.Id, debit.Id, credit.Id, 100m);
 
-        await svc.UploadAsync("unlinked.pdf", "application/pdf", [1]);
-        var (linked, _) = await svc.UploadAsync("linked.pdf", "application/pdf", [2]);
+        await svc.UploadAsync("unlinked.pdf", "application/pdf", new MemoryStream([1]));
+        var (linked, _) = await svc.UploadAsync("linked.pdf", "application/pdf", new MemoryStream([2]));
         await svc.LinkAsync(linked!.Id, DocumentEntityType.JournalEntry, entry.Id);
 
         var pending = await svc.GetPendingAsync();
@@ -77,7 +77,7 @@ public class DocumentServiceTests : IDisposable
     public async Task UpdateMetadataAsync_SetsTypeAndDate()
     {
         var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", []);
+        var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", new MemoryStream());
         var date = new DateOnly(2026, 3, 15);
 
         var err = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
@@ -97,7 +97,7 @@ public class DocumentServiceTests : IDisposable
             "SupplierInvoice", "ACME AB", 1000m, 250m, expectedDate, null, "INV-001"));
         var svc = _fx.MakeDocumentService(extractor);
 
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", [1]);
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1]));
 
         Assert.Equal(expectedDate, doc!.DocumentDate);
     }
@@ -106,8 +106,8 @@ public class DocumentServiceTests : IDisposable
     public async Task GetPendingAsync_SortsByDocumentDate()
     {
         var svc = _fx.MakeDocumentService();
-        var (d1, _) = await svc.UploadAsync("a.pdf", "application/pdf", [1]);
-        var (d2, _) = await svc.UploadAsync("b.pdf", "application/pdf", [2]);
+        var (d1, _) = await svc.UploadAsync("a.pdf", "application/pdf", new MemoryStream([1]));
+        var (d2, _) = await svc.UploadAsync("b.pdf", "application/pdf", new MemoryStream([2]));
 
         await svc.UpdateMetadataAsync(d1!.Id, null, new DateOnly(2026, 1, 1));
         await svc.UpdateMetadataAsync(d2!.Id, null, new DateOnly(2026, 6, 1));
@@ -129,7 +129,7 @@ public class DocumentServiceTests : IDisposable
         var (debit, credit, _, _, _) = _fx.CreateStandardAccounts(fy.Id);
         var entry = await _fx.CreateAndPostEntryAsync(fy.Id, debit.Id, credit.Id, 100m);
 
-        var (doc, _) = await svc.UploadAsync("receipt.pdf", "application/pdf", [5]);
+        var (doc, _) = await svc.UploadAsync("receipt.pdf", "application/pdf", new MemoryStream([5]));
         await svc.LinkAsync(doc!.Id, DocumentEntityType.JournalEntry, entry.Id);
 
         var linked = await svc.GetLinkedAsync(DocumentEntityType.JournalEntry, entry.Id);
@@ -142,7 +142,7 @@ public class DocumentServiceTests : IDisposable
     public async Task DeleteAsync_RemovesDocumentAndData()
     {
         var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("todelete.pdf", "application/pdf", [9, 8, 7]);
+        var (doc, _) = await svc.UploadAsync("todelete.pdf", "application/pdf", new MemoryStream([9, 8, 7]));
 
         var deleted = await svc.DeleteAsync(doc!.Id);
         Assert.True(deleted);
@@ -158,7 +158,7 @@ public class DocumentServiceTests : IDisposable
     public async Task GetDownloadAsync_ReturnsBytesForUploadedDocument()
     {
         var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("file.pdf", "application/pdf", [10, 20, 30]);
+        var (doc, _) = await svc.UploadAsync("file.pdf", "application/pdf", new MemoryStream([10, 20, 30]));
 
         var result = await svc.GetDownloadAsync(doc!.Id);
 
@@ -171,7 +171,7 @@ public class DocumentServiceTests : IDisposable
     public async Task UploadAsync_RollsBackDocumentRowWhenStorageFails()
     {
         var svc = _fx.MakeDocumentService(new FailingStorage());
-        var (doc, err) = await svc.UploadAsync("faktura.pdf", "application/pdf", [1, 2, 3]);
+        var (doc, err) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
 
         Assert.Null(doc);
         Assert.NotNull(err);
@@ -185,7 +185,7 @@ public class DocumentServiceTests : IDisposable
     public async Task UploadAsync_AcceptsImageJpgMimeType()
     {
         var svc = _fx.MakeDocumentService();
-        var (doc, err) = await svc.UploadAsync("photo.jpg", "image/jpg", [1, 2, 3]);
+        var (doc, err) = await svc.UploadAsync("photo.jpg", "image/jpg", new MemoryStream([1, 2, 3]));
 
         Assert.Null(err);
         Assert.NotNull(doc);
@@ -211,7 +211,7 @@ public class DocumentServiceTests : IDisposable
         };
         var (created, _) = await supplierSvc.CreateAsync(invoice);
 
-        var (doc, _) = await docSvc.UploadAsync("faktura.pdf", "application/pdf", [1]);
+        var (doc, _) = await docSvc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1]));
         await docSvc.LinkAsync(doc!.Id, DocumentEntityType.SupplierInvoice, created!.Id);
 
         var (posted, err) = await supplierSvc.PostAsync(created.Id, expense.Id, payable.Id, null);
@@ -231,9 +231,9 @@ public class DocumentServiceTests : IDisposable
         var e1 = await _fx.CreateAndPostEntryAsync(fy.Id, debit.Id, credit.Id, 100m);
         var e2 = await _fx.CreateAndPostEntryAsync(fy.Id, debit.Id, credit.Id, 200m);
 
-        var (doc1, _) = await svc.UploadAsync("a.pdf", "application/pdf", [1]);
-        var (doc2, _) = await svc.UploadAsync("b.pdf", "application/pdf", [2]);
-        var (doc3, _) = await svc.UploadAsync("c.pdf", "application/pdf", [3]);
+        var (doc1, _) = await svc.UploadAsync("a.pdf", "application/pdf", new MemoryStream([1]));
+        var (doc2, _) = await svc.UploadAsync("b.pdf", "application/pdf", new MemoryStream([2]));
+        var (doc3, _) = await svc.UploadAsync("c.pdf", "application/pdf", new MemoryStream([3]));
 
         await svc.LinkAsync(doc1!.Id, DocumentEntityType.JournalEntry, e1.Id);
         await svc.LinkAsync(doc2!.Id, DocumentEntityType.JournalEntry, e1.Id);
@@ -436,7 +436,7 @@ public class DocumentServiceTests : IDisposable
 
 file class FailingStorage : IDocumentStorage
 {
-    public Task<string> SaveAsync(int documentId, string contentType, byte[] data) =>
+    public Task<string> SaveAsync(int documentId, string contentType, Stream data) =>
         throw new InvalidOperationException("simulated storage failure");
 
     public Task<byte[]> LoadAsync(string storageKey) => Task.FromResult(Array.Empty<byte>());

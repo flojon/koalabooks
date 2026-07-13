@@ -204,11 +204,10 @@ else
                     continue;
                 }
 
-                using var ms = new MemoryStream();
-                await file.OpenReadStream(fileMaxBytes).CopyToAsync(ms);
-
                 if (isZip)
                 {
+                    using var ms = new MemoryStream();
+                    await file.OpenReadStream(fileMaxBytes).CopyToAsync(ms);
                     var (result, zipErr) = await DocumentService.UploadZipAsync(ms.ToArray());
                     if (zipErr is not null)
                     {
@@ -228,7 +227,8 @@ else
                 }
 
                 var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
-                var (_, err) = await DocumentService.UploadAsync(file.Name, contentType, ms.ToArray());
+                await using var stream = file.OpenReadStream(fileMaxBytes);
+                var (_, err) = await DocumentService.UploadAsync(file.Name, contentType, stream);
                 if (err is not null)
                     _error = err;
                 else
