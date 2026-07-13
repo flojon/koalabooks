@@ -180,7 +180,7 @@
 }
 
 @code {
-    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private YearEndClosingService YearEndClosingService { get; set; } = default!;
     [Inject] private VoucherGapService VoucherGapService { get; set; } = default!;
     [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;

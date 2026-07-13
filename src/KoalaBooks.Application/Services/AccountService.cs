@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class AccountService
+public class AccountService : IAccountService
 {
     private readonly AppDbContext _db;
 

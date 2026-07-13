@@ -46,8 +46,8 @@ else
 </div>
 
 @code {
-    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
-    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
 
     private KoalaBooks.Domain.Entities.FiscalYear? _activeFiscalYear;
     private DashboardStats _stats = new();

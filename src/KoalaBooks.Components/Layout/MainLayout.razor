@@ -153,7 +153,7 @@
             // Use a dedicated scope so this background query doesn't share a DbContext
             // with the page's OnInitializedAsync, which would cause concurrent-operation exceptions.
             await using var scope = ScopeFactory.CreateAsyncScope();
-            var fySvc = scope.ServiceProvider.GetRequiredService<FiscalYearService>();
+            var fySvc = scope.ServiceProvider.GetRequiredService<IFiscalYearService>();
             var bankSvc = scope.ServiceProvider.GetRequiredService<BankImportService>();
             var invSvc = scope.ServiceProvider.GetRequiredService<SupplierInvoiceService>();
 
@@ -182,8 +182,8 @@
         try
         {
             await using var scope = ScopeFactory.CreateAsyncScope();
-            var fySvc = scope.ServiceProvider.GetRequiredService<FiscalYearService>();
-            var journalSvc = scope.ServiceProvider.GetRequiredService<JournalEntryService>();
+            var fySvc = scope.ServiceProvider.GetRequiredService<IFiscalYearService>();
+            var journalSvc = scope.ServiceProvider.GetRequiredService<IJournalEntryService>();
 
             var fy = await fySvc.GetActiveAsync();
             if (fy is null) { _draftCount = 0; return; }

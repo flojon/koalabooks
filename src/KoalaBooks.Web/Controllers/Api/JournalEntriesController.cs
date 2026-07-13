@@ -12,10 +12,10 @@ namespace KoalaBooks.Web.Controllers.Api;
 [Route("api/v1")]
 public class JournalEntriesController : ControllerBase
 {
-    private readonly JournalEntryService _journalEntryService;
-    private readonly FiscalYearService _fiscalYearService;
+    private readonly IJournalEntryService _journalEntryService;
+    private readonly IFiscalYearService _fiscalYearService;
 
-    public JournalEntriesController(JournalEntryService journalEntryService, FiscalYearService fiscalYearService)
+    public JournalEntriesController(IJournalEntryService journalEntryService, IFiscalYearService fiscalYearService)
     {
         _journalEntryService = journalEntryService;
         _fiscalYearService = fiscalYearService;

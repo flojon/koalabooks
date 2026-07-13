@@ -24,10 +24,10 @@ public record ClosingResult(bool Success, string? Error, int? ClosingEntry1Numbe
 public class YearEndClosingService
 {
     private readonly AppDbContext _db;
-    private readonly FiscalYearService _fiscalYearService;
+    private readonly IFiscalYearService _fiscalYearService;
     private readonly VoucherGapService _voucherGapService;
 
-    public YearEndClosingService(AppDbContext db, FiscalYearService fiscalYearService, VoucherGapService voucherGapService)
+    public YearEndClosingService(AppDbContext db, IFiscalYearService fiscalYearService, VoucherGapService voucherGapService)
     {
         _db = db;
         _fiscalYearService = fiscalYearService;

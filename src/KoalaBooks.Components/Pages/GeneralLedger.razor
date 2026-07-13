@@ -147,9 +147,9 @@ else
 }
 
 @code {
-    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
-    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
-    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private IAccountService AccountService { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
     private List<Account> _accounts = [];
