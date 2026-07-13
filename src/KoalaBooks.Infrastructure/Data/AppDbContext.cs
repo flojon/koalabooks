@@ -274,6 +274,10 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
                   .UsingEntity("DocumentCustomerInvoices");
         });
 
+        // The Oid column references a Postgres Large Object, which Postgres does NOT
+        // reclaim via row or cascade deletion (FK cascades don't know about LOs).
+        // Only DbDocumentStorage.DeleteAsync unlinks the LO correctly — any future
+        // code path that removes Document/DocumentData rows directly would leak it.
         modelBuilder.Entity<DocumentData>(entity =>
         {
             entity.HasKey(d => d.DocumentId);
