@@ -1,6 +1,7 @@
-<!-- Keep this version in sync with the Aspire.Hosting.* PackageReference versions below.
-     Dependabot's "microsoft-aspire" group bumps those but can't touch this Sdk attribute,
-     and a mismatch makes DCP hang for 20s per resource and `aspire run` fail to start. -->
+<!-- Keep this version in sync with the Aspire.Hosting.* PackageReference versions below;
+     a mismatch makes DCP hang for 20s per resource and `aspire run` fail to start.
+     Bumped together by the aspire-update.yml workflow via `aspire update` - Dependabot
+     is configured to leave Aspire.Hosting.* alone so it can't reintroduce the drift. -->
 <Project Sdk="Aspire.AppHost.Sdk/13.4.6">
 
   <ItemGroup>
