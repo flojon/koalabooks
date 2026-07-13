@@ -10,9 +10,17 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
 {
     public async Task<string> SaveAsync(int documentId, string contentType, Stream data)
     {
-        using var ms = new MemoryStream();
-        await data.CopyToAsync(ms);
-        var bytes = ms.ToArray();
+        byte[] bytes;
+        if (data is MemoryStream alreadyBuffered)
+        {
+            bytes = alreadyBuffered.ToArray();
+        }
+        else
+        {
+            using var ms = new MemoryStream();
+            await data.CopyToAsync(ms);
+            bytes = ms.ToArray();
+        }
 
         var existing = await db.DocumentData.FindAsync(documentId);
         if (existing is not null)
