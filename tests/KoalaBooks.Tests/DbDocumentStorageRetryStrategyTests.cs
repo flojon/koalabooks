@@ -65,4 +65,38 @@ public class DbDocumentStorageRetryStrategyTests : IDisposable
         var afterDelete = await storage.LoadAsync(key);
         Assert.Empty(afterDelete);
     }
+
+    [Fact]
+    public async Task SaveAsync_RecoversWhenAPriorFailedAttemptLeftDocumentDataTracked()
+    {
+        var storage = new DbDocumentStorage(_db);
+        var doc = new Document
+        {
+            OrganisationId = _organisationId,
+            FileName = "test.pdf",
+            ContentType = "application/pdf",
+            FileSize = 3,
+            UploadedAt = DateTime.UtcNow,
+            StorageKey = ""
+        };
+        _db.Documents.Add(doc);
+        await _db.SaveChangesAsync();
+
+        // Simulate what a retried attempt actually finds: a prior failed
+        // SaveAsync got as far as tracking a DocumentData row (Added) with a
+        // large object it created, but the transaction never committed. On
+        // retry, EF's FindAsync would find this stale tracked entity locally
+        // (before ever querying the DB) unless DetachTrackedDocumentData
+        // clears it first.
+        _db.DocumentData.Add(new DocumentData { DocumentId = doc.Id, Oid = 999999 });
+
+        var bytes = new byte[] { 9, 9, 9 };
+        var key = await storage.SaveAsync(doc.Id, "application/pdf", new MemoryStream(bytes));
+
+        var loaded = await storage.LoadAsync(key);
+        Assert.Equal(bytes, loaded);
+
+        var count = await _db.DocumentData.CountAsync(d => d.DocumentId == doc.Id);
+        Assert.Equal(1, count);
+    }
 }
