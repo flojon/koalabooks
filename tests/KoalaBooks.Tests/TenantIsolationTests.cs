@@ -57,7 +57,7 @@ public class TenantIsolationTests : IDisposable
         SeedFiscalYear(_orgAId, "2026");
 
         using var dbB = DbFor(_orgBId);
-        var fiscalYearService = new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId));
+        IFiscalYearService fiscalYearService = new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId));
         var results = await fiscalYearService.GetAllAsync();
 
         Assert.Empty(results);
@@ -69,7 +69,7 @@ public class TenantIsolationTests : IDisposable
         var fyA = SeedFiscalYear(_orgAId, "2026");
 
         using var dbB = DbFor(_orgBId);
-        var service = new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId));
+        IFiscalYearService service = new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId));
         var result = await service.GetByIdAsync(fyA.Id);
 
         Assert.Null(result);
@@ -84,7 +84,7 @@ public class TenantIsolationTests : IDisposable
         var accountA = SeedAccount(fyA.Id, "1910", "Kassa");
 
         using var dbB = DbFor(_orgBId);
-        var service = new AccountService(dbB);
+        IAccountService service = new AccountService(dbB);
         var result = await service.GetByIdAsync(accountA.Id);
 
         Assert.Null(result);
@@ -97,7 +97,7 @@ public class TenantIsolationTests : IDisposable
         SeedAccount(fyA.Id, "1910", "Kassa");
 
         using var dbB = DbFor(_orgBId);
-        var service = new AccountService(dbB);
+        IAccountService service = new AccountService(dbB);
         var results = await service.GetAllAsync(fyA.Id);
 
         Assert.Empty(results);
@@ -113,7 +113,7 @@ public class TenantIsolationTests : IDisposable
         SeedJournalEntry(fyA.Id, accountA.Id);
 
         using var dbB = DbFor(_orgBId);
-        var service = new JournalEntryService(dbB);
+        IJournalEntryService service = new JournalEntryService(dbB);
         var results = await service.GetByFiscalYearAsync(fyA.Id);
 
         Assert.Empty(results);
@@ -229,7 +229,7 @@ public class TenantIsolationTests : IDisposable
         var fyA = SeedFiscalYear(_orgAId, "2026");
 
         using var dbA = DbFor(_orgAId);
-        var service = new FiscalYearService(dbA, TestFixture.MakeTenant(_orgAId));
+        IFiscalYearService service = new FiscalYearService(dbA, TestFixture.MakeTenant(_orgAId));
         var result = await service.GetByIdAsync(fyA.Id);
 
         Assert.NotNull(result);
