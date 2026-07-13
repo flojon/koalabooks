@@ -14,18 +14,20 @@
 
 @if (_showConfirm)
 {
-    <MudDialog Visible="true" Options="_dialogOptions" Style="max-width:420px; width:95vw;">
-        <TitleContent>
-            <MudText Typo="Typo.h6">Osparade ändringar</MudText>
-        </TitleContent>
-        <DialogContent>
-            <p style="margin:0 0 1rem;">@Message</p>
-            <DialogActions>
-                <button class="btn btn-secondary" @onclick="CancelLeave">Stanna kvar</button>
-                <button class="btn btn-danger" @onclick="ConfirmLeave">Lämna sidan</button>
-            </DialogActions>
-        </DialogContent>
-    </MudDialog>
+    <CascadingValue Name="IsNested" Value="true" IsFixed="true">
+        <MudDialog Visible="true" Options="_dialogOptions" Style="max-width:420px; width:95vw;">
+            <TitleContent>
+                <MudText Typo="Typo.h6">Osparade ändringar</MudText>
+            </TitleContent>
+            <DialogContent>
+                <p style="margin:0 0 1rem;">@Message</p>
+                <DialogActions>
+                    <button class="btn btn-danger" @onclick="ConfirmLeave">Lämna sidan</button>
+                    <button class="btn btn-secondary" @onclick="CancelLeave">Stanna kvar</button>
+                </DialogActions>
+            </DialogContent>
+        </MudDialog>
+    </CascadingValue>
 }
 
 @code {
