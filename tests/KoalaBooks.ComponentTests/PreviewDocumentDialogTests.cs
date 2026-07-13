@@ -132,6 +132,13 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
     // Reproduces the bug from #223: editing the date in the preview and clicking
     // "Bokför" must carry that edit into ClassifyDocumentDialog, the same way
     // Inbox.razor chains the two dialogs by passing along the same DocumentMeta.
+    //
+    // Both dialogs are shown through the same MudDialogProvider/IDialogService pair,
+    // exactly like the real app (which mounts exactly one MudDialogProvider at the
+    // layout root). Rendering a second, independent MudDialogProvider against the
+    // same singleton IDialogService - as an earlier version of this test did - lets
+    // both providers race to render the second dialog, which is nondeterministic and
+    // was observed to fail intermittently in CI while passing locally.
     [Fact]
     public async Task ClickingBokfor_EditedDateCarriesIntoClassifyDialog()
     {
@@ -139,25 +146,24 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
             .Returns((string?)null);
         var doc = MakeDoc();
 
-        var (previewComp, dialogReference) = await OpenDialogAsync(doc);
-        previewComp.Find("select").Change("CustomerInvoice");
-        previewComp.Find("input").Change("2026-03-15");
-        await previewComp.InvokeAsync(() => BokforButton(previewComp).Click());
-        var previewResult = await dialogReference.Result;
+        var (comp, previewReference) = await OpenDialogAsync(doc);
+        comp.Find("select").Change("CustomerInvoice");
+        comp.Find("input").Change("2026-03-15");
+        await comp.InvokeAsync(() => BokforButton(comp).Click());
+        var previewResult = await previewReference.Result;
         Assert.Equal(PreviewDocumentDialog.PreviewOutcome.Classify, (PreviewDocumentDialog.PreviewOutcome)previewResult!.Data!);
 
-        var classifyComp = Render<MudDialogProvider>();
-        var classifyDialogService = Services.GetRequiredService<IDialogService>();
+        var dialogService = Services.GetRequiredService<IDialogService>();
         var classifyParameters = new DialogParameters<ClassifyDocumentDialog>
         {
             { x => x.Doc, doc },
             { x => x.DocumentProvider, _documentProvider },
         };
-        await classifyComp.InvokeAsync(async () =>
-            await classifyDialogService.ShowAsync<ClassifyDocumentDialog>("Klassificera dokument", classifyParameters));
+        await comp.InvokeAsync(async () =>
+            await dialogService.ShowAsync<ClassifyDocumentDialog>("Klassificera dokument", classifyParameters));
 
         // doc.ClassifiedType == "CustomerInvoice" (persisted above), so that branch's
         // date inputs are the ones rendered by default; the first is Fakturadatum (_date).
-        Assert.Equal("2026-03-15", classifyComp.FindAll("input[type=date]")[0].GetAttribute("value"));
+        Assert.Equal("2026-03-15", comp.FindAll("input[type=date]")[0].GetAttribute("value"));
     }
 }
