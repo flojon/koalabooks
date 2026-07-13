@@ -28,35 +28,48 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
             DetachTrackedDocumentData(documentId);
             if (data.CanSeek) data.Position = 0;
 
-            await using var tx = await db.Database.BeginTransactionAsync();
-            var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-
-            var existing = await db.DocumentData.FindAsync(documentId);
-            if (existing is not null)
-                await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, existing.Oid));
-
-            var oid = await ExecuteScalarAsync<uint>(conn, "SELECT lo_create(0)");
-            var fd = await ExecuteScalarAsync<int>(conn, "SELECT lo_open(@oid, @mode)",
-                ("oid", NpgsqlDbType.Oid, oid), ("mode", NpgsqlDbType.Integer, InvWrite));
-
-            var buffer = new byte[ChunkSize];
-            int read;
-            while ((read = await data.ReadAsync(buffer)) > 0)
+            try
             {
-                var chunk = buffer[..read];
-                await ExecuteScalarAsync<int>(conn, "SELECT lowrite(@fd, @chunk)",
-                    ("fd", NpgsqlDbType.Integer, fd), ("chunk", NpgsqlDbType.Bytea, chunk));
+                await using var tx = await db.Database.BeginTransactionAsync();
+                var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+
+                var existing = await db.DocumentData.FindAsync(documentId);
+                if (existing is not null)
+                    await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, existing.Oid));
+
+                var oid = await ExecuteScalarAsync<uint>(conn, "SELECT lo_create(0)");
+                var fd = await ExecuteScalarAsync<int>(conn, "SELECT lo_open(@oid, @mode)",
+                    ("oid", NpgsqlDbType.Oid, oid), ("mode", NpgsqlDbType.Integer, InvWrite));
+
+                var buffer = new byte[ChunkSize];
+                int read;
+                while ((read = await data.ReadAsync(buffer)) > 0)
+                {
+                    var chunk = buffer[..read];
+                    await ExecuteScalarAsync<int>(conn, "SELECT lowrite(@fd, @chunk)",
+                        ("fd", NpgsqlDbType.Integer, fd), ("chunk", NpgsqlDbType.Bytea, chunk));
+                }
+                await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd));
+
+                if (existing is not null)
+                    existing.Oid = oid;
+                else
+                    db.DocumentData.Add(new DocumentData { DocumentId = documentId, Oid = oid });
+
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+                return documentId.ToString();
             }
-            await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd));
-
-            if (existing is not null)
-                existing.Oid = oid;
-            else
-                db.DocumentData.Add(new DocumentData { DocumentId = documentId, Oid = oid });
-
-            await db.SaveChangesAsync();
-            await tx.CommitAsync();
-            return documentId.ToString();
+            catch
+            {
+                // A thrown exception leaves this attempt's tracked DocumentData behind
+                // even though the DB rolled back — detach it so the caller's context
+                // isn't left in an inconsistent state (this matters most when the
+                // execution strategy has exhausted all retries and rethrows to the
+                // caller, since no further attempt will run the start-of-attempt detach).
+                DetachTrackedDocumentData(documentId);
+                throw;
+            }
         });
     }
 
@@ -98,15 +111,28 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
         {
             DetachTrackedDocumentData(id);
 
-            await using var tx = await db.Database.BeginTransactionAsync();
-            var row = await db.DocumentData.FindAsync(id);
-            if (row is null) return;
+            try
+            {
+                await using var tx = await db.Database.BeginTransactionAsync();
+                var row = await db.DocumentData.FindAsync(id);
+                if (row is null) return;
 
-            var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-            await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, row.Oid));
-            db.DocumentData.Remove(row);
-            await db.SaveChangesAsync();
-            await tx.CommitAsync();
+                var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+                await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, row.Oid));
+                db.DocumentData.Remove(row);
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                // A thrown exception leaves this attempt's tracked DocumentData behind
+                // even though the DB rolled back — detach it so the caller's context
+                // isn't left in an inconsistent state (this matters most when the
+                // execution strategy has exhausted all retries and rethrows to the
+                // caller, since no further attempt will run the start-of-attempt detach).
+                DetachTrackedDocumentData(id);
+                throw;
+            }
         });
     }
 

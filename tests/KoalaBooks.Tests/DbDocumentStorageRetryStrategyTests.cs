@@ -99,4 +99,28 @@ public class DbDocumentStorageRetryStrategyTests : IDisposable
         var count = await _db.DocumentData.CountAsync(d => d.DocumentId == doc.Id);
         Assert.Equal(1, count);
     }
+
+    [Fact]
+    public async Task SaveAsync_DetachesTrackedDocumentDataWhenSaveChangesFailsAfterAdd()
+    {
+        var storage = new DbDocumentStorage(_db);
+
+        // No Document row exists for this id. The Large Object writes
+        // (lo_create/lowrite/lo_close) don't touch the Documents table, so they
+        // succeed, and db.DocumentData.Add(...) tracks a new DocumentData as
+        // Added — but SaveChangesAsync then fails with a foreign-key violation
+        // (DocumentData.DocumentId has no matching Document) before the
+        // transaction commits. This is exactly the scenario Item 1 fixes: an
+        // exception thrown after the entity is Added/tracked but before commit.
+        // The FK violation is also non-transient, so NpgsqlRetryingExecutionStrategy
+        // won't retry it — it propagates straight out of SaveAsync, which is the
+        // "all retries exhausted / non-transient failure" case the fix targets.
+        var missingDocumentId = 999_999;
+
+        await Assert.ThrowsAnyAsync<Exception>(() =>
+            storage.SaveAsync(missingDocumentId, "application/pdf", new MemoryStream([1, 2, 3])));
+
+        Assert.DoesNotContain(_db.ChangeTracker.Entries<DocumentData>(),
+            e => e.Entity.DocumentId == missingDocumentId);
+    }
 }
