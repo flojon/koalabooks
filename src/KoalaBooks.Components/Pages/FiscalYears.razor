@@ -3,6 +3,7 @@
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Infrastructure.Services
 @using MudBlazor
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>Räkenskapsår — KoalaBooks</PageTitle>
 
@@ -89,6 +90,26 @@
                             {
                                 <p>⏳ Laddar...</p>
                             }
+                            else if (_unexplainedGaps.Count > 0)
+                            {
+                                <h4>⚠️ Luckor i verifikationsnumreringen</h4>
+                                <p>BFNAR 2013:2 kräver en förklaring för varje lucka i nummerserien innan bokslutet kan stängas.</p>
+                                @foreach (var number in _unexplainedGaps)
+                                {
+                                    <div class="form-group">
+                                        <label>Verifikat #@number saknas — förklaring</label>
+                                        <input type="text" @bind="_gapExplanationDrafts[number]" placeholder="T.ex. Makulerat utkast" />
+                                    </div>
+                                }
+                                @if (_gapExplanationError is not null)
+                                {
+                                    <MudAlert Severity="Severity.Error" Class="mt-2">@_gapExplanationError</MudAlert>
+                                }
+                                <div style="margin-top:1rem; display:flex; gap:0.5rem;">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => SaveGapExplanations(fy.Id)">Spara förklaringar</button>
+                                    <button class="btn btn-sm btn-secondary" @onclick="CancelClosing">Avbryt</button>
+                                </div>
+                            }
                             else if (_closingPreview is not null)
                             {
                                 @if (!_closingPreview.IsValid)
@@ -105,6 +126,10 @@
                                 else
                                 {
                                     <h4>📋 Förhandsvisning — Bokslut @fy.Name</h4>
+                                    @if (_gapExplanations.Count > 0)
+                                    {
+                                        <p>ℹ️ @_gapExplanations.Count lucka/luckor i nummerserien är förklarade och dokumenterade.</p>
+                                    }
                                     <div style="display:flex; gap:2rem; margin-bottom:1rem;">
                                         <span>Intäkter: <strong>@_closingPreview.TotalRevenue.ToString("N2")</strong></span>
                                         <span>Kostnader: <strong>@_closingPreview.TotalExpenses.ToString("N2")</strong></span>
@@ -157,6 +182,8 @@
 @code {
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private YearEndClosingService YearEndClosingService { get; set; } = default!;
+    [Inject] private VoucherGapService VoucherGapService { get; set; } = default!;
+    [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
     [Inject] private BasImportService BasImportService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
@@ -172,6 +199,10 @@
     private int? _closingFiscalYearId;
     private ClosingPreview? _closingPreview;
     private bool _closingBusy;
+    private List<int> _unexplainedGaps = [];
+    private Dictionary<int, string> _gapExplanationDrafts = [];
+    private string? _gapExplanationError;
+    private List<VoucherGapExplanation> _gapExplanations = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -236,7 +267,19 @@
     {
         _closingFiscalYearId = fiscalYearId;
         _closingBusy = true;
-        _closingPreview = await YearEndClosingService.PreviewClosingAsync(fiscalYearId);
+        _closingPreview = null;
+        _gapExplanationError = null;
+
+        _unexplainedGaps = await VoucherGapService.GetUnexplainedGapsAsync(fiscalYearId);
+        if (_unexplainedGaps.Count == 0)
+        {
+            _gapExplanations = await VoucherGapService.GetExplanationsAsync(fiscalYearId);
+            _closingPreview = await YearEndClosingService.PreviewClosingAsync(fiscalYearId);
+        }
+        else
+        {
+            _gapExplanationDrafts = _unexplainedGaps.ToDictionary(n => n, n => "");
+        }
         _closingBusy = false;
     }
 
@@ -244,6 +287,39 @@
     {
         _closingFiscalYearId = null;
         _closingPreview = null;
+        _unexplainedGaps = [];
+        _gapExplanationDrafts = [];
+        _gapExplanationError = null;
+    }
+
+    private async Task SaveGapExplanations(int fiscalYearId)
+    {
+        _gapExplanationError = null;
+        if (_gapExplanationDrafts.Values.Any(string.IsNullOrWhiteSpace))
+        {
+            _gapExplanationError = "Alla luckor måste ha en förklaring.";
+            return;
+        }
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var who = authState.User.Identity?.Name ?? "Okänd";
+
+        foreach (var (missingNumber, explanation) in _gapExplanationDrafts)
+        {
+            var error = await VoucherGapService.AddExplanationAsync(fiscalYearId, missingNumber, explanation.Trim(), who);
+            if (error is not null)
+            {
+                _gapExplanationError = error;
+                return;
+            }
+        }
+
+        _unexplainedGaps = await VoucherGapService.GetUnexplainedGapsAsync(fiscalYearId);
+        if (_unexplainedGaps.Count == 0)
+        {
+            _gapExplanations = await VoucherGapService.GetExplanationsAsync(fiscalYearId);
+            _closingPreview = await YearEndClosingService.PreviewClosingAsync(fiscalYearId);
+        }
     }
 
     private async Task ConfirmClosing(int fiscalYearId)

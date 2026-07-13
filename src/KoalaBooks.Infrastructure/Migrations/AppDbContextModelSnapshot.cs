@@ -17,7 +17,7 @@ namespace KoalaBooks.Infrastructure.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -506,7 +506,17 @@ namespace KoalaBooks.Infrastructure.Migrations
                     b.Property<bool>("IsPosted")
                         .HasColumnType("boolean");
 
+                    b.Property<int?>("SourceJournalEntryId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.HasKey("Id");
+
+                    b.HasIndex("SourceJournalEntryId");
 
                     b.HasIndex("FiscalYearId", "EntryNumber")
                         .IsUnique();
@@ -647,6 +657,41 @@ namespace KoalaBooks.Infrastructure.Migrations
                     b.HasIndex("PaymentJournalEntryId");
 
                     b.ToTable("SupplierInvoices");
+                });
+
+            modelBuilder.Entity("KoalaBooks.Domain.Entities.VoucherGapExplanation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("ExplainedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExplainedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Explanation")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("FiscalYearId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MissingEntryNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FiscalYearId", "MissingEntryNumber")
+                        .IsUnique();
+
+                    b.ToTable("VoucherGapExplanations");
                 });
 
             modelBuilder.Entity("KoalaBooks.Infrastructure.Data.ApplicationUser", b =>
@@ -1241,6 +1286,11 @@ namespace KoalaBooks.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("KoalaBooks.Domain.Entities.JournalEntry", null)
+                        .WithMany()
+                        .HasForeignKey("SourceJournalEntryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("FiscalYear");
                 });
 
@@ -1286,6 +1336,17 @@ namespace KoalaBooks.Infrastructure.Migrations
                     b.Navigation("JournalEntry");
 
                     b.Navigation("PaymentJournalEntry");
+                });
+
+            modelBuilder.Entity("KoalaBooks.Domain.Entities.VoucherGapExplanation", b =>
+                {
+                    b.HasOne("KoalaBooks.Domain.Entities.FiscalYear", "FiscalYear")
+                        .WithMany()
+                        .HasForeignKey("FiscalYearId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("FiscalYear");
                 });
 
             modelBuilder.Entity("KoalaBooks.Infrastructure.Data.ApplicationUser", b =>

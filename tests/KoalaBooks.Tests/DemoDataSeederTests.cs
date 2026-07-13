@@ -53,6 +53,19 @@ public class DemoDataSeederTests : IDisposable
     }
 
     [Fact]
+    public async Task SeedAsync_CreatesLoginableNonAdminUser()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var user = await userManager.FindByEmailAsync(DemoDataSeeder.DemoNonAdminUserEmail);
+
+        Assert.NotNull(user);
+        Assert.True(await userManager.CheckPasswordAsync(user!, DemoDataSeeder.DemoNonAdminUserPassword));
+    }
+
+    [Fact]
     public async Task SeedAsync_IsIdempotent()
     {
         using (var scope = _sp.CreateScope())
@@ -215,11 +228,11 @@ public class DemoDataSeederTests : IDisposable
         using (var scope = _sp.CreateScope())
             await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
 
-        // Simulate a crash mid-seed: org and books committed, demo user (the idempotency marker) didn't.
+        // Simulate a crash mid-seed: everything but the non-admin user (now the idempotency marker) committed.
         using (var scope = _sp.CreateScope())
         {
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-            var user = await userManager.FindByEmailAsync(DemoDataSeeder.DemoUserEmail);
+            var user = await userManager.FindByEmailAsync(DemoDataSeeder.DemoNonAdminUserEmail);
             await userManager.DeleteAsync(user!);
         }
 
@@ -232,6 +245,9 @@ public class DemoDataSeederTests : IDisposable
         {
             Assert.Equal(2, await db.FiscalYears.CountAsync());
         }
+
+        var verifyUserManager = verifyScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        Assert.NotNull(await verifyUserManager.FindByEmailAsync(DemoDataSeeder.DemoNonAdminUserEmail));
     }
 
     public void Dispose()

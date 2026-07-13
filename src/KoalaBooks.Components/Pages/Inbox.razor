@@ -14,7 +14,7 @@
 }
 
 <div style="margin-bottom:1rem;">
-    <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="UploadAsync" Accept=".pdf,.png,.jpg,.jpeg" MaximumFileCount="10">
+    <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="UploadAsync" Accept=".pdf,.png,.jpg,.jpeg,.zip" MaximumFileCount="10">
         <CustomContent>
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload"
                        OnClick="@context.OpenFilePickerAsync"
@@ -27,7 +27,7 @@
         </SelectedTemplate>
     </MudFileUpload>
     <div style="font-size:0.78rem; color:#94a3b8; margin-top:0.3rem;">
-        Dra och släpp filer här eller klicka — PDF, PNG, JPG · max 10 MB per fil · upp till 10 filer
+        Dra och släpp filer här eller klicka — PDF, PNG, JPG eller ZIP · max 10 MB per fil (50 MB för ZIP) · upp till 10 filer
     </div>
 </div>
 
@@ -86,8 +86,8 @@ else
                             }
                         </td>
                         <td style="display:flex; gap:0.3rem; flex-wrap:wrap;">
-                            <button class="btn btn-sm btn-secondary" @onclick="() => OpenPreviewDialog(doc)" title="Förhandsgranska">👁</button>
-                            <button class="btn btn-sm btn-primary" @onclick="() => OpenClassifyDialog(doc)">Bokför</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => OpenPreviewDialogAsync(doc)" title="Förhandsgranska">👁</button>
+                            <button class="btn btn-sm btn-primary" @onclick="() => OpenClassifyDialogAsync(doc)">Bokför</button>
                             <button class="btn btn-sm btn-danger" @onclick="() => DeleteDocAsync(doc.Id)">🗑</button>
                         </td>
                     </tr>
@@ -110,37 +110,19 @@ else
     }
 }
 
-@if (_classifyDoc is not null)
-{
-    <ClassifyDocumentDialog Doc="_classifyDoc"
-                            DocumentProvider="DocumentProvider"
-                            OnClassified="OnDocumentClassified"
-                            OnClose="() => _classifyDoc = null" />
-}
-
-@if (_previewDoc is not null)
-{
-    <PreviewDocumentDialog Doc="_previewDoc"
-                           DocumentProvider="DocumentProvider"
-                           OnSaved="OnDocumentSaved"
-                           OnClose="() => _previewDoc = null"
-                           OnClassify="OpenClassifyFromPreview" />
-}
-
 @code {
     [Inject] private DocumentService DocumentService { get; set; } = default!;
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
 
     private List<DocumentMeta> _docs = [];
     private bool _isLoading;
     private bool _uploading;
     private string? _error;
     private string _filter = "all";
-    private DocumentMeta? _classifyDoc;
     private string _sortBy = "uploadedAt";
     private bool _sortAsc = false;
-    private DocumentMeta? _previewDoc;
     private int _page = 1;
     private int _totalCount;
     private const int PageSize = 50;
@@ -194,15 +176,41 @@ else
             foreach (var file in files)
             {
                 const long maxBytes = 10 * 1024 * 1024;
-                if (file.Size > maxBytes)
+                const long zipMaxBytes = 50 * 1024 * 1024;
+                var isZip = Path.GetExtension(file.Name).Equals(".zip", StringComparison.OrdinalIgnoreCase);
+                var fileMaxBytes = isZip ? zipMaxBytes : maxBytes;
+
+                if (file.Size > fileMaxBytes)
                 {
-                    _error = $"{file.Name}: för stor (max 10 MB).";
+                    _error = isZip ? $"{file.Name}: för stor (max 50 MB)." : $"{file.Name}: för stor (max 10 MB).";
                     continue;
                 }
-                using var ms = new MemoryStream();
-                await file.OpenReadStream(maxBytes).CopyToAsync(ms);
+
+                if (isZip)
+                {
+                    using var ms = new MemoryStream();
+                    await file.OpenReadStream(fileMaxBytes).CopyToAsync(ms);
+                    var (result, zipErr) = await DocumentService.UploadZipAsync(ms.ToArray());
+                    if (zipErr is not null)
+                    {
+                        _error = $"{file.Name}: {zipErr}";
+                    }
+                    else
+                    {
+                        var summary = $"{file.Name}: {result!.Imported.Count} dokument importerade";
+                        if (result.Skipped.Count > 0)
+                        {
+                            var reasons = string.Join(", ", result.Skipped.Select(s => $"{s.FileName}: {s.Reason}"));
+                            summary += $", {result.Skipped.Count} hoppade över ({reasons})";
+                        }
+                        Snackbar.Add(summary, result.Skipped.Count > 0 ? Severity.Warning : Severity.Success);
+                    }
+                    continue;
+                }
+
                 var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
-                var (_, err) = await DocumentService.UploadAsync(file.Name, contentType, ms.ToArray());
+                await using var stream = file.OpenReadStream(fileMaxBytes);
+                var (_, err) = await DocumentService.UploadAsync(file.Name, contentType, stream);
                 if (err is not null)
                     _error = err;
                 else
@@ -233,29 +241,45 @@ else
         _                 => ""
     };
 
-    private void OpenClassifyDialog(DocumentMeta doc) => _classifyDoc = doc;
-
-    private async Task OnDocumentClassified()
+    private async Task OpenClassifyDialogAsync(DocumentMeta doc)
     {
-        _classifyDoc = null;
-        await LoadPageAsync();
-        Snackbar.Add("Dokument klassificerat.", Severity.Success);
+        var parameters = new DialogParameters<ClassifyDocumentDialog>
+        {
+            { x => x.Doc, doc },
+            { x => x.DocumentProvider, DocumentProvider }
+        };
+        var dialogRef = await DialogService.ShowAsync<ClassifyDocumentDialog>(
+            "Klassificera dokument", parameters, DialogDefaults.NoDismiss);
+        var result = await dialogRef.Result;
+        if (result is { Canceled: false })
+        {
+            await LoadPageAsync();
+            Snackbar.Add("Dokument klassificerat.", Severity.Success);
+        }
     }
 
-    private void OpenPreviewDialog(DocumentMeta doc) => _previewDoc = doc;
-
-    private async Task OnDocumentSaved()
+    private async Task OpenPreviewDialogAsync(DocumentMeta doc)
     {
-        _previewDoc = null;
-        await LoadPageAsync();
-        Snackbar.Add("Sparat.", Severity.Success);
-    }
-
-    private void OpenClassifyFromPreview()
-    {
-        var doc = _previewDoc;
-        _previewDoc = null;
-        _classifyDoc = doc;
+        var parameters = new DialogParameters<PreviewDocumentDialog>
+        {
+            { x => x.Doc, doc },
+            { x => x.DocumentProvider, DocumentProvider }
+        };
+        var dialogRef = await DialogService.ShowAsync<PreviewDocumentDialog>(
+            "Förhandsgranskning", parameters, DialogDefaults.NoDismiss);
+        var result = await dialogRef.Result;
+        if (result is { Canceled: false } && result.Data is PreviewDocumentDialog.PreviewOutcome outcome)
+        {
+            if (outcome == PreviewDocumentDialog.PreviewOutcome.Classify)
+            {
+                await OpenClassifyDialogAsync(doc);
+            }
+            else
+            {
+                await LoadPageAsync();
+                Snackbar.Add("Sparat.", Severity.Success);
+            }
+        }
     }
 
     private async Task DeleteDocAsync(int docId)

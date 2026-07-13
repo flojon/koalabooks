@@ -18,6 +18,7 @@ public class TestFixture : IDisposable
     public AppDbContext Db { get; }
     public JournalEntryService JournalEntryService { get; }
     public FiscalYearService FiscalYearService { get; }
+    public VoucherGapService VoucherGapService { get; }
     public YearEndClosingService YearEndClosingService { get; }
     public SieExportService SieExportService { get; }
     public SieImportService SieImportService { get; }
@@ -48,7 +49,8 @@ public class TestFixture : IDisposable
 
         JournalEntryService = new JournalEntryService(Db);
         FiscalYearService = new FiscalYearService(Db, _currentUser);
-        YearEndClosingService = new YearEndClosingService(Db, FiscalYearService);
+        VoucherGapService = new VoucherGapService(Db);
+        YearEndClosingService = new YearEndClosingService(Db, FiscalYearService, VoucherGapService);
         SieExportService = new SieExportService(Db);
         SieImportService = new SieImportService(Db, _currentUser);
     }

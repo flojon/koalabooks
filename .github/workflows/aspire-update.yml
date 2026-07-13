@@ -1,0 +1,48 @@
+name: Aspire update
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Weekly, Monday - after Dependabot's Monday run
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.x'
+
+      - name: Install Aspire CLI
+        run: |
+          curl -sSL https://aspire.dev/install.sh | bash
+          echo "$HOME/.aspire/bin" >> "$GITHUB_PATH"
+
+      - name: Run aspire update
+        run: aspire update --project ./src/KoalaBooks.AppHost --yes --non-interactive
+
+      - name: Check for changes
+        id: changes
+        run: echo "changed=$(git status --porcelain | wc -l)" >> "$GITHUB_OUTPUT"
+
+      - name: Open pull request
+        if: steps.changes.outputs.changed != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          branch="aspire-update-$(date +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -am "Update Aspire AppHost SDK and hosting packages"
+          git push origin "$branch"
+          gh pr create --title "Update Aspire AppHost SDK and hosting packages" \
+            --body "Automated update via \`aspire update --yes --non-interactive\`, which keeps the AppHost SDK version and Aspire.Hosting.* package versions in lockstep." \
+            --base main

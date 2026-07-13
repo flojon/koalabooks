@@ -140,22 +140,25 @@ public class SieImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ImportFiscalYear_OverwriteDeletesExistingEntries()
+    public async Task ImportFiscalYear_OverwriteWithPostedEntries_ThrowsAndLeavesEntriesIntact()
     {
-        // First import
+        // First import - produces posted vouchers
         using var stream1 = MakeSieStream(SampleSie4);
         var doc1 = _service.Parse(stream1);
         await _service.ImportFiscalYearAsync(doc1, 0, overwrite: false);
 
         Assert.Equal(2, await _f.Db.JournalEntries.CountAsync());
 
-        // Second import with overwrite
+        // Second import with overwrite must be rejected: the fiscal year contains posted entries
         using var stream2 = MakeSieStream(SampleSie4);
         var doc2 = _service.Parse(stream2);
-        var result = await _service.ImportFiscalYearAsync(doc2, 0, overwrite: true);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.ImportFiscalYearAsync(doc2, 0, overwrite: true));
+        Assert.Contains("posted", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // Must be the purpose-built overwrite-rejection message, not the generic DB guard's message
+        Assert.Contains("overwrite", ex.Message, StringComparison.OrdinalIgnoreCase);
 
-        Assert.Equal(2, result.EntriesImported);
-        // Should still be exactly 2 entries (old deleted, new imported)
+        // Original entries must remain completely unchanged
         Assert.Equal(2, await _f.Db.JournalEntries.CountAsync());
         // Still exactly 1 fiscal year
         Assert.Single(await _f.Db.FiscalYears.ToListAsync());
@@ -319,7 +322,7 @@ public class SieImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ImportFiscalYear_OverwriteClearsBalances()
+    public async Task ImportFiscalYear_OverwriteWithPostedEntries_LeavesBalancesIntact()
     {
         using var stream1 = MakeSieStream(SampleSie4WithBalances);
         var doc1 = _service.Parse(stream1);
@@ -329,15 +332,18 @@ public class SieImportServiceTests : IDisposable
         var kassa = await _f.Db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
         Assert.Equal(50000m, kassa.IncomingBalance);
 
-        // Overwrite with basic sample (no balances)
+        // Overwrite with basic sample (no balances) must be rejected: fiscal year has posted vouchers
         using var stream2 = MakeSieStream(SampleSie4);
         var doc2 = _service.Parse(stream2);
-        await _service.ImportFiscalYearAsync(doc2, 0, overwrite: true);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.ImportFiscalYearAsync(doc2, 0, overwrite: true));
+        Assert.Contains("posted", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("overwrite", ex.Message, StringComparison.OrdinalIgnoreCase);
 
-        // Balances should be 0 (reset)
+        // Balances must remain unchanged
         kassa = await _f.Db.Accounts.SingleAsync(a => a.AccountNumber == "1910");
-        Assert.Equal(0m, kassa.IncomingBalance);
-        Assert.Equal(0m, kassa.OutgoingBalance);
+        Assert.Equal(50000m, kassa.IncomingBalance);
+        Assert.Equal(75000m, kassa.OutgoingBalance);
     }
 
     [Fact]
@@ -358,22 +364,50 @@ public class SieImportServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ImportAll_OverwritesExistingYears()
+    public async Task ImportAll_OverwriteWithPostedEntries_ThrowsAndLeavesFiscalYearsIntact()
     {
-        // First import
+        // First import - the 2026 fiscal year ends up with posted vouchers
         using var stream1 = MakeSieStream(SampleSie4WithBalances);
         var doc1 = _service.Parse(stream1);
         await _service.ImportAllAsync(doc1, overwrite: false);
 
         Assert.Equal(2, await _f.Db.FiscalYears.CountAsync());
+        var entriesBefore = await _f.Db.JournalEntries.CountAsync();
+        Assert.True(entriesBefore > 0);
 
-        // Second import with overwrite
+        // Second import with overwrite must be rejected once it reaches the fiscal year with posted entries
         using var stream2 = MakeSieStream(SampleSie4WithBalances);
         var doc2 = _service.Parse(stream2);
-        var result = await _service.ImportAllAsync(doc2, overwrite: true);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _service.ImportAllAsync(doc2, overwrite: true));
+        Assert.Contains("posted", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("overwrite", ex.Message, StringComparison.OrdinalIgnoreCase);
 
-        // Still 2 FYs, not duplicated
+        // Fiscal years and entries must remain completely unchanged
         Assert.Equal(2, await _f.Db.FiscalYears.CountAsync());
-        Assert.Equal(2, result.FiscalYears.Count);
+        Assert.Equal(entriesBefore, await _f.Db.JournalEntries.CountAsync());
+    }
+
+    [Fact]
+    public async Task ImportFiscalYear_OverwriteWithNoPostedEntries_Succeeds()
+    {
+        // Pre-create the fiscal year matching the SIE file's dates, with no journal entries at all
+        var fy = new FiscalYear
+        {
+            Name = "2026",
+            StartDate = new DateOnly(2026, 1, 1),
+            EndDate = new DateOnly(2026, 12, 31),
+            OrganisationId = _f.OrganisationId
+        };
+        _f.Db.FiscalYears.Add(fy);
+        await _f.Db.SaveChangesAsync();
+
+        using var stream = MakeSieStream(SampleSie4);
+        var doc = _service.Parse(stream);
+        var result = await _service.ImportFiscalYearAsync(doc, 0, overwrite: true);
+
+        Assert.Equal(2, result.EntriesImported);
+        Assert.Equal(2, await _f.Db.JournalEntries.CountAsync());
+        Assert.Single(await _f.Db.FiscalYears.ToListAsync());
     }
 }

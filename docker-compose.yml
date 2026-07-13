@@ -21,6 +21,8 @@ services:
       - ConnectionStrings__koalabooks=Host=postgres;Port=5432;Database=koalabooks;Username=koalabooks
       - KOALABOOKS_DB_PASSWORD_FILE=/run/secrets/postgres_password
       - ASPNETCORE_ENVIRONMENT=Production
+      # Stopgap admin bootstrap until there's a real role-management UI.
+      - AdminSeed__Email=jonas@floden.co
       - ASPNETCORE_URLS=http://+:8080
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://aspire-dashboard:18889
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc

@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -14,11 +15,34 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         _currentUser = currentUser;
     }
 
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        GuardAgainstImmutableJournalEntryDeletion();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        GuardAgainstImmutableJournalEntryDeletion();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void GuardAgainstImmutableJournalEntryDeletion()
+    {
+        var deletingImmutableEntries = ChangeTracker.Entries<JournalEntry>()
+            .Any(e => e.State == EntityState.Deleted && e.Entity.Status != JournalEntryStatus.Draft);
+
+        if (deletingImmutableEntries)
+            throw new InvalidOperationException(
+                "Cannot delete a posted, reversed, or correction journal entry. Create a reversal instead.");
+    }
+
     public DbSet<Organisation> Organisations => Set<Organisation>();
     public DbSet<Account> Accounts => Set<Account>();
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalEntryLine> JournalEntryLines => Set<JournalEntryLine>();
+    public DbSet<VoucherGapExplanation> VoucherGapExplanations => Set<VoucherGapExplanation>();
     public DbSet<BankTransaction> BankTransactions => Set<BankTransaction>();
     public DbSet<SupplierInvoice> SupplierInvoices => Set<SupplierInvoice>();
     public DbSet<Customer> Customers => Set<Customer>();
@@ -94,6 +118,13 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(j => new { j.FiscalYearId, j.EntryNumber }).IsUnique();
             entity.Property(j => j.Description).HasMaxLength(500);
             entity.Property(j => j.IsClosingEntry).HasDefaultValue(false);
+            entity.Property(j => j.Status).HasDefaultValue(JournalEntryStatus.Draft);
+            entity.HasIndex(j => j.SourceJournalEntryId);
+            entity.HasOne<JournalEntry>()
+                  .WithMany()
+                  .HasForeignKey(j => j.SourceJournalEntryId)
+                  .OnDelete(DeleteBehavior.Restrict)
+                  .IsRequired(false);
             entity.HasOne(j => j.FiscalYear)
                   .WithMany(f => f.JournalEntries)
                   .HasForeignKey(j => j.FiscalYearId)
@@ -111,6 +142,18 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
             entity.HasOne(l => l.Account)
                   .WithMany()
                   .HasForeignKey(l => l.AccountId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VoucherGapExplanation>(entity =>
+        {
+            entity.HasQueryFilter(v => _currentUser.OrganisationId != null && v.FiscalYear.OrganisationId == _currentUser.OrganisationId);
+            entity.HasIndex(v => new { v.FiscalYearId, v.MissingEntryNumber }).IsUnique();
+            entity.Property(v => v.Explanation).HasMaxLength(1000);
+            entity.Property(v => v.ExplainedBy).HasMaxLength(200);
+            entity.HasOne(v => v.FiscalYear)
+                  .WithMany()
+                  .HasForeignKey(v => v.FiscalYearId)
                   .OnDelete(DeleteBehavior.Restrict);
         });
 

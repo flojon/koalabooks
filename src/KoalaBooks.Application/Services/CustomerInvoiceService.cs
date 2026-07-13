@@ -134,6 +134,7 @@ public class CustomerInvoiceService
             Description = $"Kundfaktura {invoice.CustomerName} #{invoice.InvoiceNumber}",
             FiscalYearId = invoice.FiscalYearId,
             IsPosted = true,
+            Status = JournalEntryStatus.Posted,
             CreatedAt = DateTime.UtcNow,
             Lines = journalLines
         };
@@ -207,6 +208,7 @@ public class CustomerInvoiceService
             Description = $"Inbetalning {invoice.CustomerName} #{invoice.InvoiceNumber}",
             FiscalYearId = invoice.FiscalYearId,
             IsPosted = true,
+            Status = JournalEntryStatus.Posted,
             CreatedAt = DateTime.UtcNow,
             Lines =
             [

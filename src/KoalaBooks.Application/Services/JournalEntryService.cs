@@ -7,6 +7,11 @@ namespace KoalaBooks.Application.Services;
 
 public class JournalEntryService : IJournalEntryService
 {
+    // Single source of truth for the reversal entry's description text, so the live
+    // dialog preview, the persisted entry, and tests all stay in sync on wording/format.
+    public static string BuildReversalDescription(int originalEntryNumber, string reason) =>
+        $"Återföring av #{originalEntryNumber}: {reason}";
+
     private readonly AppDbContext _db;
 
     public JournalEntryService(AppDbContext db)
@@ -134,6 +139,7 @@ public class JournalEntryService : IJournalEntryService
             return "Cannot post entries in a closed fiscal year.";
 
         entry.IsPosted = true;
+        entry.Status = JournalEntryStatus.Posted;
         await _db.SaveChangesAsync();
 
         await PropagateAffectedAccountsAsync(
@@ -161,6 +167,34 @@ public class JournalEntryService : IJournalEntryService
 
     public async Task<(JournalEntry? Entry, string? Error)> CreateReversalAsync(int entryId, string reason)
     {
+        var (original, error) = await LoadAndValidateForReversalAsync(entryId);
+        if (error is not null)
+            return (null, error);
+
+        var reversal = await BuildReversalAsync(original!, reason);
+
+        original!.Status = JournalEntryStatus.Reversed;
+
+        _db.JournalEntries.Add(reversal);
+        await _db.SaveChangesAsync();
+
+        await PropagateAffectedAccountsAsync(
+            reversal.FiscalYearId, reversal.Lines.Select(l => l.AccountId));
+        return (reversal, null);
+    }
+
+    public async Task<(JournalEntry? Preview, string? Error)> PreviewReversalAsync(int entryId, string reason)
+    {
+        var (original, error) = await LoadAndValidateForReversalAsync(entryId);
+        if (error is not null)
+            return (null, error);
+
+        var preview = await BuildReversalAsync(original!, reason);
+        return (preview, null);
+    }
+
+    private async Task<(JournalEntry? Original, string? Error)> LoadAndValidateForReversalAsync(int entryId)
+    {
         var original = await _db.JournalEntries
             .Include(j => j.Lines)
             .Include(j => j.FiscalYear)
@@ -170,9 +204,20 @@ public class JournalEntryService : IJournalEntryService
             return (null, "Journal entry not found.");
         if (!original.IsPosted)
             return (null, "Can only reverse posted entries.");
+        if (original.Status == JournalEntryStatus.Reversed)
+            return (null, "Journal entry has already been reversed.");
         if (original.FiscalYear.IsClosed)
             return (null, "Cannot create reversals in a closed fiscal year.");
 
+        return (original, null);
+    }
+
+    // Pure construction of the mirrored reversal entry. Must not mutate `original`
+    // (in particular, never set original.Status here) — PreviewReversalAsync calls
+    // this without ever calling SaveChangesAsync, and mutating a tracked entity would
+    // dirty the scoped DbContext even without an explicit save.
+    private async Task<JournalEntry> BuildReversalAsync(JournalEntry original, string reason)
+    {
         var maxNumber = await _db.JournalEntries
             .Where(j => j.FiscalYearId == original.FiscalYearId)
             .MaxAsync(j => (int?)j.EntryNumber) ?? 0;
@@ -182,14 +227,16 @@ public class JournalEntryService : IJournalEntryService
             ? today
             : original.FiscalYear.EndDate;
 
-        var reversal = new JournalEntry
+        return new JournalEntry
         {
             EntryNumber = maxNumber + 1,
             FiscalYearId = original.FiscalYearId,
             Date = reversalDate,
-            Description = $"Reversal of #{original.EntryNumber}: {reason}",
+            Description = BuildReversalDescription(original.EntryNumber, reason),
             CreatedAt = DateTime.UtcNow,
             IsPosted = true,
+            Status = JournalEntryStatus.Correction,
+            SourceJournalEntryId = original.Id,
             Lines = original.Lines.Select(l => new JournalEntryLine
             {
                 AccountId = l.AccountId,
@@ -197,13 +244,6 @@ public class JournalEntryService : IJournalEntryService
                 CreditAmount = l.DebitAmount
             }).ToList()
         };
-
-        _db.JournalEntries.Add(reversal);
-        await _db.SaveChangesAsync();
-
-        await PropagateAffectedAccountsAsync(
-            reversal.FiscalYearId, reversal.Lines.Select(l => l.AccountId));
-        return (reversal, null);
     }
 
     public async Task<List<TrialBalanceRow>> GetTrialBalanceAsync(int fiscalYearId, bool excludeClosingEntries = true)

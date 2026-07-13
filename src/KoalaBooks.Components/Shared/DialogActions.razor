@@ -1,0 +1,9 @@
+@* src/KoalaBooks.Components/Shared/DialogActions.razor *@
+
+<div style="margin-top:auto; display:flex; justify-content:flex-end; gap:0.5rem; padding-top:0.75rem; border-top:1px solid #f1f5f9;">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
