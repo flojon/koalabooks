@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class JournalEntryService
+public class JournalEntryService : IJournalEntryService
 {
     // Single source of truth for the reversal entry's description text, so the live
     // dialog preview, the persisted entry, and tests all stay in sync on wording/format.

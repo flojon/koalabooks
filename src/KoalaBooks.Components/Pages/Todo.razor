@@ -124,10 +124,10 @@ else
 }
 
 @code {
-    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private BankImportService BankImportService { get; set; } = default!;
     [Inject] private SupplierInvoiceService SupplierInvoiceService { get; set; } = default!;
-    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 

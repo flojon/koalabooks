@@ -12,9 +12,9 @@ namespace KoalaBooks.Web.Controllers.Api;
 public class AccountsController : ControllerBase
 {
     private readonly IAccountService _accountService;
-    private readonly FiscalYearService _fiscalYearService;
+    private readonly IFiscalYearService _fiscalYearService;
 
-    public AccountsController(IAccountService accountService, FiscalYearService fiscalYearService)
+    public AccountsController(IAccountService accountService, IFiscalYearService fiscalYearService)
     {
         _accountService = accountService;
         _fiscalYearService = fiscalYearService;

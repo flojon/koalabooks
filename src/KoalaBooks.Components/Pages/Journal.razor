@@ -307,8 +307,8 @@ else
 @code {
     [Parameter] public int? EntryId { get; set; }
 
-    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
-    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private SupplierInvoiceService InvoiceService { get; set; } = default!;
     [Inject] private DocumentService DocumentService { get; set; } = default!;

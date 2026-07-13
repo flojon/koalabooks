@@ -1,4 +1,8 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.3.2">
+<!-- Keep this version in sync with the Aspire.Hosting.* PackageReference versions below;
+     a mismatch makes DCP hang for 20s per resource and `aspire run` fail to start.
+     Bumped together by the aspire-update.yml workflow via `aspire update` - Dependabot
+     is configured to leave Aspire.Hosting.* alone so it can't reintroduce the drift. -->
+<Project Sdk="Aspire.AppHost.Sdk/13.4.6">
 
   <ItemGroup>
     <ProjectReference Include="..\KoalaBooks.Web\KoalaBooks.Web.csproj" />

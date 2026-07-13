@@ -123,7 +123,7 @@ else if (_state == PageState.Result)
 
 @code {
     [Inject] private AccountMappingService AccountMappingService { get; set; } = default!;
-    [Inject] private FiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private enum PageState { Picker, Mapping, Result }
