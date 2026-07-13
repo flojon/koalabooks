@@ -44,5 +44,5 @@ jobs:
           git commit -am "Update Aspire AppHost SDK and hosting packages"
           git push origin "$branch"
           gh pr create --title "Update Aspire AppHost SDK and hosting packages" \
-            --body "Automated update via \`aspire update --yes --non-interactive\`, which keeps the AppHost SDK version and Aspire.Hosting.* package versions in lockstep (see #222, #225)." \
+            --body "Automated update via \`aspire update --yes --non-interactive\`, which keeps the AppHost SDK version and Aspire.Hosting.* package versions in lockstep." \
             --base main
