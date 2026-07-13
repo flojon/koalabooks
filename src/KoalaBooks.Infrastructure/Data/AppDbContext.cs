@@ -277,6 +277,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
         modelBuilder.Entity<DocumentData>(entity =>
         {
             entity.HasKey(d => d.DocumentId);
+            entity.Property(d => d.Oid).HasColumnType("oid");
             entity.HasOne(d => d.Document)
                   .WithOne()
                   .HasForeignKey<DocumentData>(d => d.DocumentId)
