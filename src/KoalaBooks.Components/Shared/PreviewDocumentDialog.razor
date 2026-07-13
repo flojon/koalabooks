@@ -72,8 +72,8 @@
                 }
 
                 <DialogActions>
-                    <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Avbryt</button>
-                    <button class="btn btn-secondary" @onclick="OpenClassify">Bokför</button>
+                    <button class="btn btn-secondary" @onclick="MudDialog.Cancel" disabled="@_saving">Avbryt</button>
+                    <button class="btn btn-secondary" @onclick="OpenClassify" disabled="@_saving">Bokför</button>
                     <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                         @(_saving ? "Sparar..." : "Spara")
                     </button>
@@ -110,10 +110,8 @@
         }
 
         // Pre-fill date: prefer persisted DocumentDate, fall back to extracted InvoiceDate, then today
-        if (Doc.DocumentDate.HasValue)
-            _documentDate = Doc.DocumentDate.Value.ToDateTime(TimeOnly.MinValue);
-        else if (extracted?.InvoiceDate.HasValue == true)
-            _documentDate = extracted.InvoiceDate!.Value.ToDateTime(TimeOnly.MinValue);
+        var prefill = DocumentMeta.ResolvePrefillDate(Doc.DocumentDate, extracted?.InvoiceDate);
+        if (prefill.HasValue) _documentDate = prefill.Value;
 
         if (extracted is not null &&
             (extracted.Supplier is not null || extracted.Amount.HasValue || extracted.InvoiceNumber is not null))
@@ -126,14 +124,32 @@
         _saving = true;
         try
         {
-            var type = string.IsNullOrEmpty(_type) ? null : _type;
-            var date = DateOnly.FromDateTime(_documentDate);
-            var err = await DocumentService.UpdateMetadataAsync(Doc.Id, type, date);
-            if (err is not null) { _error = err; return; }
+            if (!await PersistAsync()) return;
             MudDialog.Close(DialogResult.Ok(PreviewOutcome.Saved));
         }
         finally { _saving = false; }
     }
 
-    private void OpenClassify() => MudDialog.Close(DialogResult.Ok(PreviewOutcome.Classify));
+    private async Task OpenClassify()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            if (!await PersistAsync()) return;
+            MudDialog.Close(DialogResult.Ok(PreviewOutcome.Classify));
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task<bool> PersistAsync()
+    {
+        var type = string.IsNullOrEmpty(_type) ? null : _type;
+        var date = DateOnly.FromDateTime(_documentDate);
+        var err = await DocumentService.UpdateMetadataAsync(Doc.Id, type, date);
+        if (err is not null) { _error = err; return false; }
+        Doc.ClassifiedType = type;
+        Doc.DocumentDate = date;
+        return true;
+    }
 }

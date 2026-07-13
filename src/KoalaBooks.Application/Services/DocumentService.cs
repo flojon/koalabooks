@@ -89,7 +89,7 @@ public class DocumentService(
         return (doc, null);
     }
 
-    public async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
+    public virtual async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
     {
         var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
         if (doc is null) return "Dokumentet hittades inte.";
@@ -340,6 +340,14 @@ public class DocumentMeta
         < 1024 * 1024 => $"{FileSize / 1024.0:N1} KB",
         _ => $"{FileSize / (1024.0 * 1024):N1} MB"
     };
+
+    /// <summary>
+    /// Resolves the date to pre-fill in a document's date field: the persisted
+    /// (possibly user-edited) document date takes precedence over the AI-extracted
+    /// invoice date, since it reflects the value the user last confirmed.
+    /// </summary>
+    public static DateTime? ResolvePrefillDate(DateOnly? documentDate, DateOnly? extractedInvoiceDate) =>
+        (documentDate ?? extractedInvoiceDate)?.ToDateTime(TimeOnly.MinValue);
 }
 
 public record ZipImportResult(IReadOnlyList<Document> Imported, IReadOnlyList<(string FileName, string Reason)> Skipped);
