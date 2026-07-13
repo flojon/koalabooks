@@ -110,10 +110,8 @@
         }
 
         // Pre-fill date: prefer persisted DocumentDate, fall back to extracted InvoiceDate, then today
-        if (Doc.DocumentDate.HasValue)
-            _documentDate = Doc.DocumentDate.Value.ToDateTime(TimeOnly.MinValue);
-        else if (extracted?.InvoiceDate.HasValue == true)
-            _documentDate = extracted.InvoiceDate!.Value.ToDateTime(TimeOnly.MinValue);
+        var prefill = DocumentMeta.ResolvePrefillDate(Doc.DocumentDate, extracted?.InvoiceDate);
+        if (prefill.HasValue) _documentDate = prefill.Value;
 
         if (extracted is not null &&
             (extracted.Supplier is not null || extracted.Amount.HasValue || extracted.InvoiceNumber is not null))

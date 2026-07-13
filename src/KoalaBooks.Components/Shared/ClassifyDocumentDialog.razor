@@ -244,23 +244,26 @@
         _type = Doc.ClassifiedType ?? Doc.SuggestedType ?? "";
         _fiscalYear = await FiscalYearService.GetActiveAsync();
 
+        ExtractionResult? ex = null;
         if (Doc.ExtractedDataJson is not null)
         {
-            try
-            {
-                var ex = JsonSerializer.Deserialize<ExtractionResult>(Doc.ExtractedDataJson);
-                if (ex is not null)
-                {
-                    _supplier = ex.Supplier ?? "";
-                    _invoiceNumber = ex.InvoiceNumber ?? "";
-                    _amountExcl = ex.Amount ?? 0;
-                    _vatAmount = ex.VatAmount ?? 0;
-                    if (ex.InvoiceDate.HasValue) _date = ex.InvoiceDate.Value.ToDateTime(TimeOnly.MinValue);
-                    if (ex.DueDate.HasValue) _dueDate = ex.DueDate.Value.ToDateTime(TimeOnly.MinValue);
-                }
-            }
+            try { ex = JsonSerializer.Deserialize<ExtractionResult>(Doc.ExtractedDataJson); }
             catch { }
         }
+
+        if (ex is not null)
+        {
+            _supplier = ex.Supplier ?? "";
+            _invoiceNumber = ex.InvoiceNumber ?? "";
+            _amountExcl = ex.Amount ?? 0;
+            _vatAmount = ex.VatAmount ?? 0;
+            if (ex.DueDate.HasValue) _dueDate = ex.DueDate.Value.ToDateTime(TimeOnly.MinValue);
+        }
+
+        // Prefer the persisted (possibly user-edited) Bokföringsdatum from the inbox
+        // preview over the raw AI-extracted invoice date.
+        var prefill = DocumentMeta.ResolvePrefillDate(Doc.DocumentDate, ex?.InvoiceDate);
+        if (prefill.HasValue) _date = prefill.Value;
 
         if (_fiscalYear is not null)
         {
