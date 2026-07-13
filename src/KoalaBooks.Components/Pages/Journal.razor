@@ -134,7 +134,7 @@ else
                     else
                     {
                         <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
-                            <MudMenuItem OnClick="() => StartReversal(entry)">Återför</MudMenuItem>
+                            <MudMenuItem OnClick="() => StartReversalAsync(entry)">Återför</MudMenuItem>
                             @if (canConvert)
                             {
                                 <MudMenuItem OnClick="() => StartConvert(entry)">Skapa leverantörsfaktura</MudMenuItem>
@@ -302,13 +302,6 @@ else
     </MudAlert>
 }
 
-@if (_reversingEntry is not null)
-{
-    <ReversalPreviewDialog Entry="_reversingEntry"
-                           Accounts="_accounts"
-                           OnReversed="OnReversedAsync"
-                           OnClose="() => _reversingEntry = null" />
-}
 }
 
 @code {
@@ -321,6 +314,7 @@ else
     [Inject] private DocumentService DocumentService { get; set; } = default!;
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
     private List<FiscalYear> _allFiscalYears = [];
@@ -341,7 +335,6 @@ else
     private string _formDescription = "";
     private List<JournalEntryForm.LineModel> _formLines = [];
     private bool _isBalanced;
-    private JournalEntry? _reversingEntry;
     private HashSet<int> _linkedJournalEntryIds = [];
 
     // Attachment panel
@@ -454,7 +447,6 @@ else
         _attachmentEntryId = null;
         _attachmentMeta = [];
         _convertingEntryId = null;
-        _reversingEntry = null;
         _isReloading = true;
         await LoadForSelectedYearAsync();
         _isReloading = false;
@@ -466,13 +458,21 @@ else
         _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
     }
 
-    private void StartReversal(JournalEntry entry) => _reversingEntry = entry;
-
-    private async Task OnReversedAsync(JournalEntry reversal)
+    private async Task StartReversalAsync(JournalEntry entry)
     {
-        _reversingEntry = null;
-        Snackbar.Add($"Återföringsverifikation #{reversal.EntryNumber} skapad.", Severity.Success);
-        await ReloadEntriesAsync();
+        var parameters = new DialogParameters<ReversalPreviewDialog>
+        {
+            { x => x.Entry, entry },
+            { x => x.Accounts, _accounts }
+        };
+        var dialogRef = await DialogService.ShowAsync<ReversalPreviewDialog>(
+            $"Återför verifikation #{entry.EntryNumber}", parameters, DialogDefaults.NoDismiss);
+        var result = await dialogRef.Result;
+        if (result is { Canceled: false } && result.Data is JournalEntry reversal)
+        {
+            Snackbar.Add($"Återföringsverifikation #{reversal.EntryNumber} skapad.", Severity.Success);
+            await ReloadEntriesAsync();
+        }
     }
 
     private void StartConvert(JournalEntry entry)
