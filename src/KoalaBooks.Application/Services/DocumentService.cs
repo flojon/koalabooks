@@ -89,7 +89,7 @@ public class DocumentService(
         return (doc, null);
     }
 
-    public async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
+    public virtual async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
     {
         var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
         if (doc is null) return "Dokumentet hittades inte.";

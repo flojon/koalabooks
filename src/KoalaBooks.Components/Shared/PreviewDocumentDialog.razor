@@ -73,7 +73,7 @@
 
                 <DialogActions>
                     <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Avbryt</button>
-                    <button class="btn btn-secondary" @onclick="OpenClassify">Bokför</button>
+                    <button class="btn btn-secondary" @onclick="OpenClassify" disabled="@_saving">Bokför</button>
                     <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                         @(_saving ? "Sparar..." : "Spara")
                     </button>
@@ -124,14 +124,32 @@
         _saving = true;
         try
         {
-            var type = string.IsNullOrEmpty(_type) ? null : _type;
-            var date = DateOnly.FromDateTime(_documentDate);
-            var err = await DocumentService.UpdateMetadataAsync(Doc.Id, type, date);
-            if (err is not null) { _error = err; return; }
+            if (!await PersistAsync()) return;
             MudDialog.Close(DialogResult.Ok(PreviewOutcome.Saved));
         }
         finally { _saving = false; }
     }
 
-    private void OpenClassify() => MudDialog.Close(DialogResult.Ok(PreviewOutcome.Classify));
+    private async Task OpenClassify()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            if (!await PersistAsync()) return;
+            MudDialog.Close(DialogResult.Ok(PreviewOutcome.Classify));
+        }
+        finally { _saving = false; }
+    }
+
+    private async Task<bool> PersistAsync()
+    {
+        var type = string.IsNullOrEmpty(_type) ? null : _type;
+        var date = DateOnly.FromDateTime(_documentDate);
+        var err = await DocumentService.UpdateMetadataAsync(Doc.Id, type, date);
+        if (err is not null) { _error = err; return false; }
+        Doc.ClassifiedType = type;
+        Doc.DocumentDate = date;
+        return true;
+    }
 }
