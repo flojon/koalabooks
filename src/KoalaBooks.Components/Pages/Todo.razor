@@ -128,7 +128,7 @@ else
     [Inject] private BankImportService BankImportService { get; set; } = default!;
     [Inject] private SupplierInvoiceService SupplierInvoiceService { get; set; } = default!;
     [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
-    [Inject] private AccountService AccountService { get; set; } = default!;
+    [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _fiscalYear;
