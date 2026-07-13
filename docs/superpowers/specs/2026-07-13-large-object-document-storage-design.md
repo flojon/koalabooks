@@ -163,20 +163,24 @@ One EF Core migration, following the existing raw-SQL-data-migration precedent (
 protected override void Up(MigrationBuilder migrationBuilder)
 {
     migrationBuilder.AddColumn<uint>(name: "Oid", table: "DocumentData", type: "oid", nullable: true);
-    migrationBuilder.Sql("""UPDATE "DocumentData" SET "Oid" = lo_from_bytea(0, "Data")""");
-    migrationBuilder.AlterColumn<uint>(name: "Oid", table: "DocumentData", type: "oid", nullable: false);
+    migrationBuilder.Sql(@"UPDATE ""DocumentData"" SET ""Oid"" = lo_from_bytea(0, ""Data"");");
+    migrationBuilder.AlterColumn<uint>(name: "Oid", table: "DocumentData", type: "oid", nullable: false,
+        oldClrType: typeof(uint), oldType: "oid", oldNullable: true);
     migrationBuilder.DropColumn(name: "Data", table: "DocumentData");
 }
 
 protected override void Down(MigrationBuilder migrationBuilder)
 {
     migrationBuilder.AddColumn<byte[]>(name: "Data", table: "DocumentData", type: "bytea", nullable: true);
-    migrationBuilder.Sql("""UPDATE "DocumentData" SET "Data" = lo_get("Oid")""");
-    migrationBuilder.AlterColumn<byte[]>(name: "Data", table: "DocumentData", type: "bytea", nullable: false);
-    migrationBuilder.Sql("""SELECT lo_unlink("Oid") FROM "DocumentData\"""");
+    migrationBuilder.Sql(@"UPDATE ""DocumentData"" SET ""Data"" = lo_get(""Oid"");");
+    migrationBuilder.AlterColumn<byte[]>(name: "Data", table: "DocumentData", type: "bytea", nullable: false,
+        oldClrType: typeof(byte[]), oldType: "bytea", oldNullable: true);
+    migrationBuilder.Sql(@"SELECT lo_unlink(""Oid"") FROM ""DocumentData"";");
     migrationBuilder.DropColumn(name: "Oid", table: "DocumentData");
 }
 ```
+
+(Verified: this exact Up/Down SQL was run against a real `postgres:17-alpine` container with sample rows — including a normal value, a single zero byte, and an empty `bytea` — and round-tripped correctly in both directions, including `lo_unlink` cleanup on rollback.)
 
 `lo_from_bytea(loid, data)` and `lo_get(loid)` are built-in Postgres server-side functions (since 9.4) — no `lo` contrib extension needed.
 
