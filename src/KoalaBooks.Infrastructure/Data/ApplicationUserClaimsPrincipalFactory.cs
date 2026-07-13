@@ -4,12 +4,13 @@ using System.Security.Claims;
 
 namespace KoalaBooks.Infrastructure.Data;
 
-public class ApplicationUserClaimsPrincipalFactory : UserClaimsPrincipalFactory<ApplicationUser>
+public class ApplicationUserClaimsPrincipalFactory : UserClaimsPrincipalFactory<ApplicationUser, IdentityRole>
 {
     public ApplicationUserClaimsPrincipalFactory(
         UserManager<ApplicationUser> userManager,
+        RoleManager<IdentityRole> roleManager,
         IOptions<IdentityOptions> optionsAccessor)
-        : base(userManager, optionsAccessor) { }
+        : base(userManager, roleManager, optionsAccessor) { }
 
     protected override async Task<ClaimsIdentity> GenerateClaimsAsync(ApplicationUser user)
     {

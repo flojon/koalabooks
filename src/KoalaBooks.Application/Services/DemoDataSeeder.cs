@@ -14,10 +14,14 @@ public static class DemoDataSeeder
     public const string DemoUserEmail = "admin@koalabooks.local";
     public const string DemoUserPassword = "Admin123!";
 
+    // Lets previewers verify admin-gated areas (e.g. /hangfire) reject a non-admin too.
+    public const string DemoNonAdminUserEmail = "member@koalabooks.local";
+    public const string DemoNonAdminUserPassword = "Member123!";
+
     public static async Task SeedAsync(IServiceProvider services)
     {
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        if (await userManager.FindByEmailAsync(DemoUserEmail) is not null)
+        if (await userManager.FindByEmailAsync(DemoNonAdminUserEmail) is not null)
             return;
 
         var options = services.GetRequiredService<DbContextOptions<AppDbContext>>();
@@ -72,19 +76,36 @@ public static class DemoDataSeeder
             await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
         }
 
-        // Created last so its existence is a true "fully seeded" marker for the idempotency guard above.
-        var demoUser = new ApplicationUser
+        // Existence-checked so a retry after a partial failure can't fail as a duplicate.
+        if (await userManager.FindByEmailAsync(DemoUserEmail) is null)
         {
-            UserName = DemoUserEmail,
-            Email = DemoUserEmail,
+            var demoUser = new ApplicationUser
+            {
+                UserName = DemoUserEmail,
+                Email = DemoUserEmail,
+                EmailConfirmed = true,
+                DisplayName = "Admin",
+                OrganisationId = org.Id
+            };
+            var createResult = await userManager.CreateAsync(demoUser, DemoUserPassword);
+            if (!createResult.Succeeded)
+                throw new InvalidOperationException(
+                    $"Failed to create demo user: {string.Join("; ", createResult.Errors.Select(e => e.Description))}");
+        }
+
+        // Created last so its existence is a true "fully seeded" marker for the idempotency guard above.
+        var demoNonAdminUser = new ApplicationUser
+        {
+            UserName = DemoNonAdminUserEmail,
+            Email = DemoNonAdminUserEmail,
             EmailConfirmed = true,
-            DisplayName = "Admin",
+            DisplayName = "Member",
             OrganisationId = org.Id
         };
-        var createResult = await userManager.CreateAsync(demoUser, DemoUserPassword);
-        if (!createResult.Succeeded)
+        var nonAdminCreateResult = await userManager.CreateAsync(demoNonAdminUser, DemoNonAdminUserPassword);
+        if (!nonAdminCreateResult.Succeeded)
             throw new InvalidOperationException(
-                $"Failed to create demo user: {string.Join("; ", createResult.Errors.Select(e => e.Description))}");
+                $"Failed to create demo non-admin user: {string.Join("; ", nonAdminCreateResult.Errors.Select(e => e.Description))}");
     }
 
     private static async Task<Dictionary<string, Account>> LoadDemoAccountsAsync(AppDbContext db, int fiscalYearId)

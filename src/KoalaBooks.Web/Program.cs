@@ -1,5 +1,7 @@
 using KoalaBooks.Application.Services;
 using Scalar.AspNetCore;
+using Hangfire;
+using Hangfire.PostgreSql;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
@@ -39,6 +41,18 @@ if (!string.IsNullOrEmpty(dbPasswordFile))
 }
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(koalabooksConnectionString));
 builder.EnrichNpgsqlDbContext<AppDbContext>();
+
+// Excluded from Testing: eager Postgres schema-prep here corrupts EnsureCreated()'s
+// schema visibility under WebApplicationFactory (and exhausts connections under load).
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.Services.AddHangfire(config => config
+        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(koalabooksConnectionString)));
+    builder.Services.AddHangfireServer();
+}
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
@@ -198,6 +212,14 @@ app.MapGet("/documents/{id:int}", async (int id, DocumentService svc) =>
         : Results.File(result.Value.Data, result.Value.ContentType);
 }).RequireAuthorization();
 
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    app.MapHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = [new HangfireDashboardAuthorizationFilter()]
+    });
+}
+
 app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, CustomerInvoiceService svc) =>
 {
     var invoice = await svc.GetByIdAsync(id);
@@ -241,6 +263,9 @@ using (var scope = app.Services.CreateScope())
         var dashboardClientSecret = builder.Configuration["AspireDashboard:OidcClientSecret"]
             ?? "aspire-dashboard-dev-secret";
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);
+
+        // Stopgap until there's a real UI to grant roles.
+        await AdminRoleSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration["AdminSeed:Email"]);
     }
 }
 
