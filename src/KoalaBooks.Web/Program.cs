@@ -128,8 +128,8 @@ builder.Services.AddOpenIddict()
 
 builder.Services.AddScoped<SieImportService>();
 builder.Services.AddScoped<AccountService>();
-builder.Services.AddScoped<FiscalYearService>();
-builder.Services.AddScoped<JournalEntryService>();
+builder.Services.AddScoped<IFiscalYearService, FiscalYearService>();
+builder.Services.AddScoped<IJournalEntryService, JournalEntryService>();
 builder.Services.AddScoped<VoucherGapService>();
 builder.Services.AddScoped<SieExportService>();
 builder.Services.AddScoped<YearEndClosingService>();

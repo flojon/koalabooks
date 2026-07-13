@@ -9,6 +9,7 @@
     <Project Path="src/KoalaBooks.Web/KoalaBooks.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/KoalaBooks.ComponentTests/KoalaBooks.ComponentTests.csproj" />
     <Project Path="tests/KoalaBooks.Tests/KoalaBooks.Tests.csproj" />
   </Folder>
 </Solution>

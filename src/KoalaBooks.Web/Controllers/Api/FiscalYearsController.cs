@@ -11,9 +11,9 @@ namespace KoalaBooks.Web.Controllers.Api;
 [Route("api/v1/fiscal-years")]
 public class FiscalYearsController : ControllerBase
 {
-    private readonly FiscalYearService _service;
+    private readonly IFiscalYearService _service;
 
-    public FiscalYearsController(FiscalYearService service) => _service = service;
+    public FiscalYearsController(IFiscalYearService service) => _service = service;
 
     [HttpGet]
     [ProducesResponseType<List<FiscalYearResponse>>(StatusCodes.Status200OK)]
