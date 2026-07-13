@@ -1,0 +1,21 @@
+@* src/KoalaBooks.Components/Shared/UnsavedChangesConfirmDialog.razor *@
+@using MudBlazor
+
+<MudDialog Style="max-width:420px; width:95vw;">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Osparade ändringar</MudText>
+    </TitleContent>
+    <DialogContent>
+        <p style="margin:0;">@Message</p>
+    </DialogContent>
+    <DialogActions>
+        <button class="btn btn-text-danger" @onclick="() => MudDialog.Close(DialogResult.Ok(true))">Lämna sidan</button>
+        <button class="btn btn-primary" @onclick="() => MudDialog.Close(DialogResult.Ok(false))">Stanna kvar</button>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Message { get; set; } = default!;
+}

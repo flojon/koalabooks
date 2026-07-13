@@ -195,16 +195,15 @@
                         }
                     }
                 }
-
-                <DialogActions>
-                    <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Avbryt</button>
-                    <button class="btn btn-success" @onclick="ClassifyAsync" disabled="@(_saving || string.IsNullOrEmpty(_type))">
-                        @(_saving ? "Sparar..." : "Skapa & koppla")
-                    </button>
-                </DialogActions>
             </div>
         </div>
     </DialogContent>
+    <DialogActions>
+        <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Avbryt</button>
+        <button class="btn btn-success" @onclick="ClassifyAsync" disabled="@(_saving || string.IsNullOrEmpty(_type))">
+            @(_saving ? "Sparar..." : "Skapa & koppla")
+        </button>
+    </DialogActions>
 </MudDialog>
 
 @code {

@@ -6,29 +6,13 @@
        "leave site?" prompt (backed by beforeunload) whenever IsDirty is true.
        No custom JS interop needed — this is the built-in Blazor mechanism.
      - In-app route changes: OnBeforeInternalNavigation intercepts the
-       navigation, and — if dirty — shows a small MudBlazor confirm dialog
-       before letting it proceed. *@
+       navigation, and — if dirty — shows a confirm dialog via IDialogService
+       before letting it proceed. Must go through DialogService (not an
+       inline MudDialog): a MudDialog not opened via DialogService isn't
+       hosted by MudDialogProvider, so its button clicks never wire up. *@
 @using MudBlazor
 
 <NavigationLock ConfirmExternalNavigation="@IsDirty" OnBeforeInternalNavigation="OnBeforeInternalNavigationAsync" />
-
-@if (_showConfirm)
-{
-    <CascadingValue Name="IsNested" Value="true" IsFixed="true">
-        <MudDialog Visible="true" Options="_dialogOptions" Style="max-width:420px; width:95vw;">
-            <TitleContent>
-                <MudText Typo="Typo.h6">Osparade ändringar</MudText>
-            </TitleContent>
-            <DialogContent>
-                <p style="margin:0 0 1rem;">@Message</p>
-                <DialogActions>
-                    <button class="btn btn-text-danger" @onclick="ConfirmLeave">Lämna sidan</button>
-                    <button class="btn btn-primary" @onclick="CancelLeave">Stanna kvar</button>
-                </DialogActions>
-            </DialogContent>
-        </MudDialog>
-    </CascadingValue>
-}
 
 @code {
     /// <summary>True while the guarded form has unsaved changes.</summary>
@@ -37,41 +21,38 @@
     [Parameter] public string Message { get; set; } =
         "Du har osparade ändringar som går förlorade om du lämnar sidan. Vill du fortsätta?";
 
-    private static readonly DialogOptions _dialogOptions = new() { BackdropClick = false, CloseOnEscapeKey = false };
-
-    private bool _showConfirm;
-    private string? _pendingTargetLocation;
     private bool _allowNextNavigation;
+    private bool _confirming;
 
-    private Task OnBeforeInternalNavigationAsync(LocationChangingContext context)
+    private async Task OnBeforeInternalNavigationAsync(LocationChangingContext context)
     {
         if (_allowNextNavigation || !IsDirty)
         {
             _allowNextNavigation = false;
-            return Task.CompletedTask;
+            return;
         }
 
         context.PreventNavigation();
-        _pendingTargetLocation = context.TargetLocation;
-        _showConfirm = true;
-        return Task.CompletedTask;
-    }
+        if (_confirming) return;
 
-    private void CancelLeave()
-    {
-        _showConfirm = false;
-        _pendingTargetLocation = null;
-    }
-
-    private void ConfirmLeave()
-    {
-        _showConfirm = false;
-        if (_pendingTargetLocation is not null)
+        _confirming = true;
+        try
         {
-            _allowNextNavigation = true;
-            Navigation.NavigateTo(_pendingTargetLocation);
+            var parameters = new DialogParameters<UnsavedChangesConfirmDialog> { { x => x.Message, Message } };
+            var dialogRef = await DialogService.ShowAsync<UnsavedChangesConfirmDialog>(null, parameters, DialogDefaults.NoDismiss);
+            var result = await dialogRef.Result;
+            if (result is { Canceled: false, Data: true })
+            {
+                _allowNextNavigation = true;
+                Navigation.NavigateTo(context.TargetLocation);
+            }
+        }
+        finally
+        {
+            _confirming = false;
         }
     }
 
     [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
 }
