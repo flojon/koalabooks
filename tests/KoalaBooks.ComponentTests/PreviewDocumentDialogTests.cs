@@ -134,11 +134,13 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
     // Inbox.razor chains the two dialogs by passing along the same DocumentMeta.
     //
     // Both dialogs are shown through the same MudDialogProvider/IDialogService pair,
-    // exactly like the real app (which mounts exactly one MudDialogProvider at the
-    // layout root). Rendering a second, independent MudDialogProvider against the
-    // same singleton IDialogService - as an earlier version of this test did - lets
-    // both providers race to render the second dialog, which is nondeterministic and
-    // was observed to fail intermittently in CI while passing locally.
+    // matching how the real app only ever mounts one MudDialogProvider (at the layout
+    // root). MudDialogProvider adds the new dialog to its render tree via an
+    // OnDialogInstanceAdded event handler dispatched through the renderer, which isn't
+    // guaranteed to have flushed by the time the outer InvokeAsync call returns - this
+    // was observed to pass consistently locally but fail intermittently in CI, so the
+    // final assertion polls via WaitForAssertion instead of assuming the DOM already
+    // reflects the new dialog.
     [Fact]
     public async Task ClickingBokfor_EditedDateCarriesIntoClassifyDialog()
     {
@@ -164,6 +166,8 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
 
         // doc.ClassifiedType == "CustomerInvoice" (persisted above), so that branch's
         // date inputs are the ones rendered by default; the first is Fakturadatum (_date).
-        Assert.Equal("2026-03-15", comp.FindAll("input[type=date]")[0].GetAttribute("value"));
+        comp.WaitForAssertion(
+            () => Assert.Equal("2026-03-15", comp.FindAll("input[type=date]")[0].GetAttribute("value")),
+            timeout: TimeSpan.FromSeconds(5));
     }
 }
