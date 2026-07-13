@@ -55,7 +55,7 @@ public class HomeTests : BunitContext
         var cut = Render<Home>();
 
         Assert.Contains("2026", cut.Markup);
-        Assert.Equal("5", cut.Find(".stat-value").TextContent);
+        Assert.Equal("5", cut.FindAll(".stat-value")[0].TextContent);
         Assert.DoesNotContain("Inget aktivt räkenskapsår hittades", cut.Markup);
     }
 }
