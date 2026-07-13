@@ -72,7 +72,7 @@
                 }
 
                 <DialogActions>
-                    <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Avbryt</button>
+                    <button class="btn btn-secondary" @onclick="MudDialog.Cancel" disabled="@_saving">Avbryt</button>
                     <button class="btn btn-secondary" @onclick="OpenClassify" disabled="@_saving">Bokför</button>
                     <button class="btn btn-primary" @onclick="SaveAsync" disabled="@_saving">
                         @(_saving ? "Sparar..." : "Spara")

@@ -1,6 +1,7 @@
 using System.Linq;
 using KoalaBooks.Application.Services;
 using KoalaBooks.Components.Shared;
+using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +47,19 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
             Substitute.For<ILogger<DocumentService>>());
 
         Services.AddSingleton(_documentService);
+
+        // ClassifyDocumentDialog's other dependencies, needed only by
+        // ClickingBokfor_EditedDateCarriesIntoClassifyDialog below. They must be
+        // registered here, before any component renders - bUnit locks the service
+        // collection against further registrations after the first resolve.
+        Services.AddSingleton(new SupplierInvoiceService(db));
+        Services.AddSingleton(new CustomerInvoiceService(db));
+        Services.AddSingleton(new AccountService(db));
+        Services.AddSingleton(new CustomerService(db));
+        var fiscalYearService = Substitute.For<IFiscalYearService>();
+        fiscalYearService.GetActiveAsync().Returns((FiscalYear?)null);
+        Services.AddSingleton(fiscalYearService);
+        Services.AddSingleton(Substitute.For<IJournalEntryService>());
     }
 
     private static DocumentMeta MakeDoc() => new()
@@ -113,5 +127,37 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
 
         Assert.False(dialogReference.Result.IsCompleted);
         Assert.Contains("Dokumentet hittades inte.", comp.Markup);
+    }
+
+    // Reproduces the bug from #223: editing the date in the preview and clicking
+    // "Bokför" must carry that edit into ClassifyDocumentDialog, the same way
+    // Inbox.razor chains the two dialogs by passing along the same DocumentMeta.
+    [Fact]
+    public async Task ClickingBokfor_EditedDateCarriesIntoClassifyDialog()
+    {
+        _documentService.UpdateMetadataAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateOnly?>())
+            .Returns((string?)null);
+        var doc = MakeDoc();
+
+        var (previewComp, dialogReference) = await OpenDialogAsync(doc);
+        previewComp.Find("select").Change("CustomerInvoice");
+        previewComp.Find("input").Change("2026-03-15");
+        await previewComp.InvokeAsync(() => BokforButton(previewComp).Click());
+        var previewResult = await dialogReference.Result;
+        Assert.Equal(PreviewDocumentDialog.PreviewOutcome.Classify, (PreviewDocumentDialog.PreviewOutcome)previewResult!.Data!);
+
+        var classifyComp = Render<MudDialogProvider>();
+        var classifyDialogService = Services.GetRequiredService<IDialogService>();
+        var classifyParameters = new DialogParameters<ClassifyDocumentDialog>
+        {
+            { x => x.Doc, doc },
+            { x => x.DocumentProvider, _documentProvider },
+        };
+        await classifyComp.InvokeAsync(async () =>
+            await classifyDialogService.ShowAsync<ClassifyDocumentDialog>("Klassificera dokument", classifyParameters));
+
+        // doc.ClassifiedType == "CustomerInvoice" (persisted above), so that branch's
+        // date inputs are the ones rendered by default; the first is Fakturadatum (_date).
+        Assert.Equal("2026-03-15", classifyComp.FindAll("input[type=date]")[0].GetAttribute("value"));
     }
 }
