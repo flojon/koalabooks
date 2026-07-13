@@ -54,7 +54,7 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
         // collection against further registrations after the first resolve.
         Services.AddSingleton(new SupplierInvoiceService(db));
         Services.AddSingleton(new CustomerInvoiceService(db));
-        Services.AddSingleton(new AccountService(db));
+        Services.AddSingleton<IAccountService>(new AccountService(db));
         Services.AddSingleton(new CustomerService(db));
         var fiscalYearService = Substitute.For<IFiscalYearService>();
         fiscalYearService.GetActiveAsync().Returns((FiscalYear?)null);
