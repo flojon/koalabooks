@@ -1,0 +1,58 @@
+@* src/KoalaBooks.Components/Shared/UnsavedChangesGuard.razor
+   Drop this into any page/dialog that holds in-progress user input with no
+   autosave, to warn before that work is lost. Two layers:
+     - Tab close / hard refresh / external navigation: NavigationLock's
+       ConfirmExternalNavigation triggers the browser's own native
+       "leave site?" prompt (backed by beforeunload) whenever IsDirty is true.
+       No custom JS interop needed — this is the built-in Blazor mechanism.
+     - In-app route changes: OnBeforeInternalNavigation intercepts the
+       navigation, and — if dirty — shows a confirm dialog via IDialogService
+       before letting it proceed. Must go through DialogService (not an
+       inline MudDialog): a MudDialog not opened via DialogService isn't
+       hosted by MudDialogProvider, so its button clicks never wire up. *@
+@using MudBlazor
+
+<NavigationLock ConfirmExternalNavigation="@IsDirty" OnBeforeInternalNavigation="OnBeforeInternalNavigationAsync" />
+
+@code {
+    /// <summary>True while the guarded form has unsaved changes.</summary>
+    [Parameter] public bool IsDirty { get; set; }
+
+    [Parameter] public string Message { get; set; } =
+        "Du har osparade ändringar som går förlorade om du lämnar sidan. Vill du fortsätta?";
+
+    private bool _allowNextNavigation;
+    private bool _confirming;
+
+    private async Task OnBeforeInternalNavigationAsync(LocationChangingContext context)
+    {
+        if (_allowNextNavigation || !IsDirty)
+        {
+            _allowNextNavigation = false;
+            return;
+        }
+
+        context.PreventNavigation();
+        if (_confirming) return;
+
+        _confirming = true;
+        try
+        {
+            var parameters = new DialogParameters<UnsavedChangesConfirmDialog> { { x => x.Message, Message } };
+            var dialogRef = await DialogService.ShowAsync<UnsavedChangesConfirmDialog>(null, parameters, DialogDefaults.NoDismiss);
+            var result = await dialogRef.Result;
+            if (result is { Canceled: false, Data: true })
+            {
+                _allowNextNavigation = true;
+                Navigation.NavigateTo(context.TargetLocation);
+            }
+        }
+        finally
+        {
+            _confirming = false;
+        }
+    }
+
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
+}

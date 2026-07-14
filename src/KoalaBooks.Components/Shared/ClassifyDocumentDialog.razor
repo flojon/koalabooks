@@ -6,6 +6,8 @@
 @using MudBlazor
 @using System.Text.Json
 
+<UnsavedChangesGuard IsDirty="_isDirty" />
+
 <MudDialog Style="max-width:900px; width:95vw;">
     <TitleContent>
         <MudText Typo="Typo.h6">Klassificera dokument</MudText>
@@ -42,7 +44,7 @@
 
                 <div class="form-group">
                     <label style="font-weight:600;">Typ <span style="color:#ef4444;">*</span></label>
-                    <select @bind="_type" style="width:100%;">
+                    <select @bind="_type" @bind:after="MarkDirty" style="width:100%;">
                         <option value="">— Välj typ —</option>
                         <option value="@nameof(DocumentEntityType.SupplierInvoice)">Leverantörsfaktura</option>
                         <option value="@nameof(DocumentEntityType.CustomerInvoice)">Kundfaktura</option>
@@ -55,27 +57,27 @@
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem 1rem;">
                         <div class="form-group" style="grid-column:1/-1;">
                             <label>Leverantör <span style="color:#ef4444;">*</span></label>
-                            <input type="text" @bind="_supplier" placeholder="Företagsnamn" style="width:100%;" />
+                            <input type="text" @bind="_supplier" @bind:after="MarkDirty" placeholder="Företagsnamn" style="width:100%;" />
                         </div>
                         <div class="form-group">
                             <label>Fakturanummer</label>
-                            <input type="text" @bind="_invoiceNumber" style="width:100%;" />
+                            <input type="text" @bind="_invoiceNumber" @bind:after="MarkDirty" style="width:100%;" />
                         </div>
                         <div class="form-group">
                             <label>Fakturadatum <span style="color:#ef4444;">*</span></label>
-                            <DateInput @bind-Value="_date" />
+                            <DateInput @bind-Value="_date" @bind-Value:after="MarkDirty" />
                         </div>
                         <div class="form-group">
                             <label>Förfallodatum <span style="color:#ef4444;">*</span></label>
-                            <DateInput @bind-Value="_dueDate" />
+                            <DateInput @bind-Value="_dueDate" @bind-Value:after="MarkDirty" />
                         </div>
                         <div class="form-group">
                             <label>Belopp exkl. moms <span style="color:#ef4444;">*</span></label>
-                            <input type="number" step="0.01" @bind="_amountExcl" style="width:100%;" />
+                            <input type="number" step="0.01" @bind="_amountExcl" @bind:after="MarkDirty" style="width:100%;" />
                         </div>
                         <div class="form-group">
                             <label>Momsbelopp</label>
-                            <input type="number" step="0.01" @bind="_vatAmount" style="width:100%;" />
+                            <input type="number" step="0.01" @bind="_vatAmount" @bind:after="MarkDirty" style="width:100%;" />
                         </div>
                     </div>
                 }
@@ -84,7 +86,7 @@
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem 1rem;">
                         <div class="form-group" style="grid-column:1/-1;">
                             <label>Kund <span style="color:#ef4444;">*</span></label>
-                            <select @bind="_customerId" style="width:100%;">
+                            <select @bind="_customerId" @bind:after="MarkDirty" style="width:100%;">
                                 <option value="0">— Välj kund —</option>
                                 @foreach (var c in _customers)
                                 {
@@ -94,19 +96,19 @@
                         </div>
                         <div class="form-group">
                             <label>Fakturadatum <span style="color:#ef4444;">*</span></label>
-                            <DateInput @bind-Value="_date" />
+                            <DateInput @bind-Value="_date" @bind-Value:after="MarkDirty" />
                         </div>
                         <div class="form-group">
                             <label>Förfallodatum <span style="color:#ef4444;">*</span></label>
-                            <DateInput @bind-Value="_dueDate" />
+                            <DateInput @bind-Value="_dueDate" @bind-Value:after="MarkDirty" />
                         </div>
                         <div class="form-group">
                             <label>Belopp exkl. moms <span style="color:#ef4444;">*</span></label>
-                            <input type="number" step="0.01" @bind="_amountExcl" style="width:100%;" />
+                            <input type="number" step="0.01" @bind="_amountExcl" @bind:after="MarkDirty" style="width:100%;" />
                         </div>
                         <div class="form-group">
                             <label>Momsbelopp</label>
-                            <input type="number" step="0.01" @bind="_vatAmount" style="width:100%;" />
+                            <input type="number" step="0.01" @bind="_vatAmount" @bind:after="MarkDirty" style="width:100%;" />
                         </div>
                     </div>
                 }
@@ -114,7 +116,7 @@
                 {
                     <div style="display:flex; gap:0.5rem; margin-bottom:0.5rem;">
                         <button class="btn btn-sm @(_jeMode == "new" ? "btn-primary" : "btn-secondary")"
-                                @onclick='() => _jeMode = "new"'>Ny verifikation</button>
+                                @onclick='() => { _jeMode = "new"; MarkDirty(); }'>Ny verifikation</button>
                         <button class="btn btn-sm @(_jeMode == "existing" ? "btn-primary" : "btn-secondary")"
                                 @onclick="LoadExistingEntries">Koppla befintlig</button>
                     </div>
@@ -123,11 +125,11 @@
                     {
                         <div class="form-group">
                             <label>Datum <span style="color:#ef4444;">*</span></label>
-                            <DateInput @bind-Value="_date" />
+                            <DateInput @bind-Value="_date" @bind-Value:after="MarkDirty" />
                         </div>
                         <div class="form-group">
                             <label>Beskrivning <span style="color:#ef4444;">*</span></label>
-                            <input type="text" @bind="_description" style="width:100%;" placeholder="Beskrivning av transaktion" />
+                            <input type="text" @bind="_description" @bind:after="MarkDirty" style="width:100%;" placeholder="Beskrivning av transaktion" />
                         </div>
                         <table style="font-size:0.85rem; width:100%; margin-bottom:0.5rem;">
                             <thead>
@@ -145,30 +147,31 @@
                                     <tr>
                                         <td>
                                             <AccountSearchDropdown Accounts="_accounts"
-                                                @bind-SelectedAccountId="_lines[idx].AccountId" />
+                                                @bind-SelectedAccountId="_lines[idx].AccountId"
+                                                @bind-SelectedAccountId:after="MarkDirty" />
                                         </td>
                                         <td>
                                             <input type="number" step="0.01"
                                                    value="@(_lines[idx].DebitAmount == 0 ? "" : _lines[idx].DebitAmount.ToString())"
-                                                   @onchange="e => { if (decimal.TryParse(e.Value?.ToString(), out var v)) { _lines[idx].DebitAmount = v; _lines[idx].CreditAmount = 0; } }"
+                                                   @onchange="e => { if (decimal.TryParse(e.Value?.ToString(), out var v)) { _lines[idx].DebitAmount = v; _lines[idx].CreditAmount = 0; } MarkDirty(); }"
                                                    style="width:100%;" />
                                         </td>
                                         <td>
                                             <input type="number" step="0.01"
                                                    value="@(_lines[idx].CreditAmount == 0 ? "" : _lines[idx].CreditAmount.ToString())"
-                                                   @onchange="e => { if (decimal.TryParse(e.Value?.ToString(), out var v)) { _lines[idx].CreditAmount = v; _lines[idx].DebitAmount = 0; } }"
+                                                   @onchange="e => { if (decimal.TryParse(e.Value?.ToString(), out var v)) { _lines[idx].CreditAmount = v; _lines[idx].DebitAmount = 0; } MarkDirty(); }"
                                                    style="width:100%;" />
                                         </td>
                                         <td>
                                             <button class="btn btn-sm btn-danger"
-                                                    @onclick="() => _lines.RemoveAt(idx)"
+                                                    @onclick="() => { _lines.RemoveAt(idx); MarkDirty(); }"
                                                     disabled="@(_lines.Count <= 2)">✕</button>
                                         </td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
-                        <button class="btn btn-sm btn-secondary" @onclick="AddLine">+ Rad</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => { AddLine(); MarkDirty(); }">+ Rad</button>
                     }
                     else
                     {
@@ -182,7 +185,7 @@
                         }
                         else
                         {
-                            <select @bind="_existingEntryId" style="width:100%;">
+                            <select @bind="_existingEntryId" @bind:after="MarkDirty" style="width:100%;">
                                 <option value="0">— Välj verifikation —</option>
                                 @foreach (var e in _linkableEntries)
                                 {
@@ -192,16 +195,15 @@
                         }
                     }
                 }
-
-                <DialogActions>
-                    <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Avbryt</button>
-                    <button class="btn btn-success" @onclick="ClassifyAsync" disabled="@(_saving || string.IsNullOrEmpty(_type))">
-                        @(_saving ? "Sparar..." : "Skapa & koppla")
-                    </button>
-                </DialogActions>
             </div>
         </div>
     </DialogContent>
+    <DialogActions>
+        <button class="btn btn-secondary" @onclick="MudDialog.Cancel">Avbryt</button>
+        <button class="btn btn-success" @onclick="ClassifyAsync" disabled="@(_saving || string.IsNullOrEmpty(_type))">
+            @(_saving ? "Sparar..." : "Skapa & koppla")
+        </button>
+    </DialogActions>
 </MudDialog>
 
 @code {
@@ -231,6 +233,11 @@
     private bool _saving;
     private bool _loadingEntries;
     private string? _error;
+
+    // Unsaved-changes guard: true once the user edits any classification field.
+    // Pre-filled/suggested values (see OnInitializedAsync) do not count as dirty.
+    private bool _isDirty;
+    private void MarkDirty() => _isDirty = true;
 
     private List<JournalEntryLine> _lines = [new(), new()];
     private List<JournalEntry> _linkableEntries = [];
