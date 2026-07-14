@@ -34,7 +34,7 @@ public partial class PdfTextExtractor(ILogger<PdfTextExtractor> logger) : IDocum
         return sb.ToString();
     }
 
-    private static ExtractionResult Parse(string text)
+    internal static ExtractionResult Parse(string text)
     {
         var type = DetectType(text);
         var amount = ExtractAmount(text);
@@ -52,6 +52,8 @@ public partial class PdfTextExtractor(ILogger<PdfTextExtractor> logger) : IDocum
             return "CustomerInvoice";
         if (Regex.IsMatch(text, @"faktura|invoice", RegexOptions.IgnoreCase))
             return "SupplierInvoice";
+        if (Regex.IsMatch(text, @"kvitto|receipt", RegexOptions.IgnoreCase))
+            return "JournalEntry";
         return null;
     }
 
@@ -99,10 +101,16 @@ public partial class PdfTextExtractor(ILogger<PdfTextExtractor> logger) : IDocum
     [GeneratedRegex(@"([\d\s]+[,.][\d]{2})\s*(kr|SEK)", RegexOptions.IgnoreCase)]
     private static partial Regex AmountPattern();
 
-    [GeneratedRegex(@"[Ff]akturadatum[:\s]+(\d{4}-\d{2}-\d{2})")]
+    // PdfPig often concatenates separately-positioned text runs with no space (e.g. an
+    // all-caps "FAKTURA" heading glued directly to a "Datum:" label becomes
+    // "FAKTURADatum:..."), and some layouts drop the "Faktura" prefix and/or the colon
+    // entirely (e.g. "Datum2026-02-18"). Match on the bare "datum" suffix, case-
+    // insensitively, with an optional separator — but never match it as part of
+    // "förfallodatum" (due date), which DueDatePattern owns instead.
+    [GeneratedRegex(@"(?<!förfallo)datum[:\s]*(\d{4}-\d{2}-\d{2})", RegexOptions.IgnoreCase)]
     private static partial Regex InvoiceDatePattern();
 
-    [GeneratedRegex(@"[Ff]örfallodatum[:\s]+(\d{4}-\d{2}-\d{2})")]
+    [GeneratedRegex(@"förfallodatum[:\s]*(\d{4}-\d{2}-\d{2})", RegexOptions.IgnoreCase)]
     private static partial Regex DueDatePattern();
 
     [GeneratedRegex(@"[Ff]akturanummer[:\s]+(\S+)|[Ii]nvoice\s+[Nn]o[:\s]+(\S+)")]
