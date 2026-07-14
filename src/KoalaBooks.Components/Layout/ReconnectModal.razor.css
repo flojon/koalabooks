@@ -24,7 +24,7 @@
 }
 
 /* While the countdown is at 0, an attempt is actually in flight (can take several
-   seconds) — swap the stale "0 seconds" countdown for an "Ansluter..." message. */
+   seconds) — swap the stale "0 seconds" countdown for a "Försöker återansluta..." message. */
 #components-reconnect-modal.components-reconnect-retrying.components-reconnect-attempting .components-reconnect-repeated-attempt-visible {
     display: none;
 }

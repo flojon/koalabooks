@@ -14,7 +14,7 @@ reloadButton.addEventListener("click", () => location.reload());
 // The framework updates this span's text every second during a retry countdown,
 // but doesn't raise an event when it hits 0 and the actual reconnect attempt
 // starts. Watch it directly so we can swap the stale "0 seconds" text for an
-// "Ansluter..." message while that attempt (which can take several seconds) is in flight.
+// "Försöker återansluta..." message while that attempt (which can take several seconds) is in flight.
 const secondsToNextAttempt = document.getElementById("components-seconds-to-next-attempt");
 const attemptingObserver = new MutationObserver(() => {
     reconnectModal.classList.toggle("components-reconnect-attempting", secondsToNextAttempt.textContent === "0");
@@ -22,6 +22,10 @@ const attemptingObserver = new MutationObserver(() => {
 attemptingObserver.observe(secondsToNextAttempt, { childList: true, characterData: true, subtree: true });
 
 function handleReconnectStateChanged(event) {
+    // Reset on every state change so a stale "0 seconds" reading from a previous
+    // retry cycle can't leave this class set into the next one.
+    reconnectModal.classList.remove("components-reconnect-attempting");
+
     if (event.detail.state === "show") {
         reconnectModal.showModal();
     } else if (event.detail.state === "hide") {
