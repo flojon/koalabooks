@@ -1,3 +1,5 @@
+using KoalaBooks.Domain.Enums;
+
 namespace KoalaBooks.Domain.Entities;
 
 public class Document
@@ -14,6 +16,7 @@ public class Document
     public string? ExtractedDataJson { get; set; }
     public string? ClassifiedType { get; set; }
     public DateOnly? DocumentDate { get; set; }
+    public ExtractionStatus ExtractionStatus { get; set; } = ExtractionStatus.Pending;
 
     public List<JournalEntry> JournalEntries { get; set; } = [];
     public List<SupplierInvoice> SupplierInvoices { get; set; } = [];
