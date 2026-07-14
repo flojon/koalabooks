@@ -8,6 +8,9 @@ retryButton.addEventListener("click", retry);
 const resumeButton = document.getElementById("components-resume-button");
 resumeButton.addEventListener("click", resume);
 
+const reloadButton = document.getElementById("components-reconnect-reload-button");
+reloadButton.addEventListener("click", () => location.reload());
+
 function handleReconnectStateChanged(event) {
     if (event.detail.state === "show") {
         reconnectModal.showModal();
