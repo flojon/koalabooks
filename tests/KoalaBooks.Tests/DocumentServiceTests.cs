@@ -25,12 +25,13 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UploadAsync_SetsSuggestedTypeFromFilename_ClassifiedTypeRemainsNull()
+    public async Task UploadAsync_SetsExtractionStatusPending_NoSuggestionYet()
     {
         var svc = _fx.MakeDocumentService();
         var (doc, _) = await svc.UploadAsync("leverantörsfaktura.pdf", "application/pdf", new MemoryStream());
 
-        Assert.Equal("SupplierInvoice", doc!.SuggestedType);
+        Assert.Equal(ExtractionStatus.Pending, doc!.ExtractionStatus);
+        Assert.Null(doc.SuggestedType);
         Assert.Null(doc.ClassifiedType);
     }
 
@@ -90,16 +91,14 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UploadAsync_PopulatesDocumentDateFromExtractor()
+    public async Task UploadAsync_EnqueuesExtractionJob()
     {
-        var expectedDate = new DateOnly(2026, 3, 15);
-        var extractor = new StubExtractor(new ExtractionResult(
-            "SupplierInvoice", "ACME AB", 1000m, 250m, expectedDate, null, "INV-001"));
-        var svc = _fx.MakeDocumentService(extractor);
+        var queue = new RecordingExtractionQueue();
+        var svc = _fx.MakeDocumentService(queue);
 
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
 
-        Assert.Equal(expectedDate, doc!.DocumentDate);
+        Assert.Equal(doc!.Id, Assert.Single(queue.EnqueuedDocumentIds));
     }
 
     [Fact]
@@ -443,8 +442,8 @@ file class FailingStorage : IDocumentStorage
     public Task DeleteAsync(string storageKey) => Task.CompletedTask;
 }
 
-file class StubExtractor(ExtractionResult result) : IDocumentExtractor
+file class RecordingExtractionQueue : IDocumentExtractionQueue
 {
-    public Task<ExtractionResult> ExtractAsync(string fileName, string contentType, byte[] data) =>
-        Task.FromResult(result);
+    public List<int> EnqueuedDocumentIds { get; } = [];
+    public void Enqueue(int documentId) => EnqueuedDocumentIds.Add(documentId);
 }
