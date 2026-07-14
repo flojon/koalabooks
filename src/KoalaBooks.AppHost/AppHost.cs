@@ -65,11 +65,6 @@ static string GetPostgresVolumeName([CallerFilePath] string sourcePath = "")
 /// </summary>
 static void ValidateSuffix(string suffix)
 {
-    if (string.IsNullOrEmpty(suffix))
-    {
-        return; // Empty suffix is valid; caller will use baseName only
-    }
-
     if (!Regex.IsMatch(suffix, @"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"))
     {
         throw new InvalidOperationException(
