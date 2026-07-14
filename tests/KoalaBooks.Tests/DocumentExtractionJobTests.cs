@@ -34,6 +34,29 @@ public class DocumentExtractionJobTests : IDisposable
     }
 
     [Fact]
+    public async Task RunAsync_UserAlreadyClassifiedWithDate_DoesNotOverwriteDocumentDate()
+    {
+        var storage = new DbDocumentStorage(_fx.Db);
+        var svc = _fx.MakeDocumentService(storage);
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+
+        // User classifies the document (via the "Bokför" dialog) while extraction is still Pending.
+        var userChosenDate = new DateOnly(2026, 1, 10);
+        await svc.UpdateMetadataAsync(doc!.Id, "SupplierInvoice", userChosenDate);
+
+        // The already-enqueued job completes afterwards with a different extracted date.
+        var extractor = new StubExtractor(new ExtractionResult(
+            "SupplierInvoice", "ACME AB", 1000m, 250m, new DateOnly(2026, 3, 15), null, "INV-001"));
+        var job = new DocumentExtractionJob(_fx.Db, storage, extractor, NullLogger<DocumentExtractionJob>.Instance);
+
+        await job.RunAsync(doc.Id);
+
+        var updated = await _fx.Db.Documents.IgnoreQueryFilters().FirstAsync(d => d.Id == doc.Id);
+        Assert.Equal(userChosenDate, updated.DocumentDate);
+        Assert.Equal(ExtractionStatus.Completed, updated.ExtractionStatus);
+    }
+
+    [Fact]
     public async Task RunAsync_ExtractorThrows_MarksFailed_DoesNotThrow()
     {
         var storage = new DbDocumentStorage(_fx.Db);

@@ -137,6 +137,10 @@ else
     private bool _isPolling;
     private bool _disposed;
 
+    // A doc pending this long has exhausted its storage-load retries without the job
+    // ever syncing that failure back to ExtractionStatus — stop polling for it.
+    private static readonly TimeSpan PendingStaleAfter = TimeSpan.FromMinutes(10);
+
     private int TotalPages => (_totalCount + PageSize - 1) / PageSize;
 
     private static (string Label, string Value)[] Filters =>
@@ -162,7 +166,9 @@ else
 
     private void UpdatePolling()
     {
-        var hasPending = _docs.Any(d => d.ExtractionStatus == ExtractionStatus.Pending);
+        var hasPending = _docs.Any(d =>
+            d.ExtractionStatus == ExtractionStatus.Pending &&
+            DateTime.UtcNow - d.UploadedAt < PendingStaleAfter);
         if (hasPending)
         {
             _pollTimer ??= new System.Threading.Timer(OnPollTick, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
@@ -196,7 +202,14 @@ else
     public void Dispose()
     {
         _disposed = true;
-        _pollTimer?.Dispose();
+        if (_pollTimer is not null)
+        {
+            // Block until any in-flight callback finishes, so it can't fire InvokeAsync
+            // against a dispatcher torn down moments after this method returns.
+            using var waitHandle = new ManualResetEvent(false);
+            _pollTimer.Dispose(waitHandle);
+            waitHandle.WaitOne();
+        }
     }
 
     private async Task SetFilterAsync(string filter)

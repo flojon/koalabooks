@@ -33,7 +33,10 @@ public class DocumentExtractionJob(
             doc.ExtractedDataJson = result.SuggestedType is not null
                 ? JsonSerializer.Serialize(result)
                 : null;
-            doc.DocumentDate = result.InvoiceDate;
+            // Don't clobber a date the user already entered via the classify dialog while
+            // extraction was still in flight (Bokför isn't gated on ExtractionStatus).
+            if (doc.DocumentDate is null)
+                doc.DocumentDate = result.InvoiceDate;
             doc.ExtractionStatus = ExtractionStatus.Completed;
         }
         catch (Exception ex)
