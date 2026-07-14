@@ -6,7 +6,6 @@ using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using MudBlazor;
 using MudBlazor.Services;
 
@@ -42,9 +41,8 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
         _documentService = Substitute.ForPartsOf<DocumentService>(
             db,
             Substitute.For<IDocumentStorage>(),
-            Substitute.For<IDocumentExtractor>(),
-            Substitute.For<ICurrentUser>(),
-            Substitute.For<ILogger<DocumentService>>());
+            Substitute.For<IDocumentExtractionQueue>(),
+            Substitute.For<ICurrentUser>());
 
         Services.AddSingleton(_documentService);
 
