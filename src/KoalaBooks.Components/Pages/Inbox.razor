@@ -1,4 +1,5 @@
 @page "/inbox"
+@implements IDisposable
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Enums
 @using MudBlazor
@@ -78,6 +79,12 @@ else
                         <td style="color:#64748b; font-size:0.875rem;">@doc.UploadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
                         <td style="color:#64748b; font-size:0.875rem;">@(doc.DocumentDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                         <td>
+                            @if (doc.ExtractionStatus == ExtractionStatus.Pending)
+                            {
+                                <span style="font-size:0.75rem; padding:2px 8px; border-radius:9999px; background:#fef3c7; color:#92400e;">
+                                    Bearbetar…
+                                </span>
+                            }
                             @if (doc.ClassifiedType is not null)
                             {
                                 <span style="font-size:0.75rem; padding:2px 8px; border-radius:9999px; background:#e2e8f0; color:#475569;">
@@ -126,6 +133,7 @@ else
     private int _page = 1;
     private int _totalCount;
     private const int PageSize = 50;
+    private System.Threading.Timer? _pollTimer;
 
     private int TotalPages => (_totalCount + PageSize - 1) / PageSize;
 
@@ -140,14 +148,38 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadPageAsync();
 
-    private async Task LoadPageAsync()
+    private async Task LoadPageAsync(bool showSpinner = true)
     {
-        _isLoading = true;
+        if (showSpinner) _isLoading = true;
         var skip = (_page - 1) * PageSize;
         _docs = await DocumentService.GetPendingAsync(_filter, skip, PageSize, _sortBy, _sortAsc);
         _totalCount = await DocumentService.GetPendingCountAsync(_filter);
         _isLoading = false;
+        UpdatePolling();
     }
+
+    private void UpdatePolling()
+    {
+        var hasPending = _docs.Any(d => d.ExtractionStatus == ExtractionStatus.Pending);
+        if (hasPending)
+        {
+            _pollTimer ??= new System.Threading.Timer(OnPollTick, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        }
+        else
+        {
+            _pollTimer?.Dispose();
+            _pollTimer = null;
+        }
+    }
+
+    private void OnPollTick(object? state) =>
+        _ = InvokeAsync(async () =>
+        {
+            await LoadPageAsync(showSpinner: false);
+            StateHasChanged();
+        });
+
+    public void Dispose() => _pollTimer?.Dispose();
 
     private async Task SetFilterAsync(string filter)
     {
