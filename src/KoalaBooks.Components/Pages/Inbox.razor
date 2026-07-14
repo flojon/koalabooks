@@ -134,6 +134,8 @@ else
     private int _totalCount;
     private const int PageSize = 50;
     private System.Threading.Timer? _pollTimer;
+    private bool _isPolling;
+    private bool _disposed;
 
     private int TotalPages => (_totalCount + PageSize - 1) / PageSize;
 
@@ -172,14 +174,30 @@ else
         }
     }
 
-    private void OnPollTick(object? state) =>
+    private void OnPollTick(object? state)
+    {
+        if (_isPolling) return;
+        _isPolling = true;
         _ = InvokeAsync(async () =>
         {
-            await LoadPageAsync(showSpinner: false);
-            StateHasChanged();
+            try
+            {
+                if (_disposed) return;
+                await LoadPageAsync(showSpinner: false);
+                if (!_disposed) StateHasChanged();
+            }
+            finally
+            {
+                _isPolling = false;
+            }
         });
+    }
 
-    public void Dispose() => _pollTimer?.Dispose();
+    public void Dispose()
+    {
+        _disposed = true;
+        _pollTimer?.Dispose();
+    }
 
     private async Task SetFilterAsync(string filter)
     {
