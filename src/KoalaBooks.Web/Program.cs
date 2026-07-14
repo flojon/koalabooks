@@ -45,6 +45,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(koalabo
 builder.EnrichNpgsqlDbContext<AppDbContext>();
 
 builder.Services.AddDataProtection()
+    .SetApplicationName("KoalaBooks")
     .PersistKeysToDbContext<AppDbContext>();
 
 // Excluded from Testing: eager Postgres schema-prep here corrupts EnsureCreated()'s
