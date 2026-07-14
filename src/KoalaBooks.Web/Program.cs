@@ -7,6 +7,8 @@ using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using KoalaBooks.Web.Components;
 using KoalaBooks.Web.Services;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -41,6 +43,9 @@ if (!string.IsNullOrEmpty(dbPasswordFile))
 }
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(koalabooksConnectionString));
 builder.EnrichNpgsqlDbContext<AppDbContext>();
+
+builder.Services.AddDataProtection()
+    .PersistKeysToDbContext<AppDbContext>();
 
 // Excluded from Testing: eager Postgres schema-prep here corrupts EnsureCreated()'s
 // schema visibility under WebApplicationFactory (and exhausts connections under load).
