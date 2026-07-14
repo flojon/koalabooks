@@ -11,6 +11,16 @@ resumeButton.addEventListener("click", resume);
 const reloadButton = document.getElementById("components-reconnect-reload-button");
 reloadButton.addEventListener("click", () => location.reload());
 
+// The framework updates this span's text every second during a retry countdown,
+// but doesn't raise an event when it hits 0 and the actual reconnect attempt
+// starts. Watch it directly so we can swap the stale "0 seconds" text for an
+// "Ansluter..." message while that attempt (which can take several seconds) is in flight.
+const secondsToNextAttempt = document.getElementById("components-seconds-to-next-attempt");
+const attemptingObserver = new MutationObserver(() => {
+    reconnectModal.classList.toggle("components-reconnect-attempting", secondsToNextAttempt.textContent === "0");
+});
+attemptingObserver.observe(secondsToNextAttempt, { childList: true, characterData: true, subtree: true });
+
 function handleReconnectStateChanged(event) {
     if (event.detail.state === "show") {
         reconnectModal.showModal();

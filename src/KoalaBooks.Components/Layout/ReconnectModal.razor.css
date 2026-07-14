@@ -1,5 +1,6 @@
 .components-reconnect-first-attempt-visible,
 .components-reconnect-repeated-attempt-visible,
+.components-reconnect-attempting-visible,
 .components-reconnect-failed-visible,
 .components-reconnect-rejected-visible,
 .components-pause-visible,
@@ -19,6 +20,16 @@
 #components-reconnect-modal.components-reconnect-failed .components-reconnect-failed-visible,
 #components-reconnect-modal.components-reconnect-rejected,
 #components-reconnect-modal.components-reconnect-rejected .components-reconnect-rejected-visible {
+    display: block;
+}
+
+/* While the countdown is at 0, an attempt is actually in flight (can take several
+   seconds) — swap the stale "0 seconds" countdown for an "Ansluter..." message. */
+#components-reconnect-modal.components-reconnect-retrying.components-reconnect-attempting .components-reconnect-repeated-attempt-visible {
+    display: none;
+}
+
+#components-reconnect-modal.components-reconnect-retrying.components-reconnect-attempting .components-reconnect-attempting-visible {
     display: block;
 }
 
