@@ -257,6 +257,15 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
             entity.Property(d => d.ClassifiedType).HasMaxLength(50);
             entity.HasQueryFilter(d => _currentUser.OrganisationId != null && d.OrganisationId == _currentUser.OrganisationId);
 
+            // Lets DocumentExtractionJob detect a concurrent write (e.g. the user
+            // classifying via "Bokför" while extraction is still running) instead of
+            // silently overwriting it last-writer-wins. Postgres' native row-version
+            // system column, mapped as a shadow property (no migration needed).
+            entity.Property<uint>("xmin")
+                  .HasColumnType("xid")
+                  .ValueGeneratedOnAddOrUpdate()
+                  .IsConcurrencyToken();
+
             entity.HasOne<Organisation>()
                   .WithMany()
                   .HasForeignKey(d => d.OrganisationId)

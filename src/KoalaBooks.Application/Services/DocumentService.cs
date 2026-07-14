@@ -3,18 +3,15 @@ using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using System.IO.Compression;
-using System.Text.Json;
 
 namespace KoalaBooks.Application.Services;
 
 public class DocumentService(
     AppDbContext db,
     IDocumentStorage storage,
-    IDocumentExtractor extractor,
-    ICurrentUser currentUser,
-    ILogger<DocumentService> logger)
+    IDocumentExtractionQueue extractionQueue,
+    ICurrentUser currentUser)
 {
     private const long MaxBytes = 10 * 1024 * 1024;
     private const long ZipMaxBytes = 50 * 1024 * 1024;
@@ -71,21 +68,10 @@ public class DocumentService(
             return (null, $"Lagring misslyckades: {ex.Message}");
         }
 
-        try
-        {
-            var result = await extractor.ExtractAsync(fileName, contentType, bytes);
-            doc.SuggestedType = result.SuggestedType;
-            doc.ExtractedDataJson = result.SuggestedType is not null
-                ? JsonSerializer.Serialize(result)
-                : null;
-            doc.DocumentDate = result.InvoiceDate;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Extraction failed for {FileName} — upload proceeds without suggestion", fileName);
-        }
-
+        doc.ExtractionStatus = ExtractionStatus.Pending;
         await db.SaveChangesAsync();
+        extractionQueue.Enqueue(doc.Id);
+
         return (doc, null);
     }
 
@@ -318,7 +304,8 @@ public class DocumentService(
             ClassifiedType = d.ClassifiedType,
             SuggestedType = d.SuggestedType,
             ExtractedDataJson = d.ExtractedDataJson,
-            DocumentDate = d.DocumentDate
+            DocumentDate = d.DocumentDate,
+            ExtractionStatus = d.ExtractionStatus
         }).ToListAsync();
 }
 
@@ -333,6 +320,7 @@ public class DocumentMeta
     public string? SuggestedType { get; set; }
     public string? ExtractedDataJson { get; set; }
     public DateOnly? DocumentDate { get; set; }
+    public ExtractionStatus ExtractionStatus { get; set; }
 
     public string FileSizeDisplay => FileSize switch
     {

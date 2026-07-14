@@ -1,3 +1,4 @@
+using KoalaBooks.Application.Jobs;
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
@@ -6,7 +7,6 @@ using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace KoalaBooks.Tests;
 
@@ -188,14 +188,9 @@ public class TestFixture : IDisposable
     public DocumentService MakeDocumentService() =>
         MakeDocumentService(new DbDocumentStorage(Db));
 
-    public DocumentService MakeDocumentService(IDocumentStorage storage)
-    {
-        var extractor = new CompositeExtractor(new FilenameExtractor(), new PdfTextExtractor(
-            NullLogger<PdfTextExtractor>.Instance));
-        return new DocumentService(Db, storage, extractor, _currentUser, NullLogger<DocumentService>.Instance);
-    }
+    public DocumentService MakeDocumentService(IDocumentStorage storage) =>
+        new DocumentService(Db, storage, new NoOpDocumentExtractionQueue(), _currentUser);
 
-    public DocumentService MakeDocumentService(IDocumentExtractor extractor) =>
-        new DocumentService(Db, new DbDocumentStorage(Db), extractor, _currentUser,
-            NullLogger<DocumentService>.Instance);
+    public DocumentService MakeDocumentService(IDocumentExtractionQueue extractionQueue) =>
+        new DocumentService(Db, new DbDocumentStorage(Db), extractionQueue, _currentUser);
 }

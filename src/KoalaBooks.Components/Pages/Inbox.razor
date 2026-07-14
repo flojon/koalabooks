@@ -1,4 +1,5 @@
 @page "/inbox"
+@implements IDisposable
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Enums
 @using MudBlazor
@@ -78,6 +79,12 @@ else
                         <td style="color:#64748b; font-size:0.875rem;">@doc.UploadedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
                         <td style="color:#64748b; font-size:0.875rem;">@(doc.DocumentDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                         <td>
+                            @if (doc.ExtractionStatus == ExtractionStatus.Pending)
+                            {
+                                <span style="font-size:0.75rem; padding:2px 8px; border-radius:9999px; background:#fef3c7; color:#92400e;">
+                                    Bearbetar…
+                                </span>
+                            }
                             @if (doc.ClassifiedType is not null)
                             {
                                 <span style="font-size:0.75rem; padding:2px 8px; border-radius:9999px; background:#e2e8f0; color:#475569;">
@@ -126,6 +133,14 @@ else
     private int _page = 1;
     private int _totalCount;
     private const int PageSize = 50;
+    private System.Threading.Timer? _pollTimer;
+    private int _isPolling; // 0/1 guard, read/written across the timer thread and the
+                             // dispatcher thread — needs Interlocked, not a plain bool.
+    private bool _disposed;
+
+    // A doc pending this long has exhausted its storage-load retries without the job
+    // ever syncing that failure back to ExtractionStatus — stop polling for it.
+    private static readonly TimeSpan PendingStaleAfter = TimeSpan.FromMinutes(10);
 
     private int TotalPages => (_totalCount + PageSize - 1) / PageSize;
 
@@ -140,13 +155,63 @@ else
 
     protected override async Task OnInitializedAsync() => await LoadPageAsync();
 
-    private async Task LoadPageAsync()
+    private async Task LoadPageAsync(bool showSpinner = true)
     {
-        _isLoading = true;
+        if (showSpinner) _isLoading = true;
         var skip = (_page - 1) * PageSize;
         _docs = await DocumentService.GetPendingAsync(_filter, skip, PageSize, _sortBy, _sortAsc);
         _totalCount = await DocumentService.GetPendingCountAsync(_filter);
         _isLoading = false;
+        UpdatePolling();
+    }
+
+    private void UpdatePolling()
+    {
+        var hasPending = _docs.Any(d =>
+            d.ExtractionStatus == ExtractionStatus.Pending &&
+            DateTime.UtcNow - d.UploadedAt < PendingStaleAfter);
+        if (hasPending)
+        {
+            _pollTimer ??= new System.Threading.Timer(OnPollTick, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        }
+        else
+        {
+            _pollTimer?.Dispose();
+            _pollTimer = null;
+        }
+    }
+
+    private void OnPollTick(object? state)
+    {
+        // Atomic test-and-set: OnPollTick runs on the Timer's threadpool thread and can
+        // overlap a still-running previous tick if a poll takes longer than the interval.
+        if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0) return;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                if (_disposed) return;
+                await LoadPageAsync(showSpinner: false);
+                if (!_disposed) StateHasChanged();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _isPolling, 0);
+            }
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (_pollTimer is not null)
+        {
+            // Block until any in-flight callback finishes, so it can't fire InvokeAsync
+            // against a dispatcher torn down moments after this method returns.
+            using var waitHandle = new ManualResetEvent(false);
+            _pollTimer.Dispose(waitHandle);
+            waitHandle.WaitOne();
+        }
     }
 
     private async Task SetFilterAsync(string filter)

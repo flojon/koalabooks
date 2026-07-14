@@ -58,6 +58,14 @@ if (!builder.Environment.IsEnvironment("Testing"))
         .UseRecommendedSerializerSettings()
         .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(koalabooksConnectionString)));
     builder.Services.AddHangfireServer();
+    builder.Services.AddScoped<KoalaBooks.Application.Jobs.DocumentExtractionJob>();
+    builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractionQueue,
+        KoalaBooks.Application.Jobs.HangfireDocumentExtractionQueue>();
+}
+else
+{
+    builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractionQueue,
+        KoalaBooks.Application.Jobs.NoOpDocumentExtractionQueue>();
 }
 
 builder.Services.AddHttpContextAccessor();
