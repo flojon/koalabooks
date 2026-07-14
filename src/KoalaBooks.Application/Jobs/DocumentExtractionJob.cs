@@ -1,4 +1,5 @@
 using Hangfire;
+using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
@@ -34,7 +35,10 @@ public class DocumentExtractionJob(
                 ? JsonSerializer.Serialize(result)
                 : null;
             // Don't clobber a date the user already entered via the classify dialog while
-            // extraction was still in flight (Bokför isn't gated on ExtractionStatus).
+            // extraction was still in flight (Bokför isn't gated on ExtractionStatus). This
+            // check alone only catches the case where the write already landed before we
+            // loaded doc above — SaveChangesResolvingConcurrencyAsync below closes the rest
+            // of the window (a write landing during the extractor.ExtractAsync call itself).
             if (doc.DocumentDate is null)
                 doc.DocumentDate = result.InvoiceDate;
             doc.ExtractionStatus = ExtractionStatus.Completed;
@@ -46,6 +50,39 @@ public class DocumentExtractionJob(
             doc.ExtractionStatus = ExtractionStatus.Failed;
         }
 
-        await db.SaveChangesAsync();
+        await SaveChangesResolvingConcurrencyAsync(doc);
+    }
+
+    // Document.Xmin (Postgres' native row-version column) is a concurrency token, so a
+    // write that landed on this row between our read above and this save — most notably
+    // the user classifying the document via "Bokför" while extraction was in flight —
+    // raises DbUpdateConcurrencyException instead of being silently overwritten. Resolve
+    // it by deferring to whatever DocumentDate is in the database now (if any), then retry
+    // once against the current row version.
+    private async Task SaveChangesResolvingConcurrencyAsync(Document doc)
+    {
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            // ex.Entries yields the non-generic EntityEntry wrapper even though the
+            // tracked instance is a Document — EntityEntry<T> is never what's reported here.
+            var entry = ex.Entries.Single();
+            var databaseValues = await entry.GetDatabaseValuesAsync();
+            if (databaseValues is null)
+            {
+                // The document was deleted concurrently — nothing left to update.
+                return;
+            }
+
+            var dbDate = (DateOnly?)databaseValues[nameof(Document.DocumentDate)];
+            if (dbDate is not null)
+                doc.DocumentDate = dbDate;
+
+            entry.OriginalValues.SetValues(databaseValues);
+            await db.SaveChangesAsync();
+        }
     }
 }

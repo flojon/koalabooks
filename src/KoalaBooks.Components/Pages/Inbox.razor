@@ -134,7 +134,8 @@ else
     private int _totalCount;
     private const int PageSize = 50;
     private System.Threading.Timer? _pollTimer;
-    private bool _isPolling;
+    private int _isPolling; // 0/1 guard, read/written across the timer thread and the
+                             // dispatcher thread — needs Interlocked, not a plain bool.
     private bool _disposed;
 
     // A doc pending this long has exhausted its storage-load retries without the job
@@ -182,8 +183,9 @@ else
 
     private void OnPollTick(object? state)
     {
-        if (_isPolling) return;
-        _isPolling = true;
+        // Atomic test-and-set: OnPollTick runs on the Timer's threadpool thread and can
+        // overlap a still-running previous tick if a poll takes longer than the interval.
+        if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0) return;
         _ = InvokeAsync(async () =>
         {
             try
@@ -194,7 +196,7 @@ else
             }
             finally
             {
-                _isPolling = false;
+                Interlocked.Exchange(ref _isPolling, 0);
             }
         });
     }
