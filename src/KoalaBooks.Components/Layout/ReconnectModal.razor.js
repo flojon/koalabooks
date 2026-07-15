@@ -48,6 +48,7 @@ async function retry() {
             // We'll reload the page so the user can continue using the app as quickly as possible.
             const resumeSuccessful = await Blazor.resumeCircuit();
             if (!resumeSuccessful) {
+                reconnectModal.close();
                 location.reload();
             } else {
                 reconnectModal.close();
