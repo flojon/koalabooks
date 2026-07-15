@@ -70,15 +70,21 @@ public class CustomerInvoiceService
         invoice.CreatedAt = DateTime.UtcNow;
 
         // Advisory lock per fiscal year to serialize invoice number generation,
-        // preventing duplicate invoice numbers under concurrent creates.
-        using var tx = await _db.Database.BeginTransactionAsync();
-        await _db.Database.ExecuteSqlRawAsync(
-            "SELECT pg_advisory_xact_lock(42000 + {0})", invoice.FiscalYearId);
-        invoice.InvoiceNumber = await NextInvoiceNumberAsync(invoice.FiscalYearId);
+        // preventing duplicate invoice numbers under concurrent creates. Wrapped in
+        // the execution strategy because EnrichNpgsqlDbContext enables a retrying
+        // strategy, which refuses user-initiated transactions run outside of it.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            using var tx = await _db.Database.BeginTransactionAsync();
+            await _db.Database.ExecuteSqlRawAsync(
+                "SELECT pg_advisory_xact_lock(42000 + {0})", invoice.FiscalYearId);
+            invoice.InvoiceNumber = await NextInvoiceNumberAsync(invoice.FiscalYearId);
 
-        _db.CustomerInvoices.Add(invoice);
-        await _db.SaveChangesAsync();
-        await tx.CommitAsync();
+            _db.CustomerInvoices.Add(invoice);
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+        });
 
         return (invoice, null);
     }
