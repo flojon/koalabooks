@@ -22,10 +22,6 @@ const attemptingObserver = new MutationObserver(() => {
 attemptingObserver.observe(secondsToNextAttempt, { childList: true, characterData: true, subtree: true });
 
 function handleReconnectStateChanged(event) {
-    // Reset on every state change so a stale "0 seconds" reading from a previous
-    // retry cycle can't leave this class set into the next one.
-    reconnectModal.classList.remove("components-reconnect-attempting");
-
     if (event.detail.state === "show") {
         reconnectModal.showModal();
     } else if (event.detail.state === "hide") {
