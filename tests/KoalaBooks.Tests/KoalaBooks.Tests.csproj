@@ -30,6 +30,7 @@
     <ProjectReference Include="..\..\src\KoalaBooks.Infrastructure\KoalaBooks.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\KoalaBooks.Domain\KoalaBooks.Domain.csproj" />
     <ProjectReference Include="..\..\src\KoalaBooks.Web\KoalaBooks.Web.csproj" />
+    <ProjectReference Include="..\..\src\KoalaBooks.AppHostSupport\KoalaBooks.AppHostSupport.csproj" />
   </ItemGroup>
 
 </Project>

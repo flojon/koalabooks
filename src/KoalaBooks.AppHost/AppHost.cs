@@ -1,7 +1,12 @@
+using KoalaBooks.AppHostSupport;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
+var postgresVolumeName = VolumeNaming.GetVolumeName(Environment.GetEnvironmentVariable("ASPIRE_DB_SUFFIX"));
+Console.WriteLine($"[koalabooks] Postgres data volume: {postgresVolumeName}");
+
 var postgres = builder.AddPostgres("postgres")
-    .WithDataVolume("koalabooks-postgres-data")
+    .WithDataVolume(postgresVolumeName)
     .WithLifetime(ContainerLifetime.Persistent)
     .AddDatabase("koalabooks");
 

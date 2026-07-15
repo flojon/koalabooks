@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\KoalaBooks.Web\KoalaBooks.Web.csproj" />
+    <ProjectReference Include="..\KoalaBooks.AppHostSupport\KoalaBooks.AppHostSupport.csproj" IsAspireProjectResource="false" />
   </ItemGroup>
 
   <ItemGroup>
