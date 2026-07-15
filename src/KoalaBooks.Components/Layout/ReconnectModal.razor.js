@@ -64,6 +64,7 @@ async function resume() {
     try {
         const successful = await Blazor.resumeCircuit();
         if (!successful) {
+            reconnectModal.close();
             location.reload();
         }
     } catch {
