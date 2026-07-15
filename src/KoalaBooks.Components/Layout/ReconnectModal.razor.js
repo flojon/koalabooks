@@ -9,7 +9,10 @@ const resumeButton = document.getElementById("components-resume-button");
 resumeButton.addEventListener("click", resume);
 
 const reloadButton = document.getElementById("components-reconnect-reload-button");
-reloadButton.addEventListener("click", () => location.reload());
+reloadButton.addEventListener("click", () => {
+    reconnectModal.remove();
+    location.reload();
+});
 
 // The framework updates this span's text every second during a retry countdown,
 // but doesn't raise an event when it hits 0 and the actual reconnect attempt
@@ -29,7 +32,10 @@ function handleReconnectStateChanged(event) {
     } else if (event.detail.state === "failed") {
         document.addEventListener("visibilitychange", retryWhenDocumentBecomesVisible);
     } else if (event.detail.state === "rejected") {
-        reconnectModal.close();
+        // Skip the dialog's closing animation (0.5s fade) instead of just calling
+        // close() - it can't finish before reload() navigates away, so the fading
+        // dialog would otherwise flash on screen for a couple of frames.
+        reconnectModal.remove();
         location.reload();
     }
 }
@@ -48,7 +54,7 @@ async function retry() {
             // We'll reload the page so the user can continue using the app as quickly as possible.
             const resumeSuccessful = await Blazor.resumeCircuit();
             if (!resumeSuccessful) {
-                reconnectModal.close();
+                reconnectModal.remove();
                 location.reload();
             } else {
                 reconnectModal.close();
@@ -64,7 +70,7 @@ async function resume() {
     try {
         const successful = await Blazor.resumeCircuit();
         if (!successful) {
-            reconnectModal.close();
+            reconnectModal.remove();
             location.reload();
         }
     } catch {
