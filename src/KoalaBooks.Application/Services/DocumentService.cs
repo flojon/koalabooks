@@ -347,10 +347,10 @@ public class DocumentService(
 
         // Piggyback on this read to refresh the xmin of any Document already tracked in this
         // circuit (e.g. from UploadAsync), so polling keeps stale entities from ever forming.
+        var trackedById = db.ChangeTracker.Entries<Document>().ToDictionary(e => e.Entity.Id);
         foreach (var row in rows)
         {
-            var entry = db.ChangeTracker.Entries<Document>().FirstOrDefault(e => e.Entity.Id == row.Meta.Id);
-            if (entry is not null)
+            if (trackedById.TryGetValue(row.Meta.Id, out var entry))
                 entry.Property("xmin").OriginalValue = row.Xmin;
         }
 
