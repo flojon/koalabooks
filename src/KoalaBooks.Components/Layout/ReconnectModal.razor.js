@@ -9,7 +9,20 @@ const resumeButton = document.getElementById("components-resume-button");
 resumeButton.addEventListener("click", resume);
 
 const reloadButton = document.getElementById("components-reconnect-reload-button");
-reloadButton.addEventListener("click", () => location.reload());
+reloadButton.addEventListener("click", () => {
+    reconnectModal.remove();
+    location.reload();
+});
+
+// The framework updates this span's text every second during a retry countdown,
+// but doesn't raise an event when it hits 0 and the actual reconnect attempt
+// starts. Watch it directly so we can swap the stale "0 seconds" text for an
+// "Försöker återansluta..." message while that attempt (which can take several seconds) is in flight.
+const secondsToNextAttempt = document.getElementById("components-seconds-to-next-attempt");
+const attemptingObserver = new MutationObserver(() => {
+    reconnectModal.classList.toggle("components-reconnect-attempting", secondsToNextAttempt.textContent === "0");
+});
+attemptingObserver.observe(secondsToNextAttempt, { childList: true, characterData: true, subtree: true });
 
 function handleReconnectStateChanged(event) {
     if (event.detail.state === "show") {
@@ -19,6 +32,10 @@ function handleReconnectStateChanged(event) {
     } else if (event.detail.state === "failed") {
         document.addEventListener("visibilitychange", retryWhenDocumentBecomesVisible);
     } else if (event.detail.state === "rejected") {
+        // Skip the dialog's closing animation (0.5s fade) instead of just calling
+        // close() - it can't finish before reload() navigates away, so the fading
+        // dialog would otherwise flash on screen for a couple of frames.
+        reconnectModal.remove();
         location.reload();
     }
 }
@@ -37,6 +54,7 @@ async function retry() {
             // We'll reload the page so the user can continue using the app as quickly as possible.
             const resumeSuccessful = await Blazor.resumeCircuit();
             if (!resumeSuccessful) {
+                reconnectModal.remove();
                 location.reload();
             } else {
                 reconnectModal.close();
@@ -52,6 +70,7 @@ async function resume() {
     try {
         const successful = await Blazor.resumeCircuit();
         if (!successful) {
+            reconnectModal.remove();
             location.reload();
         }
     } catch {
