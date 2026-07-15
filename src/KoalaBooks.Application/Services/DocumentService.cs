@@ -102,8 +102,18 @@ public class DocumentService(
             // Refresh only the concurrency token, not the whole entity — this method never
             // touches SuggestedType/ExtractionStatus, so don't let their stale tracked values overwrite the DB.
             entry.Property("xmin").OriginalValue = databaseValues["xmin"];
-            await db.SaveChangesAsync();
-            return null;
+
+            try
+            {
+                await db.SaveChangesAsync();
+                return null;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // A second collision on the same save is rare enough not to warrant looping —
+                // surface it and let the user retry instead of crashing the circuit.
+                return "Kunde inte spara just nu. Försök igen.";
+            }
         }
     }
 
