@@ -315,20 +315,37 @@ public class DocumentService(
         return (buffer.ToArray(), false);
     }
 
-    private static Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query) =>
-        query.Select(d => new DocumentMeta
+    private async Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query)
+    {
+        var rows = await query.Select(d => new
         {
-            Id = d.Id,
-            FileName = d.FileName,
-            ContentType = d.ContentType,
-            FileSize = d.FileSize,
-            UploadedAt = d.UploadedAt,
-            ClassifiedType = d.ClassifiedType,
-            SuggestedType = d.SuggestedType,
-            ExtractedDataJson = d.ExtractedDataJson,
-            DocumentDate = d.DocumentDate,
-            ExtractionStatus = d.ExtractionStatus
+            Meta = new DocumentMeta
+            {
+                Id = d.Id,
+                FileName = d.FileName,
+                ContentType = d.ContentType,
+                FileSize = d.FileSize,
+                UploadedAt = d.UploadedAt,
+                ClassifiedType = d.ClassifiedType,
+                SuggestedType = d.SuggestedType,
+                ExtractedDataJson = d.ExtractedDataJson,
+                DocumentDate = d.DocumentDate,
+                ExtractionStatus = d.ExtractionStatus
+            },
+            Xmin = EF.Property<uint>(d, "xmin")
         }).ToListAsync();
+
+        // Piggyback on this read to refresh the xmin of any Document already tracked in this
+        // circuit (e.g. from UploadAsync), so polling keeps stale entities from ever forming.
+        foreach (var row in rows)
+        {
+            var entry = db.ChangeTracker.Entries<Document>().FirstOrDefault(e => e.Entity.Id == row.Meta.Id);
+            if (entry is not null)
+                entry.Property("xmin").OriginalValue = row.Xmin;
+        }
+
+        return rows.Select(r => r.Meta).ToList();
+    }
 }
 
 public class DocumentMeta

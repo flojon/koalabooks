@@ -123,6 +123,29 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPendingAsync_RefreshesXminOfAlreadyTrackedDocument()
+    {
+        // Simulates the Inbox page's poll tick keeping a stale-tracked doc's xmin in sync.
+        var svc = _fx.MakeDocumentService();
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_fx.Db.Database.GetConnectionString()!).Options;
+        uint freshXmin;
+        await using (var concurrentDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId)))
+        {
+            var concurrentDoc = await concurrentDb.Documents.FirstAsync(d => d.Id == doc!.Id);
+            concurrentDoc.ExtractionStatus = ExtractionStatus.Completed;
+            await concurrentDb.SaveChangesAsync();
+            freshXmin = concurrentDb.Entry(concurrentDoc).Property<uint>("xmin").CurrentValue;
+        }
+
+        await svc.GetPendingAsync();
+
+        var trackedXmin = _fx.Db.Entry(doc!).Property<uint>("xmin").OriginalValue;
+        Assert.Equal(freshXmin, trackedXmin);
+    }
+
+    [Fact]
     public async Task UploadAsync_EnqueuesExtractionJob()
     {
         var queue = new RecordingExtractionQueue();
