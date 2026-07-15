@@ -274,8 +274,7 @@ else
                 }
 
                 var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
-                await using var stream = file.OpenReadStream(fileMaxBytes);
-                var (_, err) = await DocumentService.UploadAsync(file.Name, contentType, stream);
+                var (_, err) = await DocumentService.UploadAsync(file.Name, contentType, () => file.OpenReadStream(fileMaxBytes));
                 if (err is not null)
                     _error = err;
                 else
