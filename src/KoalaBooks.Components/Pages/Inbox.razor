@@ -142,6 +142,9 @@ else
     // ever syncing that failure back to ExtractionStatus — stop polling for it.
     private static readonly TimeSpan PendingStaleAfter = TimeSpan.FromMinutes(10);
 
+    private static readonly HashSet<string> AllowedExtensions =
+        new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".png", ".jpg", ".jpeg" };
+
     private int TotalPages => (_totalCount + PageSize - 1) / PageSize;
 
     private static (string Label, string Value)[] Filters =>
@@ -242,12 +245,19 @@ else
             {
                 const long maxBytes = 10 * 1024 * 1024;
                 const long zipMaxBytes = 50 * 1024 * 1024;
-                var isZip = Path.GetExtension(file.Name).Equals(".zip", StringComparison.OrdinalIgnoreCase);
+                var ext = Path.GetExtension(file.Name);
+                var isZip = ext.Equals(".zip", StringComparison.OrdinalIgnoreCase);
                 var fileMaxBytes = isZip ? zipMaxBytes : maxBytes;
+
+                if (!isZip && !AllowedExtensions.Contains(ext))
+                {
+                    _error = "Otillåten filtyp. Tillåtna typer: PDF, PNG, JPEG, ZIP.";
+                    continue;
+                }
 
                 if (file.Size > fileMaxBytes)
                 {
-                    _error = isZip ? $"{file.Name}: för stor (max 50 MB)." : $"{file.Name}: för stor (max 10 MB).";
+                    _error = isZip ? "Zip-filen är för stor (max 50 MB)." : "Filen är för stor (max 10 MB).";
                     continue;
                 }
 
