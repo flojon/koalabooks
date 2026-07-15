@@ -29,18 +29,19 @@ Task<(int? BatchId, string? Error)> UploadZipAsync(Func<Stream> openZipData, ...
 ```
 
 `UploadZipAsync`:
-1. Streams `openZipData()` directly into a Postgres LO via the shared `LargeObjectStream` write path (§4) — the container is never fully buffered in memory. Enforces `ZipMaxBytes = 500MB` as a running byte count during this copy; aborts and deletes the LO immediately if exceeded.
-2. Reopens the staged LO via a `LargeObjectStream` in read mode, wraps it in `ZipArchive.Open(stream, ZipArchiveMode.Read)` just to read `Entries.Count`, then closes it (no entry processing here). Enforces `ZipMaxEntries = 500`; aborts and deletes the LO if exceeded. This is the one piece of validation still synchronous in the request — both limits fail fast with an error before any batch/job is created, matching the issue's requirement that the whole zip is rejected upfront on either cap.
-3. Creates a `ZipImportBatch` row (§5) with `Done = false`, `TotalEntries` set from the count just read in step 2, and other counts at zero.
-4. Enqueues `ZipImportJob(batchId)` via `IZipImportQueue` (Hangfire-backed / no-op for tests, mirroring `IDocumentExtractionQueue`/`NoOpDocumentExtractionQueue`).
-5. Returns immediately. `Inbox.razor` shows a "Zip accepted — processing in background" Snackbar.
+1. Copies `openZipData()` into a local temp file (never fully buffered in memory), enforcing `ZipMaxBytes = 500MB` as a running byte count during the copy — aborts and deletes the temp file immediately if exceeded, before touching Postgres at all.
+2. Opens `ZipArchive` on that local temp `FileStream` just to read `Entries.Count`, enforcing `ZipMaxEntries = 500` — aborts and deletes the temp file if exceeded. This is the one piece of validation still synchronous in the request — both limits fail fast with an error before any Postgres LO, batch, or job is created, matching the issue's requirement that the whole zip is rejected upfront on either cap.
+3. Copies the local temp file into a new Postgres LO via the shared copy-stream-into-new-LO helper (§4) — this LO is the durable staging record from here on. Deletes the local temp file (its only purpose was validation + serving as the LO write's source).
+4. Creates a `ZipImportBatch` row (§5) with `Done = false`, `Acknowledged = false`, `StagingOid` from step 3, `TotalEntries` from step 2, and other counts at zero.
+5. Enqueues `ZipImportJob(batchId)` via `IZipImportQueue` (Hangfire-backed / no-op for tests, mirroring `IDocumentExtractionQueue`/`NoOpDocumentExtractionQueue`).
+6. Returns immediately. `Inbox.razor` shows a "Zip accepted — processing in background" Snackbar.
 
 The per-file 10MB cap is enforced automatically by `UploadAsync`'s `MaxBytesEnforcingStream` (from #236) when each entry is later uploaded inside `ZipImportJob` — `UploadZipAsync` does not need its own copy of that check.
 
 ### 2. `ZipImportJob` (Hangfire job)
 
 ```csharp
-public class ZipImportJob(AppDbContext db, IDocumentService documentService)
+public class ZipImportJob(AppDbContext db, DocumentService documentService)
 {
     [AutomaticRetry(Attempts = 3)]
     public async Task RunAsync(int batchId) { ... }
@@ -48,29 +49,34 @@ public class ZipImportJob(AppDbContext db, IDocumentService documentService)
 ```
 
 - Loads the `ZipImportBatch` (`IgnoreQueryFilters()`, no `ICurrentUser` in job context — same reasoning as `DocumentExtractionJob`).
-- Opens the batch's staged LO via a `LargeObjectStream` in read mode (§4) and passes it to `ZipArchive.Open(stream, ZipArchiveMode.Read)`. This requires `Seek` — reading the central directory and each entry's local header depends on it — which is exactly what `LargeObjectStream` provides and `DbDocumentStorage.LoadAsync`'s byte[]-draining approach does not.
-- `TotalEntries` was already set at upload time (§1 step 3); the job doesn't re-derive it.
-- Loops entries sequentially. For each entry:
+- Copies the batch's staged LO into a fresh local temp file via the shared copy-LO-into-stream helper (§4) — a single bounded, sequential copy, not a transaction held open for the rest of the method. Opens `ZipArchive` on that local `FileStream` (ordinary `System.IO.FileStream`, fully `Seek`-capable — no Postgres-backed stream needed for the rest of processing). `TotalEntries` was already set at upload time (§1 step 4); the job doesn't re-derive it.
+- **Resumes from `ProcessedEntries`**: iterates `archive.Entries.Skip(batch.ProcessedEntries)` rather than from the start, so a Hangfire retry after a mid-batch failure picks up where the last attempt left off instead of re-importing already-processed entries as duplicates.
+- For each remaining entry:
   - Unsupported type / directory entry / over the 10MB-per-file cap (surfaced as a thrown exception from `UploadAsync`'s `MaxBytesEnforcingStream`) → append `{FileName, Reason}` to `SkippedReasons`, increment `SkippedCount`.
   - Otherwise: `documentService.UploadAsync(entry.Name, contentType, () => archive.GetEntry(entry.FullName)!.Open())`. No per-entry `MemoryStream` buffering — `UploadAsync`'s retry story (from #236) already handles re-invoking the factory to reopen the entry if a save attempt fails transiently. On success, increment `ImportedCount`.
-  - Increment `ProcessedEntries` and save the batch row after every entry, so progress advances incrementally rather than only at the end.
-- On completion (or after exhausting retries — see Error Handling): set `Done = true`, delete the staging LO.
+  - Increment `ProcessedEntries` and save the batch row after every entry, so progress advances incrementally rather than only at the end, and so a retry resumes at the right offset.
+- In a `finally`, deletes the local temp file regardless of outcome.
+- On completion (or after exhausting retries — see Error Handling): set `Done = true`, delete the staging LO (the durable Postgres copy is only removed once the batch is fully resolved, successful or not — never on a mid-batch attempt that might still retry).
 
 ### 3. UI polling (`Inbox.razor`)
 
-Extend the existing #208 poll-timer to also query `ZipImportBatch` rows for the current organisation where `Done = false`. No change to how individual documents are displayed — they already appear via the existing `Pending → Completed` flow as soon as `UploadAsync` creates each row, so entries reveal one by one as the job works through the archive. When a batch flips to `Done = true`, show one summary Snackbar:
+Extend the existing #208 poll-timer to also query `ZipImportBatch` rows for the current organisation where `Acknowledged = false` (covers both still-running batches and finished-but-not-yet-shown-to-the-user ones). No change to how individual documents are displayed — they already appear via the existing `Pending → Completed` flow as soon as `UploadAsync` creates each row, so entries reveal one by one as the job works through the archive. When a polled batch has `Done = true`, show one summary Snackbar:
 
 > "Import finished: 47 imported, 3 skipped: invoice-x.exe (unsupported type), ..."
 
-and stop polling that batch (e.g. track seen/acknowledged batch IDs client-side so the summary fires once).
+then call a new `AcknowledgeZipBatchAsync(batchId)` (sets `Acknowledged = true`) so it drops out of the next poll and the summary fires exactly once. The poll-timer's keep-alive condition extends to: any visible document is `Pending`, **or** any unacknowledged batch exists (running or freshly done).
 
-### 4. Shared Postgres LO primitive
+### 4. Shared Postgres LO helpers
 
-Extract a `LargeObjectStream : Stream` from `DbDocumentStorage`'s existing raw SQL calls — a genuine `Read`+`Seek`-capable stream over an open Large Object, implementing `Seek` via `lo_lseek`, `Read` via `loread`, `Write` via `lowrite`, holding its connection/transaction open for the stream's lifetime (disposed via `DisposeAsync`).
+Two of `DbDocumentStorage`'s existing raw-SQL chunk loops (`lo_create`/`lo_open`/`lowrite`/`loread`/`lo_close` — plain PostgreSQL functions called via SQL, *not* Npgsql's `NpgsqlLargeObjectManager`/`NpgsqlLargeObjectStream`, which are `[Obsolete]` as of Npgsql 8.0 specifically in favor of calling these functions directly) are extracted into two shared, sequential-only helpers:
 
-- `DbDocumentStorage` is refactored to compose this internally; its external interface and behavior (`SaveAsync`/`LoadAsync`/`DeleteAsync`) are unchanged.
-- The zip staging write path (upload) and read path (`ZipImportJob` opening the container) both use `LargeObjectStream` directly, keyed by `ZipImportBatch.StagingOid` (a raw LO oid, no separate staging table). This avoids a parallel `IZipStagingStorage` interface/implementation that would otherwise duplicate `DbDocumentStorage`'s chunked LO read/write logic.
-- This is new capability, not a refactor-only change: nothing in the codebase today needs random-access reads into an LO, since `DbDocumentStorage.LoadAsync` always drains sequentially into a `byte[]` (fine for single documents, capped at 10MB — not fine for a 500MB zip container).
+- `CopyStreamIntoNewLargeObjectAsync(NpgsqlConnection conn, Stream source) -> uint oid` — the write direction (`DbDocumentStorage.SaveAsync`'s existing loop, generalized off `documentId`/`DocumentData` to just return the new oid).
+- `CopyLargeObjectIntoStreamAsync(NpgsqlConnection conn, uint oid, Stream destination)` — the read direction (`DbDocumentStorage.LoadAsync`'s existing loop, generalized to write into an arbitrary destination `Stream` — e.g. a local `FileStream` — instead of only ever assembling a `byte[]`).
+
+Neither helper needs `Seek`: both are single forward passes. `ZipArchive`'s `Seek` requirement (to read the central directory and jump into entries) is satisfied entirely by the ordinary, fully-`Seek`-capable local `FileStream` that `ZipImportJob` copies the LO into (§2) — no Postgres-backed stream is ever handed to `ZipArchive`, and no long-lived transaction is held open across batch processing.
+
+- `DbDocumentStorage` is refactored to call these two helpers internally instead of its own inline loops; its external interface and behavior (`SaveAsync`/`LoadAsync`/`DeleteAsync`) are unchanged.
+- The zip staging write path (§1 step 3) and read path (`ZipImportJob`, §2) both call these helpers directly, keyed by `ZipImportBatch.StagingOid` (a raw LO oid, no separate staging table/interface) — this avoids a parallel `IZipStagingStorage` abstraction that would otherwise duplicate `DbDocumentStorage`'s chunk-loop logic a second time.
 
 ### 5. Data model additions
 
@@ -87,12 +93,14 @@ New `ZipImportBatch` entity + migration:
 | `SkippedCount` | int | |
 | `SkippedReasons` | jsonb | `{FileName, Reason}[]` |
 | `Done` | bool | terminal state, including failure (see below) |
+| `Acknowledged` | bool | set once `Inbox.razor` has shown the summary Snackbar for a `Done` batch; drives it out of future polls |
 | `CreatedAt` | datetime | |
 
 ### 6. Error handling
 
 - **Corrupt zip container** (fails to open as a `ZipArchive`): batch is marked `Done = true` immediately, with a single `SkippedReasons` entry describing the failure, `TotalEntries = 0`. No entries are processed.
 - **Corrupt/mid-read entry**: caught and skipped, same as today's per-entry behavior — batch continues to the next entry.
+- **Mid-batch job failure + Hangfire retry**: the retried attempt resumes from `ProcessedEntries` (§2) rather than reprocessing already-imported entries, so retries can't create duplicate `Document` rows.
 - **Job-level exception exhausting Hangfire's 3 retries**: the batch must not poll forever. `ZipImportJob` needs a way to reach `Done = true` (marked failed) even when `RunAsync` itself throws after retries are exhausted — via a Hangfire `IElmahFilter`/failure filter attached to the job, or a try/catch around the job body that marks the batch failed before rethrowing (so Hangfire's dashboard still records the failure) — exact mechanism to be settled in the implementation plan.
 
 ### 7. New limits
@@ -108,8 +116,9 @@ Following `DocumentExtractionJobTests.cs`'s pattern — construct `ZipImportJob`
 - Corrupt zip container: immediate `Done = true`, no entries processed.
 - Corrupt entry mid-batch: skipped, batch continues, later entries still processed.
 - Retry/failure terminal state: job throws past retry limit → batch still reaches `Done = true` (failed), not stuck.
+- Retry resumption: simulate a mid-batch failure after N entries, rerun `RunAsync`, assert entries `0..N-1` aren't re-imported (no duplicate `Document` rows) and processing continues from entry `N`.
 - New limits: reject at 501 entries / just over 500MB during upload, accept at the boundary.
-- `LargeObjectStream` itself: `Read`/`Seek`/`Write` round-trip correctness, including seeking backward and forward within a single LO (needed for `ZipArchive` to read the central directory and then jump into entries).
+- The two shared Postgres LO helpers (§4): round-trip a stream through `CopyStreamIntoNewLargeObjectAsync` then `CopyLargeObjectIntoStreamAsync` and assert byte-for-byte equality.
 
 ## Non-goals
 
