@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/KoalaBooks.AppHost/KoalaBooks.AppHost.csproj" />
+    <Project Path="src/KoalaBooks.AppHostSupport/KoalaBooks.AppHostSupport.csproj" />
     <Project Path="src/KoalaBooks.Application/KoalaBooks.Application.csproj" />
     <Project Path="src/KoalaBooks.Components/KoalaBooks.Components.csproj" />
     <Project Path="src/KoalaBooks.Domain/KoalaBooks.Domain.csproj" />
