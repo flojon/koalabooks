@@ -37,7 +37,7 @@ static string GetPostgresVolumeName([CallerFilePath] string sourcePath = "")
     if (!string.IsNullOrEmpty(overrideSuffix))
     {
         var trimmedSuffix = overrideSuffix.Trim();
-        ValidateSuffix(trimmedSuffix);
+        ValidateSuffix(trimmedSuffix, baseName.Length);
         volumeName = $"{baseName}-{trimmedSuffix}";
     }
     else
@@ -61,18 +61,37 @@ static string GetPostgresVolumeName([CallerFilePath] string sourcePath = "")
 }
 
 /// <summary>
-/// Validates that a volume name suffix matches Docker volume naming requirements: [a-zA-Z0-9][a-zA-Z0-9_.-]*
+/// Validates that a volume name suffix matches Docker volume naming requirements: [a-zA-Z0-9][a-zA-Z0-9_.-]*,
+/// and that the resulting "{baseName}-{suffix}" volume name won't exceed Docker's 255-character limit.
 /// </summary>
-static void ValidateSuffix(string suffix)
+static void ValidateSuffix(string suffix, int baseNameLength)
 {
+    const int maxVolumeNameLength = 255;
+
     if (!Regex.IsMatch(suffix, @"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"))
     {
         throw new InvalidOperationException(
             $"ASPIRE_DB_SUFFIX value '{suffix}' is invalid. Docker volume names must match the pattern [a-zA-Z0-9][a-zA-Z0-9_.-]* " +
             $"(start with alphanumeric, contain only alphanumeric, underscore, period, or hyphen).");
     }
+
+    var fullLength = baseNameLength + 1 + suffix.Length;
+    if (fullLength > maxVolumeNameLength)
+    {
+        throw new InvalidOperationException(
+            $"ASPIRE_DB_SUFFIX value '{suffix}' is too long: the resulting volume name would be {fullLength} characters, " +
+            $"exceeding Docker's {maxVolumeNameLength}-character limit for volume names.");
+    }
 }
 
+/// <summary>
+/// Determines whether <paramref name="startDir"/> is inside the main git checkout, as opposed to a
+/// linked worktree. Walks up from <paramref name="startDir"/> looking for a ".git" entry: a real
+/// directory means the main checkout (git owns its .git folder directly), while a file there means a
+/// linked worktree (git replaces .git with a "gitdir:" pointer back to the main repo's
+/// .git/worktrees/&lt;name&gt;). If no .git marker is found at all, the path isn't inside a git repo,
+/// so it defaults to "main checkout" to keep the unscoped volume name.
+/// </summary>
 static bool IsMainCheckout(string startDir)
 {
     for (var dir = new DirectoryInfo(startDir); dir is not null; dir = dir.Parent)
