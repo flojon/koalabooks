@@ -101,7 +101,7 @@ New `ZipImportBatch` entity + migration:
 - **Corrupt zip container** (fails to open as a `ZipArchive`): batch is marked `Done = true` immediately, with a single `SkippedReasons` entry describing the failure, `TotalEntries = 0`. No entries are processed.
 - **Corrupt/mid-read entry**: caught and skipped, same as today's per-entry behavior — batch continues to the next entry.
 - **Mid-batch job failure + Hangfire retry**: the retried attempt resumes from `ProcessedEntries` (§2) rather than reprocessing already-imported entries, so retries can't create duplicate `Document` rows.
-- **Job-level exception exhausting Hangfire's 3 retries**: the batch must not poll forever. `ZipImportJob` needs a way to reach `Done = true` (marked failed) even when `RunAsync` itself throws after retries are exhausted — via a Hangfire `IElmahFilter`/failure filter attached to the job, or a try/catch around the job body that marks the batch failed before rethrowing (so Hangfire's dashboard still records the failure) — exact mechanism to be settled in the implementation plan.
+- **Job-level exception exhausting Hangfire's 3 retries**: settled by *not* building a Hangfire failure-filter mechanism at all — a batch that never resolves after all retries are exhausted simply stays `Done = false` forever, exactly like `DocumentExtractionJob` already leaves a `Document` stuck at `ExtractionStatus.Pending` in the equivalent scenario. `Inbox.razor` already has a staleness cutoff for that exact class of problem (`PendingStaleAfter`) and gets an equivalent one for batches (`ZipBatchStaleAfter`, longer, since a batch does far more work than a single document) — the UI simply stops polling for an abandoned batch rather than the job pretending to resolve it. Simpler than inventing new Hangfire-specific plumbing, and consistent with existing precedent in this codebase.
 
 ### 7. New limits
 
@@ -115,7 +115,6 @@ Following `DocumentExtractionJobTests.cs`'s pattern — construct `ZipImportJob`
 - Skip accumulation: mixed valid/invalid/oversized entries, correct `SkippedReasons`.
 - Corrupt zip container: immediate `Done = true`, no entries processed.
 - Corrupt entry mid-batch: skipped, batch continues, later entries still processed.
-- Retry/failure terminal state: job throws past retry limit → batch still reaches `Done = true` (failed), not stuck.
 - Retry resumption: simulate a mid-batch failure after N entries, rerun `RunAsync`, assert entries `0..N-1` aren't re-imported (no duplicate `Document` rows) and processing continues from entry `N`.
 - New limits: reject at 501 entries / just over 500MB during upload, accept at the boundary.
 - The two shared Postgres LO helpers (§4): round-trip a stream through `CopyStreamIntoNewLargeObjectAsync` then `CopyLargeObjectIntoStreamAsync` and assert byte-for-byte equality.
