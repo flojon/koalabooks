@@ -2,6 +2,8 @@ using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
+using KoalaBooks.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
 
@@ -88,6 +90,36 @@ public class DocumentServiceTests : IDisposable
         var updated = pending.First(d => d.Id == doc.Id);
         Assert.Equal("CustomerInvoice", updated.ClassifiedType);
         Assert.Equal(date, updated.DocumentDate);
+    }
+
+    [Fact]
+    public async Task UpdateMetadataAsync_StaleTrackedEntityFromUpload_RetriesInsteadOfThrowing()
+    {
+        // svc's doc stays tracked with a stale xmin after upload; a second DbContext simulates
+        // the background extraction job writing to the row concurrently.
+        var svc = _fx.MakeDocumentService();
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_fx.Db.Database.GetConnectionString()!).Options;
+        await using (var concurrentDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId)))
+        {
+            var concurrentDoc = await concurrentDb.Documents.FirstAsync(d => d.Id == doc!.Id);
+            concurrentDoc.SuggestedType = "SupplierInvoice";
+            concurrentDoc.ExtractionStatus = ExtractionStatus.Completed;
+            await concurrentDb.SaveChangesAsync();
+        }
+
+        var date = new DateOnly(2026, 3, 15);
+        var err = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
+
+        Assert.Null(err);
+
+        // Verify through a fresh DbContext — _fx.Db still has the stale tracked instance.
+        await using var verifyDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId));
+        var updated = await verifyDb.Documents.IgnoreQueryFilters().FirstAsync(d => d.Id == doc.Id);
+        Assert.Equal("CustomerInvoice", updated.ClassifiedType);
+        Assert.Equal(date, updated.DocumentDate);
+        Assert.Equal("SupplierInvoice", updated.SuggestedType); // concurrent write preserved, not clobbered
     }
 
     [Fact]

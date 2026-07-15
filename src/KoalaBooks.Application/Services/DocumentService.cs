@@ -81,8 +81,30 @@ public class DocumentService(
         if (doc is null) return "Dokumentet hittades inte.";
         doc.ClassifiedType = classifiedType;
         doc.DocumentDate = documentDate;
-        await db.SaveChangesAsync();
-        return null;
+        return await SaveChangesResolvingConcurrencyAsync(doc);
+    }
+
+    // Scoped AppDbContext lives for the whole Blazor circuit, so a Document tracked earlier
+    // (e.g. by UploadAsync) can go stale once the background extraction job updates it.
+    private async Task<string?> SaveChangesResolvingConcurrencyAsync(Document doc)
+    {
+        try
+        {
+            await db.SaveChangesAsync();
+            return null;
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            var entry = ex.Entries.Single();
+            var databaseValues = await entry.GetDatabaseValuesAsync();
+            if (databaseValues is null) return "Dokumentet hittades inte.";
+
+            // Refresh only the concurrency token, not the whole entity — this method never
+            // touches SuggestedType/ExtractionStatus, so don't let their stale tracked values overwrite the DB.
+            entry.Property("xmin").OriginalValue = databaseValues["xmin"];
+            await db.SaveChangesAsync();
+            return null;
+        }
     }
 
     public Task<List<DocumentMeta>> GetPendingAsync(
