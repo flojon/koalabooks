@@ -105,6 +105,7 @@ public class ApiTests : IAsyncLifetime
         var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("client_id", "koalabooks-api"),
             new KeyValuePair<string, string>("username", TestEmail),
             new KeyValuePair<string, string>("password", TestPassword)
         ]));
@@ -146,6 +147,36 @@ public class ApiTests : IAsyncLifetime
         Assert.NotEmpty(token);
         var orgId = DecodeOrgIdFromToken(token);
         Assert.Equal(_orgId.ToString(), orgId);
+    }
+
+    [Fact]
+    public async Task ConnectToken_UnregisteredClientId_ReturnsUnauthorized()
+    {
+        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("client_id", "not-a-real-client"),
+            new KeyValuePair<string, string>("username", TestEmail),
+            new KeyValuePair<string, string>("password", TestPassword)
+        ]));
+        // OpenIddict treats an unrecognized client_id as a client-authentication failure
+        // (RFC 6749 §5.2 "invalid_client"), reported as 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConnectToken_MissingClientId_ReturnsUnauthorized()
+    {
+        // A request with no client_id at all used to be accepted anonymously; now that a
+        // real client is registered and anonymous clients are no longer accepted, client_id
+        // is mandatory and an omitted one must be rejected.
+        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("username", TestEmail),
+            new KeyValuePair<string, string>("password", TestPassword)
+        ]));
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     // ── Fiscal year tests ───────────────────────────────────────────────────────
