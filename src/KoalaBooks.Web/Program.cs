@@ -61,11 +61,16 @@ if (!builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddScoped<KoalaBooks.Application.Jobs.DocumentExtractionJob>();
     builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractionQueue,
         KoalaBooks.Application.Jobs.HangfireDocumentExtractionQueue>();
+    builder.Services.AddScoped<KoalaBooks.Application.Jobs.ZipImportJob>();
+    builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IZipImportQueue,
+        KoalaBooks.Application.Jobs.HangfireZipImportQueue>();
 }
 else
 {
     builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractionQueue,
         KoalaBooks.Application.Jobs.NoOpDocumentExtractionQueue>();
+    builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IZipImportQueue,
+        KoalaBooks.Application.Jobs.NoOpZipImportQueue>();
 }
 
 builder.Services.AddHttpContextAccessor();
