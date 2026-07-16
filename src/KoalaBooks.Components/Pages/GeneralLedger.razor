@@ -147,7 +147,7 @@ else
 }
 
 @code {
-    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IJournalEntryReportingService JournalReportingService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
 
@@ -214,8 +214,8 @@ else
         _loadingIds.Clear();
         _loadedSections.Clear();
         _accounts = await AccountService.GetAllAsync(SelectedFiscalYearId);
-        _computedBalances = await JournalEntryService.GetComputedBalancesAsync(SelectedFiscalYearId);
-        _accountsWithTransactions = await JournalEntryService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
+        _computedBalances = await JournalReportingService.GetComputedBalancesAsync(SelectedFiscalYearId);
+        _accountsWithTransactions = await JournalReportingService.GetAccountIdsWithTransactionsAsync(SelectedFiscalYearId, FromDate, ToDate, includeClosingEntries: true);
     }
 
     private async Task ApplyFilters()
@@ -248,7 +248,7 @@ else
         _loadingIds.Add(account.Id);
         StateHasChanged();
 
-        var section = await JournalEntryService.GetAccountLedgerAsync(
+        var section = await JournalReportingService.GetAccountLedgerAsync(
             SelectedFiscalYearId, account.Id, FromDate, ToDate, excludeClosingEntries: false);
 
         _loadingIds.Remove(account.Id);
