@@ -1,9 +1,12 @@
+using KoalaBooks.Application.Jobs;
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
+using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace KoalaBooks.Tests;
 
@@ -145,6 +148,77 @@ public class DocumentServiceTests : IDisposable
 
         await using var verifyDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId));
         Assert.False(await verifyDb.Documents.IgnoreQueryFilters().AnyAsync(d => d.Id == doc.Id));
+    }
+
+    [Fact]
+    public async Task UpdateMetadataAsync_CollidesTwice_ReturnsFriendlyErrorInsteadOfThrowing()
+    {
+        // A separate DbContext/service instance whose interceptor bumps the row's xmin via
+        // a third DbContext right before each of its own SaveChangesAsync calls, so both the
+        // initial save and the retry land against an already-stale xmin.
+        var svc = _fx.MakeDocumentService();
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+
+        var connStr = _fx.Db.Database.GetConnectionString()!;
+        var raceOptions = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connStr).Options;
+        async Task BumpXmin()
+        {
+            await using var raceDb = new AppDbContext(raceOptions, TestFixture.MakeTenant(_fx.OrganisationId));
+            var raceDoc = await raceDb.Documents.FirstAsync(d => d.Id == doc!.Id);
+            raceDoc.FileSize += 1;
+            await raceDb.SaveChangesAsync();
+        }
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(connStr)
+            .AddInterceptors(new BumpXminBeforeSaveInterceptor(BumpXmin, maxInjections: 2))
+            .Options;
+        await using var collidingDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId));
+        var collidingSvc = new DocumentService(
+            collidingDb, new DbDocumentStorage(collidingDb), new NoOpDocumentExtractionQueue(), TestFixture.MakeTenant(_fx.OrganisationId));
+
+        var err = await collidingSvc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", new DateOnly(2026, 3, 15));
+
+        Assert.Equal("Kunde inte spara just nu. Försök igen.", err);
+    }
+
+    // Injects a conflicting write immediately before each of the first `maxInjections`
+    // SaveChangesAsync calls on the intercepted context, forcing repeated xmin collisions.
+    private sealed class BumpXminBeforeSaveInterceptor(Func<Task> injectConflictingWrite, int maxInjections) : SaveChangesInterceptor
+    {
+        private int _saveCount;
+
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _saveCount) <= maxInjections)
+                await injectConflictingWrite();
+
+            return await base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task GetPendingAsync_RefreshesXminOfAlreadyTrackedDocument()
+    {
+        // Simulates the Inbox page's poll tick keeping a stale-tracked doc's xmin in sync.
+        var svc = _fx.MakeDocumentService();
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_fx.Db.Database.GetConnectionString()!).Options;
+        uint freshXmin;
+        await using (var concurrentDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId)))
+        {
+            var concurrentDoc = await concurrentDb.Documents.FirstAsync(d => d.Id == doc!.Id);
+            concurrentDoc.ExtractionStatus = ExtractionStatus.Completed;
+            await concurrentDb.SaveChangesAsync();
+            freshXmin = concurrentDb.Entry(concurrentDoc).Property<uint>("xmin").CurrentValue;
+        }
+
+        await svc.GetPendingAsync();
+
+        var trackedXmin = _fx.Db.Entry(doc!).Property<uint>("xmin").OriginalValue;
+        Assert.Equal(freshXmin, trackedXmin);
     }
 
     [Fact]
