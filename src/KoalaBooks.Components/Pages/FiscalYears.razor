@@ -183,7 +183,7 @@
 @code {
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IYearEndClosingService YearEndClosingService { get; set; } = default!;
-    [Inject] private VoucherGapService VoucherGapService { get; set; } = default!;
+    [Inject] private IVoucherGapService VoucherGapService { get; set; } = default!;
     [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
     [Inject] private IBasImportService BasImportService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
