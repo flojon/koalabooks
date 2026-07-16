@@ -1,7 +1,7 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @using KoalaBooks.Application.Services
-@using KoalaBooks.Infrastructure.Services
+@using KoalaBooks.Domain.Interfaces
 @using Microsoft.Extensions.DependencyInjection
 @using Microsoft.Extensions.Logging
 @inject NavigationManager Navigation
@@ -154,7 +154,7 @@
             // with the page's OnInitializedAsync, which would cause concurrent-operation exceptions.
             await using var scope = ScopeFactory.CreateAsyncScope();
             var fySvc = scope.ServiceProvider.GetRequiredService<IFiscalYearService>();
-            var bankSvc = scope.ServiceProvider.GetRequiredService<BankImportService>();
+            var bankSvc = scope.ServiceProvider.GetRequiredService<IBankImportService>();
             var invSvc = scope.ServiceProvider.GetRequiredService<ISupplierInvoiceService>();
 
             var fy = await fySvc.GetActiveAsync();
