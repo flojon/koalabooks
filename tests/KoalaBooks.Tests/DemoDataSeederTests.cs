@@ -147,7 +147,7 @@ public class DemoDataSeederTests : IDisposable
                 .OrderBy(j => j.EntryNumber)
                 .Select(j => j.EntryNumber)
                 .ToListAsync();
-            Assert.Equal([1, 2, 4, 5, 6], entryNumbers);
+            Assert.Equal([1, 2, 4, 5, 6, 7, 8], entryNumbers);
         }
     }
 
@@ -248,6 +248,61 @@ public class DemoDataSeederTests : IDisposable
 
         var verifyUserManager = verifyScope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         Assert.NotNull(await verifyUserManager.FindByEmailAsync(DemoDataSeeder.DemoNonAdminUserEmail));
+    }
+
+    [Fact]
+    public async Task SeedAsync_CreatesThreeCustomers()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var customers = await db.Customers.ToListAsync();
+            Assert.Equal(3, customers.Count);
+            Assert.All(customers, c => Assert.False(string.IsNullOrWhiteSpace(c.OrgNumber)));
+            Assert.All(customers, c => Assert.False(string.IsNullOrWhiteSpace(c.Email)));
+        }
+    }
+
+    [Fact]
+    public async Task SeedAsync_CreatesOneUnpostedAndOnePaidSupplierInvoice()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var invoices = await db.SupplierInvoices.ToListAsync();
+            Assert.Equal(2, invoices.Count);
+
+            var unposted = Assert.Single(invoices, i => i.JournalEntryId == null);
+            Assert.False(unposted.IsPaid);
+
+            var paid = Assert.Single(invoices, i => i.JournalEntryId != null);
+            Assert.True(paid.IsPaid);
+            Assert.NotNull(paid.PaidDate);
+            Assert.NotNull(paid.PaymentJournalEntryId);
+        }
+    }
+
+    [Fact]
+    public async Task SeedAsync_CreatesOneDraftCustomerInvoiceWithLines()
+    {
+        using var scope = _sp.CreateScope();
+        await DemoDataSeeder.SeedAsync(scope.ServiceProvider);
+
+        var (db, _) = await OpenTenantDbAsync(scope.ServiceProvider);
+        await using (db)
+        {
+            var invoice = await db.CustomerInvoices.Include(i => i.Lines).SingleAsync();
+            Assert.False(invoice.IsPosted);
+            Assert.NotNull(invoice.CustomerId);
+            Assert.Equal(2, invoice.Lines.Count);
+            Assert.True(invoice.TotalAmount > 0);
+        }
     }
 
     public void Dispose()
