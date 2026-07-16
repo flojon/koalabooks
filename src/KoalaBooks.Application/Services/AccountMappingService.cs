@@ -21,18 +21,18 @@ public class AccountMappingService
 
     public async Task<List<MappingRow>> BuildMappingAsync(int sourceFiscalYearId, int targetFiscalYearId)
     {
-        var sourceYear = await _db.FiscalYears.FindAsync(sourceFiscalYearId)
+        var sourceYear = await _db.FiscalYears.FindAsync(sourceFiscalYearId).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Source fiscal year not found.");
 
         var sourceAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == sourceFiscalYearId)
             .OrderBy(a => a.AccountNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var targetAccountNumbers = await _db.Accounts
             .Where(a => a.FiscalYearId == targetFiscalYearId)
             .Select(a => a.AccountNumber)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
 
         Dictionary<int, decimal> effectiveUbs;
         if (sourceYear.IsClosed)
@@ -47,13 +47,13 @@ public class AccountMappingService
                 .Where(l => sourceAccountIds.Contains(l.AccountId) && l.JournalEntry.IsPosted)
                 .GroupBy(l => l.AccountId)
                 .Select(g => new { g.Key, Total = g.Sum(l => l.DebitAmount) })
-                .ToDictionaryAsync(x => x.Key, x => x.Total);
+                .ToDictionaryAsync(x => x.Key, x => x.Total).ConfigureAwait(false);
 
             var credits = await _db.JournalEntryLines
                 .Where(l => sourceAccountIds.Contains(l.AccountId) && l.JournalEntry.IsPosted)
                 .GroupBy(l => l.AccountId)
                 .Select(g => new { g.Key, Total = g.Sum(l => l.CreditAmount) })
-                .ToDictionaryAsync(x => x.Key, x => x.Total);
+                .ToDictionaryAsync(x => x.Key, x => x.Total).ConfigureAwait(false);
 
             effectiveUbs = sourceAccounts.ToDictionary(a => a.Id, a =>
             {
@@ -81,12 +81,12 @@ public class AccountMappingService
         int targetFiscalYearId,
         List<MappingRow> rows)
     {
-        var targetYear = await _db.FiscalYears.FindAsync(targetFiscalYearId)
+        var targetYear = await _db.FiscalYears.FindAsync(targetFiscalYearId).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Target fiscal year not found.");
 
         var targetAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == targetFiscalYearId)
-            .ToDictionaryAsync(a => a.AccountNumber);
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
 
         int mapped = 0, skipped = 0;
         foreach (var row in rows)
@@ -102,7 +102,7 @@ public class AccountMappingService
         }
 
         targetYear.PreviousFiscalYearId = sourceFiscalYearId;
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
 
         return new ApplyMappingResult(mapped, skipped);
     }

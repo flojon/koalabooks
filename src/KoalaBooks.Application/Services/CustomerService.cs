@@ -18,7 +18,7 @@ public class CustomerService
         return await _db.Customers
             .Where(c => c.OrganisationId == organisationId && c.IsActive)
             .OrderBy(c => c.Name)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<(Customer? Customer, string? Error)> CreateAsync(Customer customer)
@@ -28,7 +28,7 @@ public class CustomerService
 
         customer.CreatedAt = DateTime.UtcNow;
         _db.Customers.Add(customer);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return (customer, null);
     }
 
@@ -37,7 +37,7 @@ public class CustomerService
         if (string.IsNullOrWhiteSpace(customer.Name))
             return (null, "Kundnamn är obligatoriskt.");
 
-        var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customer.Id);
+        var existing = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customer.Id).ConfigureAwait(false);
         if (existing is null) return (null, "Kunden hittades inte.");
 
         existing.Name = customer.Name;
@@ -49,20 +49,20 @@ public class CustomerService
         existing.City = customer.City;
         existing.Country = customer.Country;
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return (existing, null);
     }
 
     public async Task<string?> DeactivateAsync(int customerId)
     {
-        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
+        var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId).ConfigureAwait(false);
         if (customer is null) return "Kunden hittades inte.";
 
-        var hasInvoices = await _db.CustomerInvoices.AnyAsync(i => i.CustomerId == customerId);
+        var hasInvoices = await _db.CustomerInvoices.AnyAsync(i => i.CustomerId == customerId).ConfigureAwait(false);
         if (hasInvoices) return "Kunder med fakturor kan inte tas bort.";
 
         customer.IsActive = false;
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return null;
     }
 }
