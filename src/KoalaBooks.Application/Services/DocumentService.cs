@@ -1,3 +1,4 @@
+using KoalaBooks.Application.Jobs;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
@@ -185,6 +186,30 @@ public class DocumentService(
 
     public Task<int> GetPendingCountAsync(string? typeFilter = null) =>
         PendingQuery(typeFilter).CountAsync();
+
+    public async Task<List<ZipBatchStatus>> GetOpenZipBatchesAsync() =>
+        await db.ZipImportBatches
+            .Where(b => !b.Acknowledged)
+            .Select(b => new ZipBatchStatus
+            {
+                Id = b.Id,
+                TotalEntries = b.TotalEntries,
+                ProcessedEntries = b.ProcessedEntries,
+                ImportedCount = b.ImportedCount,
+                SkippedCount = b.SkippedCount,
+                SkippedReasonsJson = b.SkippedReasonsJson,
+                Done = b.Done,
+                CreatedAt = b.CreatedAt,
+            })
+            .ToListAsync();
+
+    public async Task AcknowledgeZipBatchAsync(int batchId)
+    {
+        var batch = await db.ZipImportBatches.FirstOrDefaultAsync(b => b.Id == batchId);
+        if (batch is null) return;
+        batch.Acknowledged = true;
+        await db.SaveChangesAsync();
+    }
 
     private IQueryable<Document> PendingQuery(string? typeFilter)
     {
@@ -442,3 +467,18 @@ public class DocumentMeta
 }
 
 public record ZipImportResult(IReadOnlyList<Document> Imported, IReadOnlyList<(string FileName, string Reason)> Skipped);
+
+public class ZipBatchStatus
+{
+    public int Id { get; set; }
+    public int TotalEntries { get; set; }
+    public int ProcessedEntries { get; set; }
+    public int ImportedCount { get; set; }
+    public int SkippedCount { get; set; }
+    public string SkippedReasonsJson { get; set; } = "[]";
+    public bool Done { get; set; }
+    public DateTime CreatedAt { get; set; }
+
+    public List<SkippedEntry> SkippedReasons =>
+        System.Text.Json.JsonSerializer.Deserialize<List<SkippedEntry>>(SkippedReasonsJson) ?? [];
+}

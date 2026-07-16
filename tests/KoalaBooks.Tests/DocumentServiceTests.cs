@@ -469,6 +469,58 @@ public class DocumentServiceTests : IDisposable
         Assert.Empty(queue.EnqueuedBatchIds);
     }
 
+    [Fact]
+    public async Task GetOpenZipBatchesAsync_ReturnsUnacknowledgedBatches_ExcludesAcknowledged()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("a.pdf", new byte[] { 1 }));
+        var (batchId, _) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+
+        var open = await svc.GetOpenZipBatchesAsync();
+        Assert.Single(open);
+        Assert.Equal(batchId, open[0].Id);
+
+        await svc.AcknowledgeZipBatchAsync(batchId!.Value);
+
+        var afterAck = await svc.GetOpenZipBatchesAsync();
+        Assert.Empty(afterAck);
+    }
+
+    [Fact]
+    public async Task GetOpenZipBatchesAsync_IncludesDoneButUnacknowledgedBatches()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("a.pdf", new byte[] { 1 }));
+        var (batchId, _) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+
+        var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        batch.Done = true;
+        batch.ImportedCount = 1;
+        await _fx.Db.SaveChangesAsync();
+
+        var open = await svc.GetOpenZipBatchesAsync();
+        Assert.Single(open);
+        Assert.True(open[0].Done);
+        Assert.Equal(1, open[0].ImportedCount);
+    }
+
+    [Fact]
+    public async Task GetOpenZipBatchesAsync_DeserializesSkippedReasons()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("a.pdf", new byte[] { 1 }));
+        var (batchId, _) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+
+        var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        batch.SkippedReasonsJson = System.Text.Json.JsonSerializer.Serialize(new[] { new SkippedEntry("bad.exe", "Otillåten filtyp.") });
+        batch.SkippedCount = 1;
+        await _fx.Db.SaveChangesAsync();
+
+        var open = await svc.GetOpenZipBatchesAsync();
+        Assert.Single(open[0].SkippedReasons);
+        Assert.Equal("bad.exe", open[0].SkippedReasons[0].FileName);
+    }
+
     private static byte[] CorruptEntryData(byte[] zipBytes, string entryName)
     {
         var corrupted = (byte[])zipBytes.Clone();
