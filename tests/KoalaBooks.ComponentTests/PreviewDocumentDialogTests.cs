@@ -44,7 +44,7 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
             Substitute.For<IDocumentExtractionQueue>(),
             Substitute.For<ICurrentUser>());
 
-        Services.AddSingleton(_documentService);
+        Services.AddSingleton<IDocumentService>(_documentService);
 
         // ClassifyDocumentDialog's other dependencies, needed only by
         // ClickingBokfor_EditedDateCarriesIntoClassifyDialog below. They must be

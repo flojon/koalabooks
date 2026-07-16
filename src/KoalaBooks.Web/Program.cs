@@ -161,7 +161,7 @@ builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractor>(sp =
     sp.GetRequiredService<KoalaBooks.Infrastructure.Services.CompositeExtractor>());
 builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentStorage,
     KoalaBooks.Infrastructure.Services.DbDocumentStorage>();
-builder.Services.AddScoped<DocumentService>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IDocumentProvider, WebDocumentProvider>();
 builder.Services.AddSingleton<VatReportCsvExporter>();
 
@@ -218,7 +218,7 @@ if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"
 
 app.MapDefaultEndpoints();
 
-app.MapGet("/documents/{id:int}", async (int id, DocumentService svc) =>
+app.MapGet("/documents/{id:int}", async (int id, IDocumentService svc) =>
 {
     var result = await svc.GetDownloadAsync(id);
     return result is null

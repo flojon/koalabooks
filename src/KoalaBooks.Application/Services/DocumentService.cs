@@ -11,7 +11,7 @@ public class DocumentService(
     AppDbContext db,
     IDocumentStorage storage,
     IDocumentExtractionQueue extractionQueue,
-    ICurrentUser currentUser)
+    ICurrentUser currentUser) : IDocumentService
 {
     private const long MaxBytes = 10 * 1024 * 1024;
     private const long ZipMaxBytes = 50 * 1024 * 1024;
