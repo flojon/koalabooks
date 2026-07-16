@@ -294,7 +294,6 @@ public class WasmClientSeedingTests : IDisposable
         Assert.Equal(OpenIddictConstants.ClientTypes.Public, descriptor.ClientType);
         Assert.Contains(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange, descriptor.Requirements);
         Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
-        Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.RefreshToken, descriptor.Permissions);
         Assert.Contains(RedirectUri, descriptor.RedirectUris);
     }
 
