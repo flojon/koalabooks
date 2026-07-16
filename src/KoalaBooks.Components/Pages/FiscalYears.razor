@@ -1,6 +1,7 @@
 @page "/fiscal-years"
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Infrastructure.Services
 @using MudBlazor
 @using Microsoft.AspNetCore.Components.Authorization
@@ -181,10 +182,10 @@
 
 @code {
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
-    [Inject] private YearEndClosingService YearEndClosingService { get; set; } = default!;
+    [Inject] private IYearEndClosingService YearEndClosingService { get; set; } = default!;
     [Inject] private VoucherGapService VoucherGapService { get; set; } = default!;
     [Inject] private AuthenticationStateProvider AuthStateProvider { get; set; } = default!;
-    [Inject] private BasImportService BasImportService { get; set; } = default!;
+    [Inject] private IBasImportService BasImportService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];

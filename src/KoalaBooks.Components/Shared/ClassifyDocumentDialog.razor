@@ -213,11 +213,11 @@
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
     [Inject] private IDocumentService DocumentService { get; set; } = default!;
     [Inject] private ISupplierInvoiceService SupplierInvoiceService { get; set; } = default!;
-    [Inject] private CustomerInvoiceService CustomerInvoiceService { get; set; } = default!;
+    [Inject] private ICustomerInvoiceService CustomerInvoiceService { get; set; } = default!;
     [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
-    [Inject] private CustomerService CustomerService { get; set; } = default!;
+    [Inject] private ICustomerService CustomerService { get; set; } = default!;
 
     private string _type = "";
     private string _supplier = "";

@@ -39,7 +39,7 @@ else
 }
 
 @code {
-    [Inject] private OrganisationService OrganisationService { get; set; } = default!;
+    [Inject] private IOrganisationService OrganisationService { get; set; } = default!;
 
     private Organisation? _org;
     private string _name = "";

@@ -4,7 +4,7 @@ using System.Text;
 
 namespace KoalaBooks.Application.Services;
 
-public class VatReportCsvExporter
+public class VatReportCsvExporter : IVatReportCsvExporter
 {
     private static readonly CultureInfo SvSe = new CultureInfo("sv-SE");
     private static readonly UTF8Encoding Utf8Bom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);

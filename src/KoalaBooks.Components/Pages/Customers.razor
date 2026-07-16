@@ -121,7 +121,7 @@ else
 }
 
 @code {
-    [Inject] private CustomerService CustomerService { get; set; } = default!;
+    [Inject] private ICustomerService CustomerService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;

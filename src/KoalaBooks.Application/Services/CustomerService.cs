@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class CustomerService
+public class CustomerService : ICustomerService
 {
     private readonly AppDbContext _db;
 

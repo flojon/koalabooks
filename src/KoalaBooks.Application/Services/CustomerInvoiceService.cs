@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class CustomerInvoiceService
+public class CustomerInvoiceService : ICustomerInvoiceService
 {
     private readonly AppDbContext _db;
 

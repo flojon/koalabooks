@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class OrganisationService
+public class OrganisationService : IOrganisationService
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;

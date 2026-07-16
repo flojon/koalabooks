@@ -1,16 +1,14 @@
 using ExcelDataReader;
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
-using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
 using System.Text;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-public record BasImportResult(int ImportedCount, int SkippedCount, List<string> Errors);
-
-public class BasImportService
+public class BasImportService : IBasImportService
 {
     private readonly AppDbContext _db;
 

@@ -122,7 +122,7 @@ else if (_state == PageState.Result)
 }
 
 @code {
-    [Inject] private AccountMappingService AccountMappingService { get; set; } = default!;
+    [Inject] private IAccountMappingService AccountMappingService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 

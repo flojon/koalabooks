@@ -13,7 +13,7 @@ public record MappingRow(
 
 public record ApplyMappingResult(int Mapped, int Skipped);
 
-public class AccountMappingService
+public class AccountMappingService : IAccountMappingService
 {
     private readonly AppDbContext _db;
 

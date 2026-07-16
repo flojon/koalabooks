@@ -2,12 +2,13 @@ using System.Globalization;
 using System.Text;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-public class SieExportService
+public class SieExportService : ISieExportService
 {
     private readonly AppDbContext _db;
 
