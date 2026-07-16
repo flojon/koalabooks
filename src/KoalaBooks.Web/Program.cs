@@ -181,7 +181,8 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddRazorPages();
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents()
+    .AddAuthenticationStateSerialization(options => options.SerializeAllClaims = true);
 
 builder.Services.AddAuthorization();
 
@@ -279,6 +280,10 @@ using (var scope = app.Services.CreateScope())
         var dashboardClientSecret = builder.Configuration["AspireDashboard:OidcClientSecret"]
             ?? "aspire-dashboard-dev-secret";
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);
+
+        var wasmClientRedirectUri = builder.Configuration["WasmClient:RedirectUri"]
+            ?? "https://localhost:7154/authentication/login-callback";
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri(wasmClientRedirectUri));
 
         // Stopgap until there's a real UI to grant roles.
         await AdminRoleSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration["AdminSeed:Email"]);

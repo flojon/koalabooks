@@ -45,24 +45,8 @@ public class AuthorizeModel : PageModel
         var user = await _userManager.GetUserAsync(result.Principal)
             ?? throw new InvalidOperationException("The authenticated user could not be found.");
 
-        var identity = new ClaimsIdentity(
-            authenticationType: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
-            nameType: OpenIddictConstants.Claims.Name,
-            roleType: OpenIddictConstants.Claims.Role);
-
-        identity.SetClaim(OpenIddictConstants.Claims.Subject, await _userManager.GetUserIdAsync(user))
-                .SetClaim(OpenIddictConstants.Claims.Email, user.Email ?? string.Empty)
-                .SetClaim(OpenIddictConstants.Claims.Name, user.DisplayName ?? user.Email ?? user.UserName ?? string.Empty);
-
-        var principal = new ClaimsPrincipal(identity);
-        principal.SetScopes(request.GetScopes());
-        principal.SetDestinations(claim => claim.Type switch
-        {
-            OpenIddictConstants.Claims.Email or
-            OpenIddictConstants.Claims.Name =>
-                [OpenIddictConstants.Destinations.AccessToken, OpenIddictConstants.Destinations.IdentityToken],
-            _ => [OpenIddictConstants.Destinations.AccessToken]
-        });
+        var principal = OpenIddictIdentityBuilder.BuildPrincipal(
+            user, await _userManager.GetUserIdAsync(user), request.GetScopes());
 
         return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
