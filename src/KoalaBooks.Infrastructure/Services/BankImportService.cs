@@ -272,6 +272,33 @@ public class BankImportService : IBankImportService
             .ToListAsync().ConfigureAwait(false);
     }
 
+    public async Task<List<BankTransaction>> GetByFiscalYearAsync(
+        int fiscalYearId, DateOnly? from, DateOnly? to, int? accountId)
+    {
+        var query = _db.BankTransactions
+            .Include(b => b.Account)
+            .Where(b => b.Account.FiscalYearId == fiscalYearId);
+
+        if (from.HasValue)
+            query = query.Where(b => b.Date >= from.Value);
+        if (to.HasValue)
+            query = query.Where(b => b.Date <= to.Value);
+        if (accountId.HasValue)
+            query = query.Where(b => b.AccountId == accountId.Value);
+
+        return await query
+            .OrderByDescending(b => b.Date)
+            .ThenByDescending(b => b.Id)
+            .ToListAsync().ConfigureAwait(false);
+    }
+
+    public async Task<BankTransaction?> GetByIdAsync(int id)
+    {
+        return await _db.BankTransactions
+            .Include(b => b.Account)
+            .FirstOrDefaultAsync(b => b.Id == id).ConfigureAwait(false);
+    }
+
     public async Task<List<Account>> GetImportableAccountsAsync(int fiscalYearId, string prefix)
     {
         return await _db.Accounts
