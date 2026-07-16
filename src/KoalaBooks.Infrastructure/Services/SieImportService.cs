@@ -43,7 +43,7 @@ public record SieImportAllResult(
     int TotalBalancesImported,
     List<string> Warnings);
 
-public class SieImportService
+public class SieImportService : ISieImportService
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;

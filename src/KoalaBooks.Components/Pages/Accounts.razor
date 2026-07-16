@@ -2,6 +2,7 @@
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
+@using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Infrastructure.Services
 @using MudBlazor
 
@@ -206,7 +207,7 @@ else
 @code {
     [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
-    [Inject] private BasImportService BasImportService { get; set; } = default!;
+    [Inject] private IBasImportService BasImportService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;

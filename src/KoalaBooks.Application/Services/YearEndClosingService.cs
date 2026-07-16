@@ -21,7 +21,7 @@ public record ClosingLinePreview(string AccountNumber, string AccountName, decim
 
 public record ClosingResult(bool Success, string? Error, int? ClosingEntry1Number, int? ClosingEntry2Number);
 
-public class YearEndClosingService
+public class YearEndClosingService : IYearEndClosingService
 {
     private readonly AppDbContext _db;
     private readonly IFiscalYearService _fiscalYearService;
