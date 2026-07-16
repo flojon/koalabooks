@@ -26,7 +26,7 @@ There is no lint/format command configured yet.
 ## Workflow
 
 - When finishing a branch, always push and open a PR — never merge locally.
-- Code comments: one short line max, and never reference issue/PR numbers or ticket context (put that in the commit message / PR description instead).
+- Code comments: keep them minimal and concise, and never reference issue/PR numbers or ticket context (put that in the commit message / PR description instead).
 
 ## Debugging PR previews
 
