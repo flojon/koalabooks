@@ -263,16 +263,13 @@ public static class DemoDataSeeder
         if (paidCreateError is not null)
             throw new InvalidOperationException($"Demo seed failed to create supplier invoice: {paidCreateError}");
 
-        // PostAsync/MarkAsPaidAsync open their own transactions; wrap in the execution strategy
-        // since EnrichNpgsqlDbContext's retrying strategy refuses transactions run outside of it.
-        var strategy = db.Database.CreateExecutionStrategy();
-        var (_, postError) = await strategy.ExecuteAsync(() => supplierInvoiceService.PostAsync(
-            paidInvoice!.Id, accounts["5010"].Id, accounts["2440"].Id, accounts["2641"].Id));
+        var (_, postError) = await supplierInvoiceService.PostAsync(
+            paidInvoice!.Id, accounts["5010"].Id, accounts["2440"].Id, accounts["2641"].Id);
         if (postError is not null)
             throw new InvalidOperationException($"Demo seed failed to post supplier invoice: {postError}");
 
-        var (_, payError) = await strategy.ExecuteAsync(() => supplierInvoiceService.MarkAsPaidAsync(
-            paidInvoice.Id, new DateOnly(year, 7, 13), accounts["1910"].Id, accounts["2440"].Id));
+        var (_, payError) = await supplierInvoiceService.MarkAsPaidAsync(
+            paidInvoice.Id, new DateOnly(year, 7, 13), accounts["1910"].Id, accounts["2440"].Id);
         if (payError is not null)
             throw new InvalidOperationException($"Demo seed failed to mark supplier invoice as paid: {payError}");
 
