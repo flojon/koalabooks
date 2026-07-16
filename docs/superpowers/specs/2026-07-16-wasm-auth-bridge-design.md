@@ -83,6 +83,14 @@ This is prerender-time only: it gives WASM a claims snapshot as of the page
 load. It does not, by itself, give WASM anything it can present to the API
 as a bearer credential — that's Track B.
 
+Note this claims snapshot is technically redundant with Track B once Track
+B's silent exchange completes, since the resulting access token carries the
+same claims and could drive `AuthenticationState` on its own. Track A is
+kept anyway for the first paint: without it, a WASM component would render
+in an unauthenticated/loading state for the duration of Track B's
+redirect+POST round trip on boot. Track A removes that flicker at the cost
+of a second, separate claims-serialization mechanism to maintain.
+
 ### Track B — authenticating outbound API calls from WASM
 
 Drive the already-configured OpenIddict authorization-code + PKCE flow
