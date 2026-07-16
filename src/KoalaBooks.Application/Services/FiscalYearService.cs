@@ -22,12 +22,12 @@ public class FiscalYearService : IFiscalYearService
     {
         return await _db.FiscalYears
             .OrderByDescending(f => f.StartDate)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<FiscalYear?> GetByIdAsync(int id)
     {
-        return await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == id);
+        return await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == id).ConfigureAwait(false);
     }
 
     public async Task<FiscalYear?> GetActiveAsync()
@@ -35,7 +35,7 @@ public class FiscalYearService : IFiscalYearService
         return await _db.FiscalYears
             .Where(f => !f.IsClosed)
             .OrderByDescending(f => f.StartDate)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync().ConfigureAwait(false);
     }
 
     public async Task<FiscalYear> CreateAsync(FiscalYear fiscalYear)
@@ -44,15 +44,15 @@ public class FiscalYearService : IFiscalYearService
             ?? throw new InvalidOperationException("No active tenant.");
 
         var hasOverlap = await _db.FiscalYears
-            .AnyAsync(f => f.StartDate <= fiscalYear.EndDate && f.EndDate >= fiscalYear.StartDate);
+            .AnyAsync(f => f.StartDate <= fiscalYear.EndDate && f.EndDate >= fiscalYear.StartDate).ConfigureAwait(false);
         if (hasOverlap)
             throw new InvalidOperationException("The fiscal year overlaps with an existing fiscal year.");
 
         _db.FiscalYears.Add(fiscalYear);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
 
         // Copy accounts from the previous fiscal year with IB = previous UB
-        await CopyAccountsFromPreviousYearAsync(fiscalYear);
+        await CopyAccountsFromPreviousYearAsync(fiscalYear).ConfigureAwait(false);
 
         return fiscalYear;
     }
@@ -62,7 +62,7 @@ public class FiscalYearService : IFiscalYearService
         var previousYear = await _db.FiscalYears
             .Where(f => f.EndDate < targetYear.StartDate && f.Id != targetYear.Id)
             .OrderByDescending(f => f.EndDate)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync().ConfigureAwait(false);
 
         if (previousYear is null) return;
 
@@ -70,18 +70,18 @@ public class FiscalYearService : IFiscalYearService
 
         var previousAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == previousYear.Id)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         if (!previousAccounts.Any())
         {
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
             return;
         }
 
         var existingNumbers = await _db.Accounts
             .Where(a => a.FiscalYearId == targetYear.Id)
             .Select(a => a.AccountNumber)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
 
         foreach (var prev in previousAccounts)
         {
@@ -101,7 +101,7 @@ public class FiscalYearService : IFiscalYearService
             });
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
     }
 
     public async Task<List<Account>> GetAccountsAsync(int fiscalYearId)
@@ -109,31 +109,31 @@ public class FiscalYearService : IFiscalYearService
         return await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
             .OrderBy(a => a.AccountNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task PropagateBalancesToNextYearAsync(int fiscalYearId)
     {
-        var sourceYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId);
+        var sourceYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId).ConfigureAwait(false);
         if (sourceYear is null) return;
 
         // Prefer the explicitly linked year; fall back to next year by date.
         var nextYear = await _db.FiscalYears
-                           .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId)
+                           .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId).ConfigureAwait(false)
                        ?? await _db.FiscalYears
                            .Where(f => f.StartDate > sourceYear.EndDate)
                            .OrderBy(f => f.StartDate)
-                           .FirstOrDefaultAsync();
+                           .FirstOrDefaultAsync().ConfigureAwait(false);
 
         if (nextYear is null) return;
 
         var sourceAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var nextAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == nextYear.Id)
-            .ToDictionaryAsync(a => a.AccountNumber);
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
 
         foreach (var src in sourceAccounts)
         {
@@ -159,6 +159,6 @@ public class FiscalYearService : IFiscalYearService
             }
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
     }
 }

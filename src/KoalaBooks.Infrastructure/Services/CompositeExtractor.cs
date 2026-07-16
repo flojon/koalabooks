@@ -6,8 +6,8 @@ public class CompositeExtractor(FilenameExtractor filename, PdfTextExtractor pdf
 {
     public async Task<ExtractionResult> ExtractAsync(string fileName, string contentType, byte[] data)
     {
-        var f = await filename.ExtractAsync(fileName, contentType, data);
-        var p = await pdf.ExtractAsync(fileName, contentType, data);
+        var f = await filename.ExtractAsync(fileName, contentType, data).ConfigureAwait(false);
+        var p = await pdf.ExtractAsync(fileName, contentType, data).ConfigureAwait(false);
 
         // PDF fields take priority; fall back to filename for type if PDF found nothing
         return new ExtractionResult(

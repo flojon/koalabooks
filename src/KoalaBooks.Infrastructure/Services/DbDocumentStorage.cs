@@ -27,40 +27,44 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
             // entities outside our own.
             DetachTrackedDocumentData(documentId);
 
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
             await using var data = openData();
+#pragma warning restore CA2007
 
             try
             {
-                await using var tx = await db.Database.BeginTransactionAsync();
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+                await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning restore CA2007
                 var conn = (NpgsqlConnection)db.Database.GetDbConnection();
 
-                var existing = await db.DocumentData.FindAsync(documentId);
+                var existing = await db.DocumentData.FindAsync(documentId).ConfigureAwait(false);
                 if (existing is not null)
-                    await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, existing.Oid));
+                    await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, existing.Oid)).ConfigureAwait(false);
 
-                var oid = await ExecuteScalarAsync<uint>(conn, "SELECT lo_create(0)");
+                var oid = await ExecuteScalarAsync<uint>(conn, "SELECT lo_create(0)").ConfigureAwait(false);
                 var fd = await ExecuteScalarAsync<int>(conn, "SELECT lo_open(@oid, @mode)",
-                    ("oid", NpgsqlDbType.Oid, oid), ("mode", NpgsqlDbType.Integer, InvWrite));
+                    ("oid", NpgsqlDbType.Oid, oid), ("mode", NpgsqlDbType.Integer, InvWrite)).ConfigureAwait(false);
 
                 var buffer = new byte[ChunkSize];
                 long fileSize = 0;
                 int read;
-                while ((read = await data.ReadAsync(buffer)) > 0)
+                while ((read = await data.ReadAsync(buffer).ConfigureAwait(false)) > 0)
                 {
                     fileSize += read;
                     var chunk = buffer[..read];
                     await ExecuteScalarAsync<int>(conn, "SELECT lowrite(@fd, @chunk)",
-                        ("fd", NpgsqlDbType.Integer, fd), ("chunk", NpgsqlDbType.Bytea, chunk));
+                        ("fd", NpgsqlDbType.Integer, fd), ("chunk", NpgsqlDbType.Bytea, chunk)).ConfigureAwait(false);
                 }
-                await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd));
+                await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd)).ConfigureAwait(false);
 
                 if (existing is not null)
                     existing.Oid = oid;
                 else
                     db.DocumentData.Add(new DocumentData { DocumentId = documentId, Oid = oid });
 
-                await db.SaveChangesAsync();
-                await tx.CommitAsync();
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
                 return (documentId.ToString(), fileSize);
             }
             catch
@@ -73,7 +77,7 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
                 DetachTrackedDocumentData(documentId);
                 throw;
             }
-        });
+        }).ConfigureAwait(false);
     }
 
     public async Task<byte[]> LoadAsync(string storageKey)
@@ -83,26 +87,28 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
         var strategy = db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            await using var tx = await db.Database.BeginTransactionAsync();
-            var row = await db.DocumentData.FindAsync(id);
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+            await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning restore CA2007
+            var row = await db.DocumentData.FindAsync(id).ConfigureAwait(false);
             if (row is null) return [];
 
             var conn = (NpgsqlConnection)db.Database.GetDbConnection();
             var fd = await ExecuteScalarAsync<int>(conn, "SELECT lo_open(@oid, @mode)",
-                ("oid", NpgsqlDbType.Oid, row.Oid), ("mode", NpgsqlDbType.Integer, InvRead));
+                ("oid", NpgsqlDbType.Oid, row.Oid), ("mode", NpgsqlDbType.Integer, InvRead)).ConfigureAwait(false);
 
             using var ms = new MemoryStream();
             while (true)
             {
                 var chunk = await ExecuteScalarAsync<byte[]>(conn, "SELECT loread(@fd, @len)",
-                    ("fd", NpgsqlDbType.Integer, fd), ("len", NpgsqlDbType.Integer, ChunkSize));
-                if (chunk.Length > 0) await ms.WriteAsync(chunk);
+                    ("fd", NpgsqlDbType.Integer, fd), ("len", NpgsqlDbType.Integer, ChunkSize)).ConfigureAwait(false);
+                if (chunk.Length > 0) await ms.WriteAsync(chunk).ConfigureAwait(false);
                 if (chunk.Length < ChunkSize) break;
             }
-            await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd));
-            await tx.CommitAsync();
+            await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd)).ConfigureAwait(false);
+            await tx.CommitAsync().ConfigureAwait(false);
             return ms.ToArray();
-        });
+        }).ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(string storageKey)
@@ -116,15 +122,17 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
 
             try
             {
-                await using var tx = await db.Database.BeginTransactionAsync();
-                var row = await db.DocumentData.FindAsync(id);
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+                await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning restore CA2007
+                var row = await db.DocumentData.FindAsync(id).ConfigureAwait(false);
                 if (row is null) return;
 
                 var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-                await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, row.Oid));
+                await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, row.Oid)).ConfigureAwait(false);
                 db.DocumentData.Remove(row);
-                await db.SaveChangesAsync();
-                await tx.CommitAsync();
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
             }
             catch
             {
@@ -136,7 +144,7 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
                 DetachTrackedDocumentData(id);
                 throw;
             }
-        });
+        }).ConfigureAwait(false);
     }
 
     // Detaches only a stale DocumentData entry left tracked by a previous,
@@ -152,10 +160,12 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
     private static async Task<T> ExecuteScalarAsync<T>(NpgsqlConnection conn, string sql,
         params (string Name, NpgsqlDbType Type, object Value)[] parameters)
     {
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
         await using var cmd = new NpgsqlCommand(sql, conn);
+#pragma warning restore CA2007
         foreach (var (name, type, value) in parameters)
             cmd.Parameters.Add(new NpgsqlParameter { ParameterName = name, NpgsqlDbType = type, Value = value });
-        var result = await cmd.ExecuteScalarAsync();
+        var result = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
         return (T)result!;
     }
 }

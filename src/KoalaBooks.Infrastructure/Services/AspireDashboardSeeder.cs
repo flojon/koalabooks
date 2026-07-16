@@ -34,15 +34,15 @@ public static class AspireDashboardSeeder
 
         descriptor.RedirectUris.Add(redirectUri);
 
-        var existing = await manager.FindByClientIdAsync("aspire-dashboard");
+        var existing = await manager.FindByClientIdAsync("aspire-dashboard").ConfigureAwait(false);
         if (existing is null)
         {
-            await manager.CreateAsync(descriptor);
+            await manager.CreateAsync(descriptor).ConfigureAwait(false);
             logger.LogInformation("Created OpenIddict client 'aspire-dashboard' with redirect URI {RedirectUri}", redirectUri);
         }
         else
         {
-            await manager.UpdateAsync(existing, descriptor);
+            await manager.UpdateAsync(existing, descriptor).ConfigureAwait(false);
             logger.LogInformation("Updated OpenIddict client 'aspire-dashboard' with redirect URI {RedirectUri}", redirectUri);
         }
     }

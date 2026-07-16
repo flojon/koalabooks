@@ -23,7 +23,7 @@ public class SieExportService
             .Include(f => f.JournalEntries)
                 .ThenInclude(j => j.Lines)
                     .ThenInclude(l => l.Account)
-            .FirstOrDefaultAsync(f => f.Id == fiscalYearId)
+            .FirstOrDefaultAsync(f => f.Id == fiscalYearId).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Fiscal year {fiscalYearId} not found.");
 
         var sb = new StringBuilder();

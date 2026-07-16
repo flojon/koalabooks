@@ -30,7 +30,7 @@ public class JournalEntryService : IJournalEntryService
         if (to.HasValue)
             query = query.Where(j => j.Date <= to.Value);
 
-        return await query.OrderBy(j => j.EntryNumber).ToListAsync();
+        return await query.OrderBy(j => j.EntryNumber).ToListAsync().ConfigureAwait(false);
     }
 
     public Task<int> CountDraftsAsync(int fiscalYearId) =>
@@ -41,7 +41,7 @@ public class JournalEntryService : IJournalEntryService
         return await _db.JournalEntries
             .Include(j => j.Lines).ThenInclude(l => l.Account)
             .Include(j => j.FiscalYear)
-            .FirstOrDefaultAsync(j => j.Id == id);
+            .FirstOrDefaultAsync(j => j.Id == id).ConfigureAwait(false);
     }
 
     public async Task<(JournalEntry? Entry, string? Error)> CreateAsync(JournalEntry entry)
@@ -50,7 +50,7 @@ public class JournalEntryService : IJournalEntryService
         if (validationError is not null)
             return (null, validationError);
 
-        var fiscalYear = await _db.FiscalYears.FindAsync(entry.FiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FindAsync(entry.FiscalYearId).ConfigureAwait(false);
         if (fiscalYear is null)
             return (null, "Fiscal year not found.");
         if (fiscalYear.IsClosed)
@@ -62,7 +62,7 @@ public class JournalEntryService : IJournalEntryService
         var fiscalYearAccountIds = await _db.Accounts
             .Where(a => a.FiscalYearId == entry.FiscalYearId)
             .Select(a => a.Id)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
         var invalidAccountIds = entry.Lines
             .Where(l => !fiscalYearAccountIds.Contains(l.AccountId))
             .Select(l => l.AccountId)
@@ -73,12 +73,12 @@ public class JournalEntryService : IJournalEntryService
         // Assign next entry number
         var maxNumber = await _db.JournalEntries
             .Where(j => j.FiscalYearId == entry.FiscalYearId)
-            .MaxAsync(j => (int?)j.EntryNumber) ?? 0;
+            .MaxAsync(j => (int?)j.EntryNumber).ConfigureAwait(false) ?? 0;
         entry.EntryNumber = maxNumber + 1;
         entry.CreatedAt = DateTime.UtcNow;
 
         _db.JournalEntries.Add(entry);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return (entry, null);
     }
 
@@ -91,7 +91,7 @@ public class JournalEntryService : IJournalEntryService
         var existing = await _db.JournalEntries
             .Include(j => j.Lines)
             .Include(j => j.FiscalYear)
-            .FirstOrDefaultAsync(j => j.Id == entry.Id);
+            .FirstOrDefaultAsync(j => j.Id == entry.Id).ConfigureAwait(false);
 
         if (existing is null)
             return (null, "Journal entry not found.");
@@ -106,7 +106,7 @@ public class JournalEntryService : IJournalEntryService
         var fiscalYearAccountIds = await _db.Accounts
             .Where(a => a.FiscalYearId == existing.FiscalYearId)
             .Select(a => a.Id)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
         var invalidAccountIds = entry.Lines
             .Where(l => !fiscalYearAccountIds.Contains(l.AccountId))
             .Select(l => l.AccountId)
@@ -121,7 +121,7 @@ public class JournalEntryService : IJournalEntryService
         _db.JournalEntryLines.RemoveRange(existing.Lines);
         existing.Lines = entry.Lines;
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return (existing, null);
     }
 
@@ -130,7 +130,7 @@ public class JournalEntryService : IJournalEntryService
         var entry = await _db.JournalEntries
             .Include(j => j.FiscalYear)
             .Include(j => j.Lines)
-            .FirstOrDefaultAsync(j => j.Id == entryId);
+            .FirstOrDefaultAsync(j => j.Id == entryId).ConfigureAwait(false);
         if (entry is null)
             return "Journal entry not found.";
         if (entry.IsPosted)
@@ -140,10 +140,10 @@ public class JournalEntryService : IJournalEntryService
 
         entry.IsPosted = true;
         entry.Status = JournalEntryStatus.Posted;
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
 
         await PropagateAffectedAccountsAsync(
-            entry.FiscalYearId, entry.Lines.Select(l => l.AccountId));
+            entry.FiscalYearId, entry.Lines.Select(l => l.AccountId)).ConfigureAwait(false);
         return null;
     }
 
@@ -151,7 +151,7 @@ public class JournalEntryService : IJournalEntryService
     {
         var entry = await _db.JournalEntries
             .Include(j => j.FiscalYear)
-            .FirstOrDefaultAsync(j => j.Id == entryId);
+            .FirstOrDefaultAsync(j => j.Id == entryId).ConfigureAwait(false);
 
         if (entry is null)
             return "Journal entry not found.";
@@ -161,35 +161,35 @@ public class JournalEntryService : IJournalEntryService
             return "Cannot delete entries in a closed fiscal year.";
 
         _db.JournalEntries.Remove(entry);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return null;
     }
 
     public async Task<(JournalEntry? Entry, string? Error)> CreateReversalAsync(int entryId, string reason)
     {
-        var (original, error) = await LoadAndValidateForReversalAsync(entryId);
+        var (original, error) = await LoadAndValidateForReversalAsync(entryId).ConfigureAwait(false);
         if (error is not null)
             return (null, error);
 
-        var reversal = await BuildReversalAsync(original!, reason);
+        var reversal = await BuildReversalAsync(original!, reason).ConfigureAwait(false);
 
         original!.Status = JournalEntryStatus.Reversed;
 
         _db.JournalEntries.Add(reversal);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
 
         await PropagateAffectedAccountsAsync(
-            reversal.FiscalYearId, reversal.Lines.Select(l => l.AccountId));
+            reversal.FiscalYearId, reversal.Lines.Select(l => l.AccountId)).ConfigureAwait(false);
         return (reversal, null);
     }
 
     public async Task<(JournalEntry? Preview, string? Error)> PreviewReversalAsync(int entryId, string reason)
     {
-        var (original, error) = await LoadAndValidateForReversalAsync(entryId);
+        var (original, error) = await LoadAndValidateForReversalAsync(entryId).ConfigureAwait(false);
         if (error is not null)
             return (null, error);
 
-        var preview = await BuildReversalAsync(original!, reason);
+        var preview = await BuildReversalAsync(original!, reason).ConfigureAwait(false);
         return (preview, null);
     }
 
@@ -198,7 +198,7 @@ public class JournalEntryService : IJournalEntryService
         var original = await _db.JournalEntries
             .Include(j => j.Lines)
             .Include(j => j.FiscalYear)
-            .FirstOrDefaultAsync(j => j.Id == entryId);
+            .FirstOrDefaultAsync(j => j.Id == entryId).ConfigureAwait(false);
 
         if (original is null)
             return (null, "Journal entry not found.");
@@ -220,7 +220,7 @@ public class JournalEntryService : IJournalEntryService
     {
         var maxNumber = await _db.JournalEntries
             .Where(j => j.FiscalYearId == original.FiscalYearId)
-            .MaxAsync(j => (int?)j.EntryNumber) ?? 0;
+            .MaxAsync(j => (int?)j.EntryNumber).ConfigureAwait(false) ?? 0;
 
         var today = DateOnly.FromDateTime(DateTime.Today);
         var reversalDate = today <= original.FiscalYear.EndDate && today >= original.FiscalYear.StartDate
@@ -251,7 +251,7 @@ public class JournalEntryService : IJournalEntryService
         // Get all accounts for this fiscal year (includes IB)
         var accounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .ToDictionaryAsync(a => a.Id);
+            .ToDictionaryAsync(a => a.Id).ConfigureAwait(false);
 
         // Get transaction totals per account (only posted entries)
         var lineQuery = _db.JournalEntryLines
@@ -263,7 +263,7 @@ public class JournalEntryService : IJournalEntryService
         var transactionTotals = await lineQuery
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var rows = new List<TrialBalanceRow>();
         var accountsWithTransactions = new HashSet<int>();
@@ -307,7 +307,7 @@ public class JournalEntryService : IJournalEntryService
         bool excludeClosingEntries = true)
     {
         var account = await _db.Accounts
-            .FirstOrDefaultAsync(a => a.Id == accountId && a.FiscalYearId == fiscalYearId);
+            .FirstOrDefaultAsync(a => a.Id == accountId && a.FiscalYearId == fiscalYearId).ConfigureAwait(false);
         if (account is null) return null;
 
         var lineQuery = _db.JournalEntryLines
@@ -327,7 +327,7 @@ public class JournalEntryService : IJournalEntryService
         var lines = await lineQuery
             .OrderBy(l => l.JournalEntry.Date)
             .ThenBy(l => l.JournalEntry.EntryNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var isCreditNormal = account.AccountClass.IsCreditNormal();
         var runningBalance = account.IncomingBalance;
@@ -369,7 +369,7 @@ public class JournalEntryService : IJournalEntryService
         // the query in a join.
         var allAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         IEnumerable<Account> filtered = allAccounts;
         if (!string.IsNullOrWhiteSpace(fromAccount))
@@ -394,7 +394,7 @@ public class JournalEntryService : IJournalEntryService
         if (to.HasValue)
             lineQuery = lineQuery.Where(l => l.JournalEntry.Date <= to.Value);
 
-        var allLines = await lineQuery.ToListAsync();
+        var allLines = await lineQuery.ToListAsync().ConfigureAwait(false);
         var linesByAccount = allLines.GroupBy(l => l.AccountId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
@@ -444,10 +444,10 @@ public class JournalEntryService : IJournalEntryService
 
     public async Task<Dictionary<int, (decimal IB, decimal UB)>> GetComputedBalancesAsync(int fiscalYearId)
     {
-        var fy = await _db.FiscalYears.FirstAsync(f => f.Id == fiscalYearId);
+        var fy = await _db.FiscalYears.FirstAsync(f => f.Id == fiscalYearId).ConfigureAwait(false);
         var accounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         // Closed year: stored values are authoritative
         if (fy.IsClosed)
@@ -457,18 +457,18 @@ public class JournalEntryService : IJournalEntryService
         var ibByAccountNumber = new Dictionary<string, decimal>();
         if (fy.PreviousFiscalYearId.HasValue)
         {
-            var prevFy = await _db.FiscalYears.FirstAsync(f => f.Id == fy.PreviousFiscalYearId.Value);
+            var prevFy = await _db.FiscalYears.FirstAsync(f => f.Id == fy.PreviousFiscalYearId.Value).ConfigureAwait(false);
             if (!prevFy.IsClosed)
             {
                 var prevAccounts = await _db.Accounts
                     .Where(a => a.FiscalYearId == prevFy.Id)
-                    .ToListAsync();
+                    .ToListAsync().ConfigureAwait(false);
 
                 var prevNets = await _db.JournalEntryLines
                     .Where(l => l.JournalEntry.FiscalYearId == prevFy.Id && l.JournalEntry.IsPosted)
                     .GroupBy(l => l.AccountId)
                     .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-                    .ToListAsync();
+                    .ToListAsync().ConfigureAwait(false);
 
                 var prevNetLookup = prevNets.ToDictionary(x => x.AccountId, x => (x.Debit, x.Credit));
 
@@ -487,7 +487,7 @@ public class JournalEntryService : IJournalEntryService
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId && l.JournalEntry.IsPosted)
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var netLookup = nets.ToDictionary(x => x.AccountId, x => (x.Debit, x.Credit));
 
@@ -520,7 +520,7 @@ public class JournalEntryService : IJournalEntryService
         if (to.HasValue)
             query = query.Where(l => l.JournalEntry.Date <= to.Value);
 
-        return await query.Select(l => l.AccountId).Distinct().ToHashSetAsync();
+        return await query.Select(l => l.AccountId).Distinct().ToHashSetAsync().ConfigureAwait(false);
     }
 
     public async Task<List<BalanceSheetSection>> GetBalanceSheetAsync(int fiscalYearId, bool excludeClosingEntries = false)
@@ -529,7 +529,7 @@ public class JournalEntryService : IJournalEntryService
 
         var accounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId && balanceClasses.Contains(a.AccountClass))
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var lineQuery = _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
@@ -540,7 +540,7 @@ public class JournalEntryService : IJournalEntryService
         var transactionTotals = await lineQuery
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-            .ToDictionaryAsync(t => t.AccountId);
+            .ToDictionaryAsync(t => t.AccountId).ConfigureAwait(false);
 
         var sectionDefs = new (string Title, AccountClass Class)[]
         {
@@ -605,7 +605,7 @@ public class JournalEntryService : IJournalEntryService
         var plAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
             .Where(a => a.AccountClass == AccountClass.Revenue || a.AccountClass == AccountClass.Expense)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var lineQuery = _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
@@ -622,7 +622,7 @@ public class JournalEntryService : IJournalEntryService
         var transactionTotals = await lineQuery
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-            .ToDictionaryAsync(t => t.AccountId);
+            .ToDictionaryAsync(t => t.AccountId).ConfigureAwait(false);
 
         // Include IB only for the full fiscal year view (no date filters).
         // Sub-period reports show only that period's transaction activity.
@@ -681,7 +681,7 @@ public class JournalEntryService : IJournalEntryService
         var accounts26xx = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
             .Where(a => a.AccountNumber.StartsWith("26"))
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var vatAccounts = accounts26xx
             .Where(a => string.Compare(a.AccountNumber, "2610", StringComparison.Ordinal) >= 0
@@ -705,7 +705,7 @@ public class JournalEntryService : IJournalEntryService
         var transactionTotals = await lineQuery
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-            .ToDictionaryAsync(t => t.AccountId);
+            .ToDictionaryAsync(t => t.AccountId).ConfigureAwait(false);
 
         var outputRows = new List<VatReportRow>();
         var inputRows = new List<VatReportRow>();
@@ -747,13 +747,13 @@ public class JournalEntryService : IJournalEntryService
     public async Task<DashboardStats> GetDashboardStatsAsync(int fiscalYearId)
     {
         var entryCount = await _db.JournalEntries
-            .CountAsync(j => j.FiscalYearId == fiscalYearId);
+            .CountAsync(j => j.FiscalYearId == fiscalYearId).ConfigureAwait(false);
         var totals = await _db.JournalEntryLines
             .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId)
             .Where(l => l.JournalEntry.IsPosted)
             .GroupBy(_ => 1)
             .Select(g => new { Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync().ConfigureAwait(false);
 
         return new DashboardStats
         {
@@ -790,31 +790,31 @@ public class JournalEntryService : IJournalEntryService
         int fiscalYearId, IEnumerable<int> affectedAccountIds)
     {
         var nextYear = await _db.FiscalYears
-            .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId);
+            .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId).ConfigureAwait(false);
         if (nextYear is null) return;
 
         var accountIdList = affectedAccountIds.ToList();
 
         var sourceAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId && accountIdList.Contains(a.Id))
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var sourceNumbers = sourceAccounts.Select(a => a.AccountNumber).ToHashSet();
         var nextAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == nextYear.Id && sourceNumbers.Contains(a.AccountNumber))
-            .ToDictionaryAsync(a => a.AccountNumber);
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
 
         var debits = await _db.JournalEntryLines
             .Where(l => accountIdList.Contains(l.AccountId) && l.JournalEntry.IsPosted)
             .GroupBy(l => l.AccountId)
             .Select(g => new { g.Key, Total = g.Sum(l => l.DebitAmount) })
-            .ToDictionaryAsync(x => x.Key, x => x.Total);
+            .ToDictionaryAsync(x => x.Key, x => x.Total).ConfigureAwait(false);
 
         var credits = await _db.JournalEntryLines
             .Where(l => accountIdList.Contains(l.AccountId) && l.JournalEntry.IsPosted)
             .GroupBy(l => l.AccountId)
             .Select(g => new { g.Key, Total = g.Sum(l => l.CreditAmount) })
-            .ToDictionaryAsync(x => x.Key, x => x.Total);
+            .ToDictionaryAsync(x => x.Key, x => x.Total).ConfigureAwait(false);
 
         foreach (var account in sourceAccounts)
         {
@@ -831,7 +831,7 @@ public class JournalEntryService : IJournalEntryService
                 nextAccount.IncomingBalance = ub;
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
     }
 }
 
