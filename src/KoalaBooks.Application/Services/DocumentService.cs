@@ -33,23 +33,57 @@ public class DocumentService(
         [".jpeg"] = "image/jpeg",
     };
 
-    public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, Stream data)
+    private sealed class DocumentTooLargeException : Exception;
+
+    private sealed class MaxBytesEnforcingStream(Stream inner, long maxBytes) : Stream
+    {
+        private long _totalRead;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await inner.ReadAsync(buffer, cancellationToken);
+            _totalRead += read;
+            if (_totalRead > maxBytes) throw new DocumentTooLargeException();
+            return read;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await inner.DisposeAsync();
+            await base.DisposeAsync();
+        }
+    }
+
+    public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, Func<Stream> openData)
     {
         if (currentUser.OrganisationId is null)
             return (null, "Ingen aktiv organisation.");
         if (!AllowedContentTypes.Contains(contentType))
             return (null, "Otillåten filtyp. Tillåtna typer: PDF, PNG, JPEG.");
 
-        var (bytes, oversized) = await ReadBoundedAsync(data, MaxBytes);
-        if (oversized)
-            return (null, "Filen är för stor (max 10 MB).");
-
         var doc = new Document
         {
             OrganisationId = currentUser.OrganisationId.Value,
             FileName = fileName,
             ContentType = contentType,
-            FileSize = bytes!.Length,
+            FileSize = 0,
             UploadedAt = DateTime.UtcNow,
             StorageKey = ""
         };
@@ -58,7 +92,14 @@ public class DocumentService(
 
         try
         {
-            doc.StorageKey = await storage.SaveAsync(doc.Id, contentType, new MemoryStream(bytes));
+            (doc.StorageKey, doc.FileSize) = await storage.SaveAsync(
+                doc.Id, contentType, () => new MaxBytesEnforcingStream(openData(), MaxBytes));
+        }
+        catch (DocumentTooLargeException)
+        {
+            db.Documents.Remove(doc);
+            await db.SaveChangesAsync();
+            return (null, "Filen är för stor (max 10 MB).");
         }
         catch (Exception ex)
         {
@@ -248,9 +289,9 @@ public class DocumentService(
     }
 
     public async Task<(Document? Doc, string? Error)> UploadAndLinkAsync(
-        string fileName, string contentType, Stream data, DocumentEntityType entityType, int entityId)
+        string fileName, string contentType, Func<Stream> openData, DocumentEntityType entityType, int entityId)
     {
-        var (doc, err) = await UploadAsync(fileName, contentType, data);
+        var (doc, err) = await UploadAsync(fileName, contentType, openData);
         if (doc is null) return (null, err);
         await LinkAsync(doc.Id, entityType, entityId);
         return (doc, null);
@@ -321,7 +362,7 @@ public class DocumentService(
                     continue;
                 }
 
-                var (doc, err) = await UploadAsync(entry.Name, contentType, new MemoryStream(data));
+                var (doc, err) = await UploadAsync(entry.Name, contentType, () => new MemoryStream(data));
                 if (doc is not null)
                     imported.Add(doc);
                 else

@@ -20,7 +20,7 @@ public class DocumentExtractionJobTests : IDisposable
     {
         var storage = new DbDocumentStorage(_fx.Db);
         var svc = _fx.MakeDocumentService(storage);
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         var extractor = new StubExtractor(new ExtractionResult(
             "SupplierInvoice", "ACME AB", 1000m, 250m, new DateOnly(2026, 3, 15), null, "INV-001"));
@@ -40,7 +40,7 @@ public class DocumentExtractionJobTests : IDisposable
     {
         var storage = new DbDocumentStorage(_fx.Db);
         var svc = _fx.MakeDocumentService(storage);
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         // User classifies the document (via the "Bokför" dialog) while extraction is still Pending.
         var userChosenDate = new DateOnly(2026, 1, 10);
@@ -63,7 +63,7 @@ public class DocumentExtractionJobTests : IDisposable
     {
         var storage = new DbDocumentStorage(_fx.Db);
         var svc = _fx.MakeDocumentService(storage);
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         var userChosenDate = new DateOnly(2026, 1, 10);
         var extractedDate = new DateOnly(2026, 3, 15);
@@ -91,7 +91,7 @@ public class DocumentExtractionJobTests : IDisposable
     {
         var storage = new DbDocumentStorage(_fx.Db);
         var svc = _fx.MakeDocumentService(storage);
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         var extractor = new ConcurrentDeleteExtractor(
             _fx.Db.Database.GetConnectionString()!, _fx.OrganisationId, doc!.Id,
@@ -109,7 +109,7 @@ public class DocumentExtractionJobTests : IDisposable
     {
         var storage = new DbDocumentStorage(_fx.Db);
         var svc = _fx.MakeDocumentService(storage);
-        var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         var job = new DocumentExtractionJob(_fx.Db, storage, new ThrowingExtractor(), NullLogger<DocumentExtractionJob>.Instance);
 
@@ -135,7 +135,7 @@ public class DocumentExtractionJobTests : IDisposable
     {
         var storage = new DbDocumentStorage(_fx.Db);
         var svc = _fx.MakeDocumentService(storage);
-        var (doc, _) = await svc.UploadAsync("leverantörsfaktura.pdf", "application/pdf", new MemoryStream());
+        var (doc, _) = await svc.UploadAsync("leverantörsfaktura.pdf", "application/pdf", () => new MemoryStream());
 
         var extractor = new CompositeExtractor(new FilenameExtractor(), new PdfTextExtractor(NullLogger<PdfTextExtractor>.Instance));
         var job = new DocumentExtractionJob(_fx.Db, storage, extractor, NullLogger<DocumentExtractionJob>.Instance);

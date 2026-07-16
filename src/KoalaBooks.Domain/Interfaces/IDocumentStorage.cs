@@ -2,7 +2,7 @@ namespace KoalaBooks.Domain.Interfaces;
 
 public interface IDocumentStorage
 {
-    Task<string> SaveAsync(int documentId, string contentType, Stream data);
+    Task<(string StorageKey, long FileSize)> SaveAsync(int documentId, string contentType, Func<Stream> openData);
     Task<byte[]> LoadAsync(string storageKey);
     Task DeleteAsync(string storageKey);
 }

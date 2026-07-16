@@ -15,39 +15,19 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
     private const int InvRead = 0x00040000;
     private const int ChunkSize = 81920; // matches Stream.CopyToAsync's default buffer size
 
-    public async Task<string> SaveAsync(int documentId, string contentType, Stream data)
+    public async Task<(string StorageKey, long FileSize)> SaveAsync(int documentId, string contentType, Func<Stream> openData)
     {
         var strategy = db.Database.CreateExecutionStrategy();
-        var attempt = 0;
         return await strategy.ExecuteAsync(async () =>
         {
-            attempt++;
-
             // A retry re-runs this whole delegate: a prior failed attempt may
             // have left a DocumentData row tracked (Added/Modified) without
-            // committing — detach just that row before re-reading it, and
-            // rewind the input (when possible). db is a shared, caller-owned
-            // AppDbContext, so this must not touch entities outside our own.
+            // committing — detach just that row before re-reading it. db is a
+            // shared, caller-owned AppDbContext, so this must not touch
+            // entities outside our own.
             DetachTrackedDocumentData(documentId);
 
-            if (data.CanSeek)
-            {
-                data.Position = 0;
-            }
-            else if (attempt > 1)
-            {
-                // A non-seekable stream can't be rewound, so a retry would resume
-                // reading wherever the failed attempt left off, silently writing a
-                // truncated/wrong Large Object instead of failing loudly. No current
-                // caller passes a non-seekable stream here (DocumentService buffers
-                // to a MemoryStream first), but fail fast rather than corrupt data
-                // if that ever changes.
-                throw new InvalidOperationException(
-                    $"DbDocumentStorage.SaveAsync cannot retry document {documentId}: " +
-                    "the source stream is not seekable, so a transient-failure retry " +
-                    "cannot be rewound to the start. Pass a seekable stream (e.g. buffer " +
-                    "to a MemoryStream) if the call may be retried.");
-            }
+            await using var data = openData();
 
             try
             {
@@ -63,9 +43,11 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
                     ("oid", NpgsqlDbType.Oid, oid), ("mode", NpgsqlDbType.Integer, InvWrite));
 
                 var buffer = new byte[ChunkSize];
+                long fileSize = 0;
                 int read;
                 while ((read = await data.ReadAsync(buffer)) > 0)
                 {
+                    fileSize += read;
                     var chunk = buffer[..read];
                     await ExecuteScalarAsync<int>(conn, "SELECT lowrite(@fd, @chunk)",
                         ("fd", NpgsqlDbType.Integer, fd), ("chunk", NpgsqlDbType.Bytea, chunk));
@@ -79,7 +61,7 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
 
                 await db.SaveChangesAsync();
                 await tx.CommitAsync();
-                return documentId.ToString();
+                return (documentId.ToString(), fileSize);
             }
             catch
             {
