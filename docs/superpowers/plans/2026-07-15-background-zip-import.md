@@ -15,6 +15,7 @@
 - No custom `Seek`-capable Postgres-backed `Stream` — `NpgsqlLargeObjectManager`/`NpgsqlLargeObjectStream` are `[Obsolete]` since Npgsql 8.0 (confirmed against the installed `Npgsql 10.0.3` package: both carry `[Obsolete("... call these yourself directly")]`). All Postgres Large Object access goes through plain SQL `lo_*` function calls, exactly like `DbDocumentStorage` already does.
 - No parallel/fan-out processing of zip entries — one `ZipImportJob` processes a batch's entries sequentially.
 - No batch-level progress bar — individual documents reveal one by one via the existing per-document `Pending → Completed` display; the batch only drives one final summary toast.
+- **Every manual `db.Database.BeginTransactionAsync()` must be wrapped in `db.Database.CreateExecutionStrategy().ExecuteAsync(...)`.** `Program.cs` calls `builder.EnrichNpgsqlDbContext<AppDbContext>()`, which enables `NpgsqlRetryingExecutionStrategy` on every DI-resolved `AppDbContext` (Blazor circuits and Hangfire jobs alike). A manual transaction opened outside that wrapper throws `InvalidOperationException` unconditionally, every call — this exact bug hit `CustomerInvoiceService.CreateAsync` and was fixed in PR #253; `DbDocumentStorage` already does this correctly and is the reference pattern. `TestFixture`'s `AppDbContext` does not enable retry, so ordinary tests against it won't catch a missing wrapper — only a dedicated retry-enabled test (see `DbDocumentStorageRetryStrategyTests.cs`, and Tasks 4/5's Step 6.5/4.5 below) does. All three of this plan's manual transactions (`UploadZipAsync`'s staging write, `ZipImportJob.RunAsync`'s staging read, `ZipImportJob.DeleteStagingAsync`) are wrapped for this reason.
 
 ---
 
@@ -752,14 +753,16 @@ Replace the entire `UploadZipAsync` method with the version below, and delete th
             if (entryCount > ZipMaxEntries)
                 return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
 
-            uint stagingOid;
-            await using (var tx = await db.Database.BeginTransactionAsync())
+            var strategy = db.Database.CreateExecutionStrategy();
+            var stagingOid = await strategy.ExecuteAsync(async () =>
             {
+                await using var tx = await db.Database.BeginTransactionAsync();
                 var conn = (NpgsqlConnection)db.Database.GetDbConnection();
                 await using var tempReadStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read);
-                (stagingOid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, tempReadStream);
+                var (oid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, tempReadStream);
                 await tx.CommitAsync();
-            }
+                return oid;
+            });
 
             var batch = new ZipImportBatch
             {
@@ -793,11 +796,93 @@ Expected: PASS (5 new `UploadZipAsync_*` tests, plus the 3 `PostgresLargeObjects
 Run: `dotnet test tests/KoalaBooks.Tests --filter DocumentServiceTests`
 Expected: PASS — every other existing `DocumentServiceTests` test (unrelated to zip upload) is unaffected.
 
+- [ ] **Step 6.5: Add a retry-strategy regression test for the staging write**
+
+`UploadZipAsync`'s staging write wraps its `BeginTransactionAsync()` in `db.Database.CreateExecutionStrategy().ExecuteAsync(...)` specifically because a manual transaction opened directly (outside that wrapper) throws `InvalidOperationException: The configured execution strategy 'NpgsqlRetryingExecutionStrategy' does not support user-initiated transactions` unconditionally under `Program.cs`'s `EnrichNpgsqlDbContext<AppDbContext>()` — this is a real, previously-hit production bug (see `CustomerInvoiceServiceRetryStrategyTests.cs` / `DbDocumentStorageRetryStrategyTests.cs`, which exist to catch exactly this class of regression). `TestFixture`'s `AppDbContext` does not enable retry, so the ordinary tests above would pass even if this wrapping were missing — only a retry-enabled context catches it.
+
+Add `tests/KoalaBooks.Tests/DocumentServiceZipRetryStrategyTests.cs`, following `DbDocumentStorageRetryStrategyTests.cs`'s exact pattern (same constructor shape: `PostgresContainerFixture.CreateUniqueDatabase()`, `UseNpgsql(connStr, o => o.EnableRetryOnFailure())`, a real `Organisation` row, `IDisposable` dropping the database):
+
+```csharp
+using KoalaBooks.Application.Jobs;
+using KoalaBooks.Application.Services;
+using KoalaBooks.Domain;
+using KoalaBooks.Domain.Entities;
+using KoalaBooks.Infrastructure.Data;
+using KoalaBooks.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+
+namespace KoalaBooks.Tests;
+
+public class DocumentServiceZipRetryStrategyTests : IDisposable
+{
+    private readonly string _dbName;
+    private readonly AppDbContext _db;
+    private readonly int _organisationId;
+
+    public DocumentServiceZipRetryStrategyTests()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        _dbName = dbName;
+
+        // Mirrors Program.cs's EnrichNpgsqlDbContext, which enables a
+        // retrying execution strategy in the real app — this is what
+        // UploadZipAsync's manual staging transaction must be compatible with.
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(connStr, o => o.EnableRetryOnFailure())
+            .Options;
+
+        _db = new AppDbContext(options, new LocalCurrentUser());
+        _db.Database.EnsureCreated();
+
+        var org = new Organisation { Name = "Test Org", Slug = "test-org" };
+        _db.Organisations.Add(org);
+        _db.SaveChanges();
+        _organisationId = org.Id;
+    }
+
+    public void Dispose()
+    {
+        _db.Dispose();
+        PostgresContainerFixture.DropDatabase(_dbName);
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_StagesZip_UnderRetryingExecutionStrategy()
+    {
+        var svc = new DocumentService(_db, new DbDocumentStorage(_db),
+            new NoOpDocumentExtractionQueue(), new NoOpZipImportQueue(),
+            new LocalCurrentUser());
+
+        using var ms = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("a.pdf");
+            using var entryStream = entry.Open();
+            entryStream.Write([1, 2, 3]);
+        }
+        var zipBytes = ms.ToArray();
+
+        var (batchId, err) = await svc.UploadZipAsync(() => new MemoryStream(zipBytes));
+
+        Assert.Null(err);
+        Assert.NotNull(batchId);
+        var batch = await _db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        Assert.NotNull(batch.StagingOid);
+    }
+}
+```
+
+Note: `LocalCurrentUser` is the existing `ICurrentUser` test double already used by `DbDocumentStorageRetryStrategyTests.cs` — check that file for its exact namespace/constructor if it's not a zero-arg type; set its organisation to `_organisationId` the same way that file does, if it needs one.
+
+Run: `dotnet test tests/KoalaBooks.Tests --filter DocumentServiceZipRetryStrategyTests`
+Expected: PASS. Then revert the Step 4 fix temporarily (put `await using var tx = await db.Database.BeginTransactionAsync();` back, unwrapped) and re-run this one test to confirm it fails with the `NpgsqlRetryingExecutionStrategy does not support user-initiated transactions` error — this proves the test actually catches the regression it's named for — then restore the fix.
+
 - [ ] **Step 7: Commit**
 
 ```bash
 git add src/KoalaBooks.Application/Services/DocumentService.cs \
-        tests/KoalaBooks.Tests/DocumentServiceTests.cs
+        tests/KoalaBooks.Tests/DocumentServiceTests.cs \
+        tests/KoalaBooks.Tests/DocumentServiceZipRetryStrategyTests.cs
 git commit -m "feat: rewrite UploadZipAsync to stage the zip and enqueue background processing"
 ```
 
@@ -1128,12 +1213,19 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
         {
             await using (var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite))
             {
-                await using (var tx = await db.Database.BeginTransactionAsync())
+                var readStrategy = db.Database.CreateExecutionStrategy();
+                await readStrategy.ExecuteAsync(async () =>
                 {
+                    // A retry re-invokes this whole delegate: reset the temp file so a
+                    // prior attempt's partial write (from a transient failure mid-copy)
+                    // can't leave leftover bytes ahead of this attempt's data.
+                    tempStream.Position = 0;
+                    tempStream.SetLength(0);
+                    await using var tx = await db.Database.BeginTransactionAsync();
                     var conn = (NpgsqlConnection)db.Database.GetDbConnection();
                     await PostgresLargeObjects.CopyLargeObjectIntoStreamAsync(conn, batch.StagingOid!.Value, tempStream);
                     await tx.CommitAsync();
-                }
+                });
                 tempStream.Position = 0;
 
                 ZipArchive archive;
@@ -1207,11 +1299,18 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
     {
         if (batch.StagingOid is null) return;
 
-        await using var tx = await db.Database.BeginTransactionAsync();
-        var conn = (NpgsqlConnection)db.Database.GetDbConnection();
         try
         {
-            await PostgresLargeObjects.DeleteLargeObjectAsync(conn, batch.StagingOid.Value);
+            var strategy = db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var tx = await db.Database.BeginTransactionAsync();
+                var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+                await PostgresLargeObjects.DeleteLargeObjectAsync(conn, batch.StagingOid!.Value);
+                batch.StagingOid = null;
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+            });
         }
         catch (Exception ex)
         {
@@ -1219,11 +1318,7 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
             // a leaked LO here is a minor storage-cleanup miss, not a correctness issue for
             // the batch itself, so log and move on rather than failing the whole run.
             logger.LogWarning(ex, "Failed to delete staging large object {Oid} for batch {BatchId}", batch.StagingOid, batch.Id);
-            return;
         }
-        batch.StagingOid = null;
-        await db.SaveChangesAsync();
-        await tx.CommitAsync();
     }
 }
 ```
@@ -1232,6 +1327,97 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter ZipImportJobTests`
 Expected: PASS (10 tests)
+
+- [ ] **Step 4.5: Add a retry-strategy regression test for the staging read/delete**
+
+Same reasoning as Task 4's Step 6.5: `RunAsync`'s staging-copy-to-temp-file and `DeleteStagingAsync` both wrap their `BeginTransactionAsync()` calls in `db.Database.CreateExecutionStrategy().ExecuteAsync(...)` because a manual transaction opened directly (outside that wrapper) throws unconditionally under `Program.cs`'s `EnrichNpgsqlDbContext<AppDbContext>()` — the same retry strategy applies to `AppDbContext` everywhere it's resolved via DI, including inside this Hangfire job. `TestFixture`'s ordinary tests above don't enable retry, so only a retry-enabled context catches a missing wrapper.
+
+Add `tests/KoalaBooks.Tests/ZipImportJobRetryStrategyTests.cs`, following `DbDocumentStorageRetryStrategyTests.cs`'s exact pattern (`PostgresContainerFixture.CreateUniqueDatabase()`, `UseNpgsql(connStr, o => o.EnableRetryOnFailure())`, a real `Organisation` row, `IDisposable` dropping the database). Stage a small zip directly via `PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync` (bypassing `UploadZipAsync`, since this test only needs to exercise `ZipImportJob.RunAsync` itself) into a `ZipImportBatch` row, then run the job against the retry-enabled context and assert it completes, imports the entry, and clears `StagingOid`:
+
+```csharp
+using KoalaBooks.Application.Jobs;
+using KoalaBooks.Application.Services;
+using KoalaBooks.Domain;
+using KoalaBooks.Domain.Entities;
+using KoalaBooks.Infrastructure.Data;
+using KoalaBooks.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+
+namespace KoalaBooks.Tests;
+
+public class ZipImportJobRetryStrategyTests : IDisposable
+{
+    private readonly string _dbName;
+    private readonly AppDbContext _db;
+    private readonly int _organisationId;
+
+    public ZipImportJobRetryStrategyTests()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        _dbName = dbName;
+
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(connStr, o => o.EnableRetryOnFailure())
+            .Options;
+
+        _db = new AppDbContext(options, new LocalCurrentUser());
+        _db.Database.EnsureCreated();
+
+        var org = new Organisation { Name = "Test Org", Slug = "test-org" };
+        _db.Organisations.Add(org);
+        _db.SaveChanges();
+        _organisationId = org.Id;
+    }
+
+    public void Dispose()
+    {
+        _db.Dispose();
+        PostgresContainerFixture.DropDatabase(_dbName);
+    }
+
+    [Fact]
+    public async Task RunAsync_ProcessesStagedBatch_UnderRetryingExecutionStrategy()
+    {
+        using var ms = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("a.pdf");
+            using var entryStream = entry.Open();
+            entryStream.Write([1, 2, 3]);
+        }
+
+        uint stagingOid;
+        await using (var tx = await _db.Database.BeginTransactionAsync())
+        {
+            var conn = (NpgsqlConnection)_db.Database.GetDbConnection();
+            (stagingOid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, new MemoryStream(ms.ToArray()));
+            await tx.CommitAsync();
+        }
+
+        var batch = new ZipImportBatch { OrganisationId = _organisationId, StagingOid = stagingOid, TotalEntries = 1 };
+        _db.ZipImportBatches.Add(batch);
+        await _db.SaveChangesAsync();
+
+        var documentService = new DocumentService(_db, new DbDocumentStorage(_db),
+            new NoOpDocumentExtractionQueue(), new NoOpZipImportQueue(), new LocalCurrentUser());
+        var job = new ZipImportJob(_db, documentService, NullLogger<ZipImportJob>.Instance);
+
+        await job.RunAsync(batch.Id);
+
+        var updated = await _db.ZipImportBatches.FirstAsync(b => b.Id == batch.Id);
+        Assert.True(updated.Done);
+        Assert.Equal(1, updated.ImportedCount);
+        Assert.Null(updated.StagingOid);
+    }
+}
+```
+
+Note: `_db.Database.BeginTransactionAsync()` in this test's setup (staging the LO directly, bypassing `UploadZipAsync`) is fine unwrapped — test setup here isn't exercising the retry strategy, it's just seeding data; only the wrapping inside `ZipImportJob` itself is what this test verifies. `LocalCurrentUser` is the existing `ICurrentUser` test double already used by `DbDocumentStorageRetryStrategyTests.cs` — check that file for its exact namespace/constructor if it's not zero-arg.
+
+Run: `dotnet test tests/KoalaBooks.Tests --filter ZipImportJobRetryStrategyTests`
+Expected: PASS. Then temporarily revert one of Step 3's fixes (e.g., put `RunAsync`'s staging-copy `BeginTransactionAsync()` back unwrapped) and re-run this one test to confirm it fails with the `NpgsqlRetryingExecutionStrategy does not support user-initiated transactions` error — proving the test actually catches the regression — then restore the fix.
 
 - [ ] **Step 5: Run the full test suite to confirm no regression and that the solution builds end-to-end**
 
@@ -1242,7 +1428,8 @@ Expected: build succeeds (this is the first point `HangfireZipImportQueue` from 
 
 ```bash
 git add src/KoalaBooks.Application/Jobs/ZipImportJob.cs \
-        tests/KoalaBooks.Tests/ZipImportJobTests.cs
+        tests/KoalaBooks.Tests/ZipImportJobTests.cs \
+        tests/KoalaBooks.Tests/ZipImportJobRetryStrategyTests.cs
 git commit -m "feat: add ZipImportJob for background zip entry processing"
 ```
 
