@@ -395,8 +395,7 @@ public class OidcSilentPkceForOwnClientTests
             var json = JsonSerializer.Deserialize<JsonElement>(body);
             var accessToken = json.GetProperty("access_token").GetString()!;
             var payload = accessToken.Split('.')[1];
-            var padded = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
-            var claimsJson = Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+            var claimsJson = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(payload));
             var claims = JsonSerializer.Deserialize<JsonElement>(claimsJson);
 
             Assert.Equal(orgId.ToString(), claims.GetProperty("org_id").GetString());
