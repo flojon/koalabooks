@@ -225,7 +225,7 @@ public static class DemoDataSeeder
         Customer? nordicDesign = null;
         foreach (var customer in customers)
         {
-            var (created, error) = await customerService.CreateAsync(customer);
+            var (created, error) = await customerService.CreateAsync(customer).ConfigureAwait(false);
             if (error is not null)
                 throw new InvalidOperationException($"Demo seed failed to create customer '{customer.Name}': {error}");
             if (customer.Name == "Nordic Design AB")
@@ -233,7 +233,7 @@ public static class DemoDataSeeder
         }
 
         var year = DateTime.UtcNow.Year;
-        var accounts = await LoadDemoAccountsAsync(db, fiscalYearId);
+        var accounts = await LoadDemoAccountsAsync(db, fiscalYearId).ConfigureAwait(false);
         var supplierInvoiceService = new SupplierInvoiceService(db);
 
         // Left unposted so the "obokförd leverantörsfaktura" demo state exists.
@@ -247,7 +247,7 @@ public static class DemoDataSeeder
             AmountExclVat = 1200m,
             VatAmount = 300m,
             TotalAmount = 1500m
-        });
+        }).ConfigureAwait(false);
         if (unpostedError is not null)
             throw new InvalidOperationException($"Demo seed failed to create supplier invoice: {unpostedError}");
 
@@ -261,17 +261,19 @@ public static class DemoDataSeeder
             AmountExclVat = 4000m,
             VatAmount = 1000m,
             TotalAmount = 5000m
-        });
+        }).ConfigureAwait(false);
         if (paidCreateError is not null)
             throw new InvalidOperationException($"Demo seed failed to create supplier invoice: {paidCreateError}");
 
         var (_, postError) = await supplierInvoiceService.PostAsync(
-            paidInvoice!.Id, accounts["5010"].Id, accounts["2440"].Id, accounts["2641"].Id);
+            paidInvoice!.Id, accounts["5010"].Id, accounts["2440"].Id, accounts["2641"].Id
+        ).ConfigureAwait(false);
         if (postError is not null)
             throw new InvalidOperationException($"Demo seed failed to post supplier invoice: {postError}");
 
         var (_, payError) = await supplierInvoiceService.MarkAsPaidAsync(
-            paidInvoice.Id, new DateOnly(year, 7, 13), accounts["1910"].Id, accounts["2440"].Id);
+            paidInvoice.Id, new DateOnly(year, 7, 13), accounts["1910"].Id, accounts["2440"].Id
+        ).ConfigureAwait(false);
         if (payError is not null)
             throw new InvalidOperationException($"Demo seed failed to mark supplier invoice as paid: {payError}");
 
@@ -291,7 +293,7 @@ public static class DemoDataSeeder
             new() { Description = "Konsulttimmar – webbutveckling", Quantity = 20, UnitPrice = 950m, VatRate = 25 },
             new() { Description = "Domän & hosting", Quantity = 1, UnitPrice = 800m, VatRate = 25 }
         ];
-        var (_, draftError) = await customerInvoiceService.CreateAsync(draftInvoice, draftLines);
+        var (_, draftError) = await customerInvoiceService.CreateAsync(draftInvoice, draftLines).ConfigureAwait(false);
         if (draftError is not null)
             throw new InvalidOperationException($"Demo seed failed to create draft customer invoice: {draftError}");
     }
