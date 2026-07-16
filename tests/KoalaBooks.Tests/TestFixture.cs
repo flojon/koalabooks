@@ -16,6 +16,7 @@ public class TestFixture : IDisposable
     private readonly string _dbName;
 
     public AppDbContext Db { get; }
+    public DbContextOptions<AppDbContext> DbOptions { get; }
     public JournalEntryService JournalEntryService { get; }
     public FiscalYearService FiscalYearService { get; }
     public VoucherGapService VoucherGapService { get; }
@@ -33,6 +34,7 @@ public class TestFixture : IDisposable
         var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(connStr)
             .Options;
+        DbOptions = options;
 
         // OrganisationId starts null so the org INSERT runs without a tenant filter.
         // After the org is created, SetActiveTenant sets the real id so all

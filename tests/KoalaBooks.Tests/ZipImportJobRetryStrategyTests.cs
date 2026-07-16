@@ -1,5 +1,4 @@
 using KoalaBooks.Application.Jobs;
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Infrastructure.Data;
@@ -13,8 +12,11 @@ namespace KoalaBooks.Tests;
 public class ZipImportJobRetryStrategyTests : IDisposable
 {
     private readonly string _dbName;
+    private readonly DbContextOptions<AppDbContext> _dbOptions;
+    // Only used to seed the org and stage the zip, and to re-read the batch afterwards —
+    // ZipImportJob builds its own AppDbContext from _dbOptions internally, the same way
+    // it does in production (see ZipImportJob.RunAsync's comment on why).
     private readonly AppDbContext _db;
-    private readonly LocalCurrentUser _currentUser;
     private readonly int _organisationId;
 
     public ZipImportJobRetryStrategyTests()
@@ -22,24 +24,17 @@ public class ZipImportJobRetryStrategyTests : IDisposable
         var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
         _dbName = dbName;
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
+        _dbOptions = new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(connStr, o => o.EnableRetryOnFailure())
             .Options;
 
-        // Starts with no active tenant so the org INSERT below runs without a
-        // tenant filter, matching TestFixture's setup pattern. OrganisationId is
-        // set right after, so DocumentService.UploadAsync (which requires an
-        // active tenant) works the same way it does in the real app, where the
-        // context and DocumentService share the same scoped ICurrentUser.
-        _currentUser = new LocalCurrentUser();
-        _db = new AppDbContext(options, _currentUser);
+        _db = new AppDbContext(_dbOptions, new LocalCurrentUser());
         _db.Database.EnsureCreated();
 
         var org = new Organisation { Name = "Test Org", Slug = "test-org" };
         _db.Organisations.Add(org);
         _db.SaveChanges();
         _organisationId = org.Id;
-        _currentUser.OrganisationId = _organisationId;
     }
 
     public void Dispose()
@@ -71,16 +66,15 @@ public class ZipImportJobRetryStrategyTests : IDisposable
         _db.ZipImportBatches.Add(batch);
         await _db.SaveChangesAsync();
 
-        var documentService = new DocumentService(_db, new DbDocumentStorage(_db),
-            new NoOpDocumentExtractionQueue(), new NoOpZipImportQueue(), _currentUser);
-        var job = new ZipImportJob(_db, documentService, NullLogger<ZipImportJob>.Instance);
+        var job = new ZipImportJob(_dbOptions, new DbDocumentStorage(_db), new NoOpDocumentExtractionQueue(),
+            new NoOpZipImportQueue(), NullLogger<ZipImportJob>.Instance);
 
         await job.RunAsync(batch.Id);
 
-        // AsNoTracking: batch is already tracked from the setup above (and RunAsync
-        // reuses this same context internally), so a tracking query would return the
-        // identity-mapped in-memory instance rather than re-reading the actual
-        // persisted row — masking a failed SaveChangesAsync that never reached Postgres.
+        // AsNoTracking: batch is already tracked from the setup above, so a tracking
+        // query would return the identity-mapped in-memory instance rather than
+        // re-reading the actual persisted row — masking a failed SaveChangesAsync
+        // that never reached Postgres.
         var updated = await _db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batch.Id);
         Assert.True(updated.Done);
         Assert.Equal(1, updated.ImportedCount);

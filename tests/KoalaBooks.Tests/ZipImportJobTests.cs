@@ -1,10 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using KoalaBooks.Application.Jobs;
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
-using KoalaBooks.Domain.Interfaces;
-using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -40,7 +37,8 @@ public class ZipImportJobTests : IDisposable
     }
 
     private ZipImportJob MakeJob() =>
-        new ZipImportJob(_fx.Db, _fx.MakeDocumentService(), NullLogger<ZipImportJob>.Instance);
+        new ZipImportJob(_fx.DbOptions, new DbDocumentStorage(_fx.Db), new NoOpDocumentExtractionQueue(),
+            new NoOpZipImportQueue(), NullLogger<ZipImportJob>.Instance);
 
     [Fact]
     public async Task RunAsync_ImportsAllValidEntries()
@@ -50,7 +48,10 @@ public class ZipImportJobTests : IDisposable
 
         await MakeJob().RunAsync(batchId);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().FirstAsync(b => b.Id == batchId);
+        // AsNoTracking: RunAsync updates the batch through its own AppDbContext, not
+        // _fx.Db — without this, _fx.Db's change tracker returns the stale pre-run
+        // instance it's held onto since StageZipAsync's Add, not the persisted row.
+        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
         Assert.True(batch.Done);
         Assert.Equal(2, batch.ProcessedEntries);
         Assert.Equal(2, batch.ImportedCount);
@@ -97,7 +98,7 @@ public class ZipImportJobTests : IDisposable
 
         await MakeJob().RunAsync(batchId);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().FirstAsync(b => b.Id == batchId);
+        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
         Assert.Equal(1, batch.ImportedCount);
         Assert.Equal(1, batch.SkippedCount);
         var skipped = JsonSerializer.Deserialize<List<SkippedEntry>>(batch.SkippedReasonsJson)!;
@@ -114,7 +115,7 @@ public class ZipImportJobTests : IDisposable
 
         await MakeJob().RunAsync(batchId);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().FirstAsync(b => b.Id == batchId);
+        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
         Assert.Equal(1, batch.ImportedCount);
         Assert.Equal(1, batch.SkippedCount);
     }
@@ -127,7 +128,7 @@ public class ZipImportJobTests : IDisposable
 
         await MakeJob().RunAsync(batchId);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().FirstAsync(b => b.Id == batchId);
+        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
         Assert.True(batch.Done);
         Assert.Equal(0, batch.ProcessedEntries);
         var skipped = JsonSerializer.Deserialize<List<SkippedEntry>>(batch.SkippedReasonsJson)!;
@@ -142,7 +143,7 @@ public class ZipImportJobTests : IDisposable
 
         await MakeJob().RunAsync(batchId);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().FirstAsync(b => b.Id == batchId);
+        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
         Assert.Equal(1, batch.ImportedCount);
         Assert.Equal(1, batch.SkippedCount);
     }
@@ -165,7 +166,7 @@ public class ZipImportJobTests : IDisposable
         // Retry: RunAsync should resume from entry index 1, not reprocess "a.pdf".
         await MakeJob().RunAsync(batchId);
 
-        var finalBatch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().FirstAsync(b => b.Id == batchId);
+        var finalBatch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
         Assert.True(finalBatch.Done);
         Assert.Equal(3, finalBatch.ProcessedEntries);
         Assert.Equal(3, finalBatch.ImportedCount);

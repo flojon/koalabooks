@@ -1,6 +1,8 @@
 using Hangfire;
 using KoalaBooks.Application.Services;
+using KoalaBooks.Domain;
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +15,12 @@ namespace KoalaBooks.Application.Jobs;
 
 public record SkippedEntry(string FileName, string Reason);
 
-public class ZipImportJob(AppDbContext db, DocumentService documentService, ILogger<ZipImportJob> logger)
+public class ZipImportJob(
+    DbContextOptions<AppDbContext> dbOptions,
+    IDocumentStorage storage,
+    IDocumentExtractionQueue extractionQueue,
+    IZipImportQueue zipImportQueue,
+    ILogger<ZipImportJob> logger)
 {
     private static readonly Dictionary<string, string> ZipEntryContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -23,11 +30,6 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
         [".jpeg"] = "image/jpeg",
     };
 
-    // IgnoreQueryFilters: this job has no HttpContext, so ICurrentUser.OrganisationId
-    // is always null and the tenant query filter would hide the batch — same reasoning
-    // as DocumentExtractionJob. Safe here because the job only acts on a batchId handed
-    // to it by trusted code that just created that exact row.
-    //
     // A batch left un-Done after all 3 retries are exhausted is not specially recovered
     // here — it simply stays Done=false forever, the same way DocumentExtractionJob
     // leaves a Document stuck at ExtractionStatus.Pending if its own retries run out.
@@ -36,8 +38,20 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
     [AutomaticRetry(Attempts = 3)]
     public async Task RunAsync(int batchId)
     {
+        // This job has no HttpContext, so a DI-resolved ICurrentUser/AppDbContext/DocumentService
+        // would always see OrganisationId == null (DocumentService.UploadAsync would reject every
+        // entry with "Ingen aktiv organisation."). Instead, build our own AppDbContext bound to a
+        // mutable LocalCurrentUser, the same way DemoDataSeeder does — starting with no org (so the
+        // initial batch lookup, done with IgnoreQueryFilters, is unaffected either way) and then
+        // setting it to the batch's own OrganisationId once known, so DocumentService's writes and
+        // this context's own tenant query filter both scope correctly from that point on.
+        var tenant = new LocalCurrentUser();
+        await using var db = new AppDbContext(dbOptions, tenant);
+        var documentService = new DocumentService(db, storage, extractionQueue, zipImportQueue, tenant);
+
         var batch = await db.ZipImportBatches.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == batchId);
         if (batch is null || batch.Done) return;
+        tenant.OrganisationId = batch.OrganisationId;
 
         var tempPath = Path.GetTempFileName();
         try
@@ -69,7 +83,7 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
                     await AppendSkippedAsync(batch, "(zip-fil)", "Ogiltig zip-fil.");
                     batch.Done = true;
                     await db.SaveChangesAsync();
-                    await DeleteStagingAsync(batch);
+                    await DeleteStagingAsync(db, batch);
                     return;
                 }
 
@@ -109,7 +123,7 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
 
             batch.Done = true;
             await db.SaveChangesAsync();
-            await DeleteStagingAsync(batch);
+            await DeleteStagingAsync(db, batch);
         }
         finally
         {
@@ -126,7 +140,7 @@ public class ZipImportJob(AppDbContext db, DocumentService documentService, ILog
         await Task.CompletedTask;
     }
 
-    private async Task DeleteStagingAsync(ZipImportBatch batch)
+    private async Task DeleteStagingAsync(AppDbContext db, ZipImportBatch batch)
     {
         if (batch.StagingOid is null) return;
 
