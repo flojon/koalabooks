@@ -22,6 +22,7 @@ public class TestFixture : IDisposable
     public YearEndClosingService YearEndClosingService { get; }
     public SieExportService SieExportService { get; }
     public SieImportService SieImportService { get; }
+    public SupplierInvoiceService SupplierInvoiceService { get; }
 
     public int OrganisationId { get; private set; }
 
@@ -53,6 +54,7 @@ public class TestFixture : IDisposable
         YearEndClosingService = new YearEndClosingService(Db, FiscalYearService, VoucherGapService);
         SieExportService = new SieExportService(Db);
         SieImportService = new SieImportService(Db, _currentUser);
+        SupplierInvoiceService = new SupplierInvoiceService(Db);
     }
 
     public void SetActiveTenant(int orgId)

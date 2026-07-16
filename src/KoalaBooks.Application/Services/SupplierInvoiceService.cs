@@ -28,6 +28,45 @@ public class SupplierInvoiceService : ISupplierInvoiceService
             .ToListAsync().ConfigureAwait(false);
     }
 
+    public async Task<SupplierInvoice?> GetByIdAsync(int id)
+    {
+        return await _db.SupplierInvoices
+            .Include(s => s.JournalEntry)
+            .Include(s => s.PaymentJournalEntry)
+            .FirstOrDefaultAsync(s => s.Id == id).ConfigureAwait(false);
+    }
+
+    public async Task<(SupplierInvoice? Invoice, string? Error)> UpdateAsync(SupplierInvoice invoice)
+    {
+        if (string.IsNullOrWhiteSpace(invoice.SupplierName))
+            return (null, "Leverantörsnamn är obligatoriskt.");
+        if (invoice.TotalAmount <= 0)
+            return (null, "Totalt belopp måste vara större än noll.");
+        if (invoice.DueDate < invoice.InvoiceDate)
+            return (null, "Förfallodatum kan inte vara före fakturadatum.");
+
+        var existing = await _db.SupplierInvoices
+            .Include(s => s.FiscalYear)
+            .FirstOrDefaultAsync(s => s.Id == invoice.Id).ConfigureAwait(false);
+
+        if (existing is null) return (null, "Fakturan hittades inte.");
+        if (existing.JournalEntryId.HasValue) return (null, "Bokförda fakturor kan inte uppdateras.");
+        if (existing.IsPaid) return (null, "Betalda fakturor kan inte uppdateras.");
+        if (existing.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
+
+        existing.SupplierName = invoice.SupplierName;
+        existing.InvoiceNumber = invoice.InvoiceNumber;
+        existing.InvoiceDate = invoice.InvoiceDate;
+        existing.DueDate = invoice.DueDate;
+        existing.AmountExclVat = invoice.AmountExclVat;
+        existing.VatAmount = invoice.VatAmount;
+        existing.TotalAmount = invoice.TotalAmount;
+        existing.Notes = invoice.Notes;
+
+        await _db.SaveChangesAsync().ConfigureAwait(false);
+        return (existing, null);
+    }
+
     public async Task<(SupplierInvoice? Invoice, string? Error)> CreateAsync(SupplierInvoice invoice)
     {
         if (string.IsNullOrWhiteSpace(invoice.SupplierName))
