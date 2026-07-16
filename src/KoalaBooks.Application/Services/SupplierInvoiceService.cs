@@ -246,10 +246,13 @@ public class SupplierInvoiceService : ISupplierInvoiceService
 
     public async Task<string?> DeleteAsync(int invoiceId)
     {
-        var invoice = await _db.SupplierInvoices.FirstOrDefaultAsync(s => s.Id == invoiceId).ConfigureAwait(false);
+        var invoice = await _db.SupplierInvoices
+            .Include(s => s.FiscalYear)
+            .FirstOrDefaultAsync(s => s.Id == invoiceId).ConfigureAwait(false);
         if (invoice is null) return "Fakturan hittades inte.";
         if (invoice.JournalEntryId.HasValue) return "Bokförda fakturor kan inte raderas.";
         if (invoice.IsPaid) return "Betalda fakturor kan inte raderas.";
+        if (invoice.FiscalYear.IsClosed) return "Räkenskapsåret är stängt.";
 
         _db.SupplierInvoices.Remove(invoice);
         await _db.SaveChangesAsync().ConfigureAwait(false);

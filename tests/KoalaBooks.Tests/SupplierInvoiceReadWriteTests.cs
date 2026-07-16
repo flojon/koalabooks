@@ -109,4 +109,19 @@ public class SupplierInvoiceReadWriteTests : IDisposable
         Assert.Null(updated);
         Assert.NotNull(error);
     }
+
+    [Fact]
+    public async Task DeleteAsync_ClosedFiscalYear_ReturnsError()
+    {
+        var (created, error) = await _f.SupplierInvoiceService.CreateAsync(MakeInvoice());
+        Assert.Null(error);
+        Assert.NotNull(created);
+
+        _fy.IsClosed = true;
+        await _f.Db.SaveChangesAsync();
+
+        var deleteError = await _f.SupplierInvoiceService.DeleteAsync(created.Id);
+
+        Assert.NotNull(deleteError);
+    }
 }
