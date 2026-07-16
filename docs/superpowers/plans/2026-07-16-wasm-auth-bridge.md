@@ -29,7 +29,7 @@
 **Interfaces:**
 - Produces: `KoalaBooks.Web.Pages.Connect.OpenIddictIdentityBuilder.BuildPrincipal(ApplicationUser user, string userId, IEnumerable<string> scopes) -> ClaimsPrincipal` — used by Task 1's own two call sites; no later task depends on it directly.
 
-- [ ] **Step 1: Write the failing unit test**
+- [x] **Step 1: Write the failing unit test**
 
 Create `tests/KoalaBooks.Tests/OpenIddictIdentityBuilderTests.cs`:
 
@@ -97,12 +97,12 @@ public class OpenIddictIdentityBuilderTests
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails to compile**
+- [x] **Step 2: Run the test to verify it fails to compile**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter OpenIddictIdentityBuilderTests`
 Expected: build error — `OpenIddictIdentityBuilder` does not exist.
 
-- [ ] **Step 3: Create the shared helper**
+- [x] **Step 3: Create the shared helper**
 
 Create `src/KoalaBooks.Web/Pages/Connect/OpenIddictIdentityBuilder.cs`:
 
@@ -148,12 +148,12 @@ public static class OpenIddictIdentityBuilder
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter OpenIddictIdentityBuilderTests`
 Expected: 3 passed.
 
-- [ ] **Step 5: Refactor `Token.cshtml.cs` to use the helper**
+- [x] **Step 5: Refactor `Token.cshtml.cs` to use the helper**
 
 In `src/KoalaBooks.Web/Pages/Connect/Token.cshtml.cs`, replace lines 69-90:
 
@@ -191,7 +191,7 @@ with:
 
 (The `return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);` line right after stays unchanged.)
 
-- [ ] **Step 6: Fix and refactor `Authorize.cshtml.cs` to use the helper**
+- [x] **Step 6: Fix and refactor `Authorize.cshtml.cs` to use the helper**
 
 In `src/KoalaBooks.Web/Pages/Connect/Authorize.cshtml.cs`, replace lines 48-67:
 
@@ -227,12 +227,12 @@ with:
         return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 ```
 
-- [ ] **Step 7: Run the full test suite**
+- [x] **Step 7: Run the full test suite**
 
 Run: `dotnet test tests/KoalaBooks.Tests`
 Expected: all tests pass, including the existing `OidcAuthorizationCodeGrantTests.TokenEndpoint_RedeemsAuthorizationCode_ReturnsAccessToken` and `ApiTests.ConnectToken_ValidCredentials_ReturnsAccessTokenWithOrgId` (password grant still carries `org_id` — proves the refactor didn't regress it).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/KoalaBooks.Web/Pages/Connect/OpenIddictIdentityBuilder.cs \
@@ -254,7 +254,7 @@ git commit -m "Fix missing org_id claim in authorization-code flow via shared id
 **Interfaces:**
 - Produces: `KoalaBooks.Infrastructure.Services.WasmClientSeeder.ClientId` (`const string`, value `"koalabooks-wasm"`) and `WasmClientSeeder.SeedAsync(IServiceProvider services, Uri redirectUri) -> Task` — Task 3's integration test uses `ClientId` in its authorize/token requests; Task 6's client-side config uses the same literal `"koalabooks-wasm"` string (different project, can't share the constant — matches existing `"aspire-dashboard"` literal-string convention already used across `AspireDashboardSeeder`/`Program.cs`/tests).
 
-- [ ] **Step 1: Write the failing seeder test**
+- [x] **Step 1: Write the failing seeder test**
 
 In `tests/KoalaBooks.Tests/OidcTests.cs`, append this class after the closing brace of `OidcClientSeedingTests` (end of file):
 
@@ -324,12 +324,12 @@ public class WasmClientSeedingTests : IDisposable
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails to compile**
+- [x] **Step 2: Run the test to verify it fails to compile**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter WasmClientSeedingTests`
 Expected: build error — `WasmClientSeeder` does not exist.
 
-- [ ] **Step 3: Implement the seeder**
+- [x] **Step 3: Implement the seeder**
 
 Create `src/KoalaBooks.Infrastructure/Services/WasmClientSeeder.cs`:
 
@@ -389,12 +389,12 @@ public static class WasmClientSeeder
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter WasmClientSeedingTests`
 Expected: 2 passed.
 
-- [ ] **Step 5: Wire the seeder into startup**
+- [x] **Step 5: Wire the seeder into startup**
 
 In `src/KoalaBooks.Web/Program.cs`, after line 279 (`await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);`), insert:
 
@@ -405,12 +405,12 @@ In `src/KoalaBooks.Web/Program.cs`, after line 279 (`await AspireDashboardSeeder
         await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri(wasmClientRedirectUri));
 ```
 
-- [ ] **Step 6: Run the full test suite**
+- [x] **Step 6: Run the full test suite**
 
 Run: `dotnet test tests/KoalaBooks.Tests`
 Expected: all tests pass (startup seeding is idempotent, same pattern as `AspireDashboardSeeder` already running on every `WebApiFactory`-backed test).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/KoalaBooks.Infrastructure/Services/WasmClientSeeder.cs \
@@ -434,7 +434,7 @@ This is the end-to-end proof the design doc's Testing section calls for: it driv
 
 This test needs the same antiforgery-token-extraction helper `OidcAuthorizationCodeGrantTests` already has privately at the bottom of its class (`tests/KoalaBooks.Tests/OidcTests.cs:85-86`). Rather than duplicate it, extract it into a shared helper both classes use.
 
-- [ ] **Step 1: Extract the shared antiforgery helper**
+- [x] **Step 1: Extract the shared antiforgery helper**
 
 In `tests/KoalaBooks.Tests/OidcTests.cs`, replace the private method at the end of `OidcAuthorizationCodeGrantTests` (lines 85-86):
 
@@ -463,12 +463,12 @@ internal static class OidcTestHelpers
 
 ```
 
-- [ ] **Step 2: Run the existing test to verify the extraction didn't break it**
+- [x] **Step 2: Run the existing test to verify the extraction didn't break it**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter OidcAuthorizationCodeGrantTests`
 Expected: 1 passed (unchanged behavior, just relocated).
 
-- [ ] **Step 3: Write the failing integration test**
+- [x] **Step 3: Write the failing integration test**
 
 In `tests/KoalaBooks.Tests/OidcTests.cs`, add these usings near the top of the file (alongside the existing ones):
 
@@ -582,22 +582,22 @@ public class OidcSilentPkceForOwnClientTests
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it fails**
+- [x] **Step 4: Run the test to verify it fails**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter OidcSilentPkceForOwnClientTests`
 Expected (before Task 1/2 existed, this would fail; since Tasks 1-2 are already done at this point in the plan, this should instead expose whether PKCE + org_id truly work end-to-end). If it fails, the failure message (invalid_grant, invalid_request, or a null `org_id` claim) tells you which of Task 1/2's pieces to check — most likely a mismatch between the seeded `redirectUri` and the one sent in the `/connect/authorize` request.
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter OidcSilentPkceForOwnClientTests`
 Expected: 1 passed.
 
-- [ ] **Step 6: Run the full test suite**
+- [x] **Step 6: Run the full test suite**
 
 Run: `dotnet test tests/KoalaBooks.Tests`
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add tests/KoalaBooks.Tests/OidcTests.cs
@@ -617,7 +617,7 @@ git commit -m "Add end-to-end test proving silent PKCE exchange yields an org_id
 
 There is no automated test for this task: `AddAuthenticationStateSerialization`'s effect (`PersistentComponentState.RegisterOnPersisting` firing for `RenderMode.InteractiveWebAssembly` components) only triggers when a component actually renders in that mode, and no such component exists yet (by design — see Global Constraints). Verification is build-only.
 
-- [ ] **Step 1: Add the package reference**
+- [x] **Step 1: Add the package reference**
 
 In `src/KoalaBooks.Web/KoalaBooks.Web.csproj`, add to the existing `PackageReference` `ItemGroup` (after the `Microsoft.EntityFrameworkCore.Design` entry, alphabetically before `MudBlazor`):
 
@@ -625,7 +625,7 @@ In `src/KoalaBooks.Web/KoalaBooks.Web.csproj`, add to the existing `PackageRefer
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.9" />
 ```
 
-- [ ] **Step 2: Wire up serialization**
+- [x] **Step 2: Wire up serialization**
 
 In `src/KoalaBooks.Web/Program.cs`, replace lines 180-182:
 
@@ -644,7 +644,7 @@ builder.Services.AddRazorComponents()
     .AddAuthenticationStateSerialization(options => options.SerializeAllClaims = true);
 ```
 
-- [ ] **Step 3: Build and run the full test suite**
+- [x] **Step 3: Build and run the full test suite**
 
 Run: `dotnet build src/KoalaBooks.Web/KoalaBooks.Web.csproj`
 Expected: build succeeds.
@@ -652,7 +652,7 @@ Expected: build succeeds.
 Run: `dotnet test tests/KoalaBooks.Tests`
 Expected: all tests still pass (this change is additive; no existing component uses WASM render mode, so nothing observable changes yet).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/KoalaBooks.Web/KoalaBooks.Web.csproj src/KoalaBooks.Web/Program.cs
@@ -675,7 +675,7 @@ No automated test: `WebAssemblyHostBuilder.CreateDefault()` performs JS interop 
 
 **Revised during Task 5's implementation**: the original plan had this project reference `KoalaBooks.Application`. That's not possible — `KoalaBooks.Application.csproj` has a pre-existing `ProjectReference` to `KoalaBooks.Infrastructure`, which has `<FrameworkReference Include="Microsoft.AspNetCore.App" />` — a shared framework with no browser-wasm asset, so anything transitively pulling it in cannot compile for `Microsoft.NET.Sdk.BlazorWebAssembly`. Nothing in Tasks 5-6 actually uses any `Application` type, so the reference is simply dropped rather than worked around.
 
-- [ ] **Step 1: Create the project file**
+- [x] **Step 1: Create the project file**
 
 Create `src/KoalaBooks.Client/KoalaBooks.Client.csproj`:
 
@@ -696,7 +696,7 @@ Create `src/KoalaBooks.Client/KoalaBooks.Client.csproj`:
 </Project>
 ```
 
-- [ ] **Step 2: Create `Program.cs` with Track A wiring**
+- [x] **Step 2: Create `Program.cs` with Track A wiring**
 
 Create `src/KoalaBooks.Client/Program.cs`:
 
@@ -713,7 +713,7 @@ builder.Services.AddAuthenticationStateDeserialization();
 await builder.Build().RunAsync();
 ```
 
-- [ ] **Step 3: Add the project to the solution**
+- [x] **Step 3: Add the project to the solution**
 
 In `KoalaBooks.slnx`, add a line inside the `<Folder Name="/src/">` element (alphabetically, right after the `KoalaBooks.AppHostSupport` entry):
 
@@ -721,12 +721,12 @@ In `KoalaBooks.slnx`, add a line inside the `<Folder Name="/src/">` element (alp
     <Project Path="src/KoalaBooks.Client/KoalaBooks.Client.csproj" />
 ```
 
-- [ ] **Step 4: Build the new project**
+- [x] **Step 4: Build the new project**
 
 Run: `dotnet build src/KoalaBooks.Client/KoalaBooks.Client.csproj`
 Expected: build succeeds. The first run downloads the `browser-wasm` runtime pack via NuGet (not yet cached in this environment) — this needs network access and may take a few minutes; a restricted/offline sandbox will fail here with a restore error, which is an environment limitation, not a code defect.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/KoalaBooks.Client/KoalaBooks.Client.csproj \
@@ -749,7 +749,7 @@ git commit -m "Scaffold KoalaBooks.Client WASM project with auth state deseriali
 
 As established while researching this task: a raw `fetch`-based silent exchange cannot work (manual-redirect fetch responses are opaque — the `Location` header isn't readable even same-origin), so this uses Microsoft's own generic OIDC client (`AddOidcAuthentication`/`RemoteAuthenticatorView`, part of the same `Microsoft.AspNetCore.Components.WebAssembly.Authentication` package Task 5 already added), which implements the correct hidden-iframe silent-renew technique against any standard OIDC server — including our own OpenIddict server. No automated test: exercising the actual sign-in/silent-renew flow requires a real browser and, until a future task wires this project into the Web project's routing (`AddInteractiveWebAssemblyComponents()` + `AddAdditionalAssemblies`), the route below isn't reachable by any real request. Verification is build-only.
 
-- [ ] **Step 1: Add OIDC client registration to `Program.cs`**
+- [x] **Step 1: Add OIDC client registration to `Program.cs`**
 
 In `src/KoalaBooks.Client/Program.cs`, replace:
 
@@ -791,7 +791,7 @@ builder.Services.AddOidcAuthentication(options =>
 await builder.Build().RunAsync();
 ```
 
-- [ ] **Step 2: Add `_Imports.razor`**
+- [x] **Step 2: Add `_Imports.razor`**
 
 Create `src/KoalaBooks.Client/_Imports.razor`:
 
@@ -800,7 +800,7 @@ Create `src/KoalaBooks.Client/_Imports.razor`:
 @using Microsoft.AspNetCore.Components.WebAssembly.Authentication
 ```
 
-- [ ] **Step 3: Add the authentication callback route**
+- [x] **Step 3: Add the authentication callback route**
 
 Create `src/KoalaBooks.Client/Pages/Authentication.razor`:
 
@@ -814,17 +814,17 @@ Create `src/KoalaBooks.Client/Pages/Authentication.razor`:
 }
 ```
 
-- [ ] **Step 4: Build the project**
+- [x] **Step 4: Build the project**
 
 Run: `dotnet build src/KoalaBooks.Client/KoalaBooks.Client.csproj`
 Expected: build succeeds.
 
-- [ ] **Step 5: Run the full test suite one more time**
+- [x] **Step 5: Run the full test suite one more time**
 
 Run: `dotnet test tests/KoalaBooks.Tests`
 Expected: all tests pass (nothing in the Web project references `KoalaBooks.Client` yet, so this is purely additive).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/KoalaBooks.Client/Program.cs \
