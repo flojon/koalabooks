@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class VoucherGapService
+public class VoucherGapService : IVoucherGapService
 {
     private readonly AppDbContext _db;
 
@@ -18,7 +18,7 @@ public class VoucherGapService
         var numbers = await _db.JournalEntries
             .Where(j => j.FiscalYearId == fiscalYearId)
             .Select(j => j.EntryNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         if (numbers.Count == 0)
             return [];
@@ -37,14 +37,14 @@ public class VoucherGapService
 
     public async Task<List<int>> GetUnexplainedGapsAsync(int fiscalYearId)
     {
-        var gaps = await FindGapsAsync(fiscalYearId);
+        var gaps = await FindGapsAsync(fiscalYearId).ConfigureAwait(false);
         if (gaps.Count == 0)
             return gaps;
 
         var explained = await _db.VoucherGapExplanations
             .Where(v => v.FiscalYearId == fiscalYearId)
             .Select(v => v.MissingEntryNumber)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
 
         return gaps.Where(g => !explained.Contains(g)).ToList();
     }
@@ -55,12 +55,12 @@ public class VoucherGapService
         if (string.IsNullOrWhiteSpace(explanation))
             return "An explanation is required.";
 
-        var gaps = await FindGapsAsync(fiscalYearId);
+        var gaps = await FindGapsAsync(fiscalYearId).ConfigureAwait(false);
         if (!gaps.Contains(missingEntryNumber))
             return $"Entry number {missingEntryNumber} is not a gap in the sequence.";
 
         var existing = await _db.VoucherGapExplanations
-            .FirstOrDefaultAsync(v => v.FiscalYearId == fiscalYearId && v.MissingEntryNumber == missingEntryNumber);
+            .FirstOrDefaultAsync(v => v.FiscalYearId == fiscalYearId && v.MissingEntryNumber == missingEntryNumber).ConfigureAwait(false);
 
         if (existing is not null)
         {
@@ -80,7 +80,7 @@ public class VoucherGapService
             });
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return null;
     }
 
@@ -89,6 +89,6 @@ public class VoucherGapService
         return await _db.VoucherGapExplanations
             .Where(v => v.FiscalYearId == fiscalYearId)
             .OrderBy(v => v.MissingEntryNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 }

@@ -401,13 +401,13 @@ else
 }
 
 @code {
-    [Inject] private CustomerInvoiceService InvoiceService { get; set; } = default!;
-    [Inject] private CustomerService CustomerSvc { get; set; } = default!;
+    [Inject] private ICustomerInvoiceService InvoiceService { get; set; } = default!;
+    [Inject] private ICustomerService CustomerSvc { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
-    [Inject] private DocumentService DocumentService { get; set; } = default!;
+    [Inject] private IDocumentService DocumentService { get; set; } = default!;
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
 
     private FiscalYear? _fiscalYear;
@@ -696,9 +696,8 @@ else
             const long maxBytes = 10 * 1024 * 1024;
             if (e.File.Size > maxBytes) { _docError = "Filen är för stor (max 10 MB)."; return; }
             var contentType = string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
-            await using var stream = e.File.OpenReadStream(maxBytes);
             var (doc, err) = await DocumentService.UploadAndLinkAsync(
-                e.File.Name, contentType, stream,
+                e.File.Name, contentType, () => e.File.OpenReadStream(maxBytes),
                 DocumentEntityType.CustomerInvoice, _docPanelInvoiceId!.Value);
             if (doc is null) { _docError = err ?? "Uppladdning misslyckades."; return; }
             _invoiceDocuments = await DocumentService.GetLinkedAsync(DocumentEntityType.CustomerInvoice, _docPanelInvoiceId.Value);

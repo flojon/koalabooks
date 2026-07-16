@@ -22,14 +22,14 @@ public class DocumentExtractionJob(
         // is always null and the tenant query filter would hide every document. Safe here
         // because the job only ever acts on a documentId handed to it by trusted code that
         // just created that exact row — not arbitrary tenant-crossing input.
-        var doc = await db.Documents.IgnoreQueryFilters().FirstOrDefaultAsync(d => d.Id == documentId);
+        var doc = await db.Documents.IgnoreQueryFilters().FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return;
 
-        var data = await storage.LoadAsync(doc.StorageKey); // storage/DB failures bubble → Hangfire retries (Attempts = 3)
+        var data = await storage.LoadAsync(doc.StorageKey).ConfigureAwait(false); // storage/DB failures bubble → Hangfire retries (Attempts = 3)
 
         try
         {
-            var result = await extractor.ExtractAsync(doc.FileName, doc.ContentType, data);
+            var result = await extractor.ExtractAsync(doc.FileName, doc.ContentType, data).ConfigureAwait(false);
             doc.SuggestedType = result.SuggestedType;
             doc.ExtractedDataJson = result.SuggestedType is not null
                 ? JsonSerializer.Serialize(result)
@@ -50,7 +50,7 @@ public class DocumentExtractionJob(
             doc.ExtractionStatus = ExtractionStatus.Failed;
         }
 
-        await SaveChangesResolvingConcurrencyAsync(doc);
+        await SaveChangesResolvingConcurrencyAsync(doc).ConfigureAwait(false);
     }
 
     // Document.Xmin (Postgres' native row-version column) is a concurrency token, so a
@@ -63,14 +63,14 @@ public class DocumentExtractionJob(
     {
         try
         {
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
         }
         catch (DbUpdateConcurrencyException ex)
         {
             // ex.Entries yields the non-generic EntityEntry wrapper even though the
             // tracked instance is a Document — EntityEntry<T> is never what's reported here.
             var entry = ex.Entries.Single();
-            var databaseValues = await entry.GetDatabaseValuesAsync();
+            var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
             if (databaseValues is null)
             {
                 // The document was deleted concurrently — nothing left to update.
@@ -82,7 +82,7 @@ public class DocumentExtractionJob(
                 doc.DocumentDate = dbDate;
 
             entry.OriginalValues.SetValues(databaseValues);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
         }
     }
 }

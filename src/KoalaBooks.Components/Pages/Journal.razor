@@ -312,8 +312,8 @@ else
     [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
-    [Inject] private SupplierInvoiceService InvoiceService { get; set; } = default!;
-    [Inject] private DocumentService DocumentService { get; set; } = default!;
+    [Inject] private ISupplierInvoiceService InvoiceService { get; set; } = default!;
+    [Inject] private IDocumentService DocumentService { get; set; } = default!;
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IDialogService DialogService { get; set; } = default!;
@@ -590,9 +590,8 @@ else
                 return;
             }
             var contentType = string.IsNullOrWhiteSpace(e.File.ContentType) ? "application/octet-stream" : e.File.ContentType;
-            await using var stream = e.File.OpenReadStream(maxBytes);
             var (added, uploadErr) = await DocumentService.UploadAndLinkAsync(
-                e.File.Name, contentType, stream,
+                e.File.Name, contentType, () => e.File.OpenReadStream(maxBytes),
                 DocumentEntityType.JournalEntry, _attachmentEntryId!.Value);
             if (added is null)
             {

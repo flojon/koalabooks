@@ -14,7 +14,7 @@ public class DbDocumentStorageTests : IDisposable
     public void Dispose() => _fx.Dispose();
 
     [Fact]
-    public async Task SaveAsync_AcceptsStreamAndRoundTripsThroughLoadAsync()
+    public async Task SaveAsync_AcceptsStreamFactoryAndRoundTripsThroughLoadAsync()
     {
         var storage = new DbDocumentStorage(_fx.Db);
         var doc = new Document
@@ -30,8 +30,9 @@ public class DbDocumentStorageTests : IDisposable
         await _fx.Db.SaveChangesAsync();
 
         var bytes = new byte[] { 1, 2, 3 };
-        var key = await storage.SaveAsync(doc.Id, "application/pdf", new MemoryStream(bytes));
+        var (key, fileSize) = await storage.SaveAsync(doc.Id, "application/pdf", () => new MemoryStream(bytes));
 
+        Assert.Equal(3, fileSize);
         var loaded = await storage.LoadAsync(key);
         Assert.Equal(bytes, loaded);
     }
@@ -52,8 +53,8 @@ public class DbDocumentStorageTests : IDisposable
         _fx.Db.Documents.Add(doc);
         await _fx.Db.SaveChangesAsync();
 
-        var key = await storage.SaveAsync(doc.Id, "application/pdf", new MemoryStream([1]));
-        await storage.SaveAsync(doc.Id, "application/pdf", new MemoryStream([9, 9]));
+        var (key, _) = await storage.SaveAsync(doc.Id, "application/pdf", () => new MemoryStream([1]));
+        await storage.SaveAsync(doc.Id, "application/pdf", () => new MemoryStream([9, 9]));
 
         var loaded = await storage.LoadAsync(key);
         Assert.Equal(new byte[] { 9, 9 }, loaded);
@@ -62,8 +63,7 @@ public class DbDocumentStorageTests : IDisposable
     [Fact]
     public async Task SaveAsync_WorksWithForwardOnlyNonSeekableStream()
     {
-        // Guards against reintroducing type-special-casing (e.g. the old
-        // `data is MemoryStream alreadyBuffered` branch) that assumes a
+        // Guards against reintroducing type-special-casing that assumes a
         // concrete, seekable stream type instead of reading generically.
         var storage = new DbDocumentStorage(_fx.Db);
         var doc = new Document
@@ -79,8 +79,9 @@ public class DbDocumentStorageTests : IDisposable
         await _fx.Db.SaveChangesAsync();
 
         var bytes = new byte[] { 5, 4, 3, 2, 1 };
-        var key = await storage.SaveAsync(doc.Id, "application/pdf", new ForwardOnlyStream(new MemoryStream(bytes)));
+        var (key, fileSize) = await storage.SaveAsync(doc.Id, "application/pdf", () => new ForwardOnlyStream(new MemoryStream(bytes)));
 
+        Assert.Equal(5, fileSize);
         var loaded = await storage.LoadAsync(key);
         Assert.Equal(bytes, loaded);
     }
@@ -101,7 +102,7 @@ public class DbDocumentStorageTests : IDisposable
         _fx.Db.Documents.Add(doc);
         await _fx.Db.SaveChangesAsync();
 
-        var key = await storage.SaveAsync(doc.Id, "application/pdf", new MemoryStream([7, 8]));
+        var (key, _) = await storage.SaveAsync(doc.Id, "application/pdf", () => new MemoryStream([7, 8]));
         var row = await _fx.Db.DocumentData.FindAsync(doc.Id);
         var oid = row!.Oid;
 

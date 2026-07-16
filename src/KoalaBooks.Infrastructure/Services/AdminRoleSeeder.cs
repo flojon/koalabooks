@@ -19,13 +19,13 @@ public static class AdminRoleSeeder
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AdminRoleSeeder));
 
-        if (!await roleManager.RoleExistsAsync(RoleName))
+        if (!await roleManager.RoleExistsAsync(RoleName).ConfigureAwait(false))
         {
-            await roleManager.CreateAsync(new IdentityRole(RoleName));
+            await roleManager.CreateAsync(new IdentityRole(RoleName)).ConfigureAwait(false);
             logger.LogInformation("Created '{Role}' role", RoleName);
         }
 
-        var user = await userManager.FindByEmailAsync(adminEmail);
+        var user = await userManager.FindByEmailAsync(adminEmail).ConfigureAwait(false);
         if (user is null)
         {
             logger.LogWarning(
@@ -34,9 +34,9 @@ public static class AdminRoleSeeder
             return;
         }
 
-        if (!await userManager.IsInRoleAsync(user, RoleName))
+        if (!await userManager.IsInRoleAsync(user, RoleName).ConfigureAwait(false))
         {
-            await userManager.AddToRoleAsync(user, RoleName);
+            await userManager.AddToRoleAsync(user, RoleName).ConfigureAwait(false);
             logger.LogInformation("Granted '{Role}' role to {Email}", RoleName, adminEmail);
         }
     }

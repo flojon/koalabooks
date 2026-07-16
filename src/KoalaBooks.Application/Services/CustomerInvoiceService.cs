@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class CustomerInvoiceService
+public class CustomerInvoiceService : ICustomerInvoiceService
 {
     private readonly AppDbContext _db;
 
@@ -23,7 +23,7 @@ public class CustomerInvoiceService
             .Include(i => i.PaymentJournalEntry)
             .Where(i => i.FiscalYearId == fiscalYearId)
             .OrderByDescending(i => i.InvoiceNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<CustomerInvoice?> GetByIdAsync(int id)
@@ -32,7 +32,7 @@ public class CustomerInvoiceService
             .Include(i => i.Lines)
             .Include(i => i.Customer)
             .Include(i => i.FiscalYear).ThenInclude(f => f.Organisation)
-            .FirstOrDefaultAsync(i => i.Id == id);
+            .FirstOrDefaultAsync(i => i.Id == id).ConfigureAwait(false);
     }
 
     public async Task<(CustomerInvoice? Invoice, string? Error)> CreateAsync(
@@ -45,14 +45,14 @@ public class CustomerInvoiceService
         if (invoice.DueDate < invoice.InvoiceDate)
             return (null, "Förfallodatum kan inte vara före fakturadatum.");
 
-        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == invoice.FiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == invoice.FiscalYearId).ConfigureAwait(false);
         if (fiscalYear is null) return (null, "Räkenskapsår hittades inte.");
         if (fiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
 
         if (invoice.CustomerId.HasValue)
         {
             var customer = await _db.Customers
-                .FirstOrDefaultAsync(c => c.Id == invoice.CustomerId.Value);
+                .FirstOrDefaultAsync(c => c.Id == invoice.CustomerId.Value).ConfigureAwait(false);
             if (customer is not null)
             {
                 invoice.CustomerOrgNumber = customer.OrgNumber;
@@ -76,15 +76,15 @@ public class CustomerInvoiceService
         var strategy = _db.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
         {
-            using var tx = await _db.Database.BeginTransactionAsync();
+            using var tx = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
             await _db.Database.ExecuteSqlRawAsync(
-                "SELECT pg_advisory_xact_lock(42000 + {0})", invoice.FiscalYearId);
-            invoice.InvoiceNumber = await NextInvoiceNumberAsync(invoice.FiscalYearId);
+                "SELECT pg_advisory_xact_lock(42000 + {0})", invoice.FiscalYearId).ConfigureAwait(false);
+            invoice.InvoiceNumber = await NextInvoiceNumberAsync(invoice.FiscalYearId).ConfigureAwait(false);
 
             _db.CustomerInvoices.Add(invoice);
-            await _db.SaveChangesAsync();
-            await tx.CommitAsync();
-        });
+            await _db.SaveChangesAsync().ConfigureAwait(false);
+            await tx.CommitAsync().ConfigureAwait(false);
+        }).ConfigureAwait(false);
 
         return (invoice, null);
     }
@@ -98,7 +98,7 @@ public class CustomerInvoiceService
         var invoice = await _db.CustomerInvoices
             .Include(i => i.Lines)
             .Include(i => i.FiscalYear)
-            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+            .FirstOrDefaultAsync(i => i.Id == invoiceId).ConfigureAwait(false);
 
         if (invoice is null) return (null, "Fakturan hittades inte.");
         if (invoice.IsPosted) return (null, "Fakturan är redan bokförd.");
@@ -108,7 +108,7 @@ public class CustomerInvoiceService
         var accountIds = new List<int> { receivableAccountId, revenueAccountId };
         accountIds.AddRange(vatRateAccountIds.Values.Where(id => id != 0));
         var validCount = await _db.Accounts
-            .CountAsync(a => accountIds.Contains(a.Id) && a.FiscalYearId == invoice.FiscalYearId);
+            .CountAsync(a => accountIds.Contains(a.Id) && a.FiscalYearId == invoice.FiscalYearId).ConfigureAwait(false);
         if (validCount != accountIds.Distinct().Count())
             return (null, "Ett eller flera konton tillhör inte detta räkenskapsår.");
 
@@ -131,8 +131,8 @@ public class CustomerInvoiceService
 
         journalLines.Add(new() { AccountId = revenueAccountId, DebitAmount = 0, CreditAmount = invoice.AmountExclVat });
 
-        using var tx = await _db.Database.BeginTransactionAsync();
-        var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
+        using var tx = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
+        var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId).ConfigureAwait(false);
         var journalEntry = new JournalEntry
         {
             EntryNumber = entryNumber,
@@ -148,21 +148,21 @@ public class CustomerInvoiceService
         _db.JournalEntries.Add(journalEntry);
         invoice.IsPosted = true;
         invoice.JournalEntry = journalEntry;
-        await _db.SaveChangesAsync();
-        await tx.CommitAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
+        await tx.CommitAsync().ConfigureAwait(false);
 
         // Propagate document links to the new journal entry
         var docs = await _db.Documents
             .Include(d => d.JournalEntries)
             .Where(d => d.CustomerInvoices.Any(c => c.Id == invoiceId))
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         foreach (var doc in docs)
             if (!doc.JournalEntries.Any(j => j.Id == journalEntry.Id))
                 doc.JournalEntries.Add(journalEntry);
 
         if (docs.Count > 0)
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
 
         return (invoice, null);
     }
@@ -180,7 +180,7 @@ public class CustomerInvoiceService
             .Where(b => b.Date >= minDate && b.Date <= maxDate)
             .Where(b => b.Amount >= invoiceTotal - 0.01m && b.Amount <= invoiceTotal + 0.01m)
             .OrderBy(b => b.Date)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<(CustomerInvoice? Invoice, string? Error)> MarkAsPaidAsync(
@@ -192,7 +192,7 @@ public class CustomerInvoiceService
     {
         var invoice = await _db.CustomerInvoices
             .Include(i => i.FiscalYear)
-            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+            .FirstOrDefaultAsync(i => i.Id == invoiceId).ConfigureAwait(false);
 
         if (invoice is null) return (null, "Fakturan hittades inte.");
         if (invoice.IsPaid) return (null, "Fakturan är redan betald.");
@@ -201,12 +201,12 @@ public class CustomerInvoiceService
 
         var validCount = await _db.Accounts
             .CountAsync(a => (a.Id == bankAccountId || a.Id == receivableAccountId)
-                          && a.FiscalYearId == invoice.FiscalYearId);
+                          && a.FiscalYearId == invoice.FiscalYearId).ConfigureAwait(false);
         if (validCount < 2)
             return (null, "Ett eller flera konton tillhör inte detta räkenskapsår.");
 
-        using var tx = await _db.Database.BeginTransactionAsync();
-        var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId);
+        using var tx = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
+        var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId).ConfigureAwait(false);
         var paymentEntry = new JournalEntry
         {
             EntryNumber = entryNumber,
@@ -230,7 +230,7 @@ public class CustomerInvoiceService
 
         if (linkBankTransactionId.HasValue)
         {
-            var bankTx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == linkBankTransactionId.Value);
+            var bankTx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == linkBankTransactionId.Value).ConfigureAwait(false);
             if (bankTx is not null)
             {
                 bankTx.JournalEntry = paymentEntry;
@@ -238,8 +238,8 @@ public class CustomerInvoiceService
             }
         }
 
-        await _db.SaveChangesAsync();
-        await tx.CommitAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
+        await tx.CommitAsync().ConfigureAwait(false);
         return (invoice, null);
     }
 
@@ -247,13 +247,13 @@ public class CustomerInvoiceService
     {
         var invoice = await _db.CustomerInvoices
             .Include(i => i.Lines)
-            .FirstOrDefaultAsync(i => i.Id == invoiceId);
+            .FirstOrDefaultAsync(i => i.Id == invoiceId).ConfigureAwait(false);
         if (invoice is null) return "Fakturan hittades inte.";
         if (invoice.IsPosted) return "Bokförda fakturor kan inte raderas.";
         if (invoice.IsPaid) return "Betalda fakturor kan inte raderas.";
 
         _db.CustomerInvoices.Remove(invoice);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return null;
     }
 
@@ -262,7 +262,7 @@ public class CustomerInvoiceService
         return await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId && a.AccountNumber.StartsWith(prefix))
             .OrderBy(a => a.AccountNumber)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync().ConfigureAwait(false);
     }
 
     public static void RecalcLine(CustomerInvoiceLine line)
@@ -283,7 +283,7 @@ public class CustomerInvoiceService
     {
         return (await _db.CustomerInvoices
             .Where(i => i.FiscalYearId == fiscalYearId)
-            .MaxAsync(i => (int?)i.InvoiceNumber) ?? 0) + 1;
+            .MaxAsync(i => (int?)i.InvoiceNumber).ConfigureAwait(false) ?? 0) + 1;
     }
 
 }

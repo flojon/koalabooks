@@ -57,7 +57,7 @@ public class DbDocumentStorageRetryStrategyTests : IDisposable
         await _db.SaveChangesAsync();
 
         var bytes = new byte[] { 1, 2, 3 };
-        var key = await storage.SaveAsync(doc.Id, "application/pdf", new MemoryStream(bytes));
+        var (key, _) = await storage.SaveAsync(doc.Id, "application/pdf", () => new MemoryStream(bytes));
 
         var loaded = await storage.LoadAsync(key);
         Assert.Equal(bytes, loaded);
@@ -92,7 +92,7 @@ public class DbDocumentStorageRetryStrategyTests : IDisposable
         _db.DocumentData.Add(new DocumentData { DocumentId = doc.Id, Oid = 999999 });
 
         var bytes = new byte[] { 9, 9, 9 };
-        var key = await storage.SaveAsync(doc.Id, "application/pdf", new MemoryStream(bytes));
+        var (key, _) = await storage.SaveAsync(doc.Id, "application/pdf", () => new MemoryStream(bytes));
 
         var loaded = await storage.LoadAsync(key);
         Assert.Equal(bytes, loaded);
@@ -119,7 +119,7 @@ public class DbDocumentStorageRetryStrategyTests : IDisposable
         var missingDocumentId = 999_999;
 
         await Assert.ThrowsAnyAsync<Exception>(() =>
-            storage.SaveAsync(missingDocumentId, "application/pdf", new MemoryStream([1, 2, 3])));
+            storage.SaveAsync(missingDocumentId, "application/pdf", () => new MemoryStream([1, 2, 3])));
 
         Assert.DoesNotContain(_db.ChangeTracker.Entries<DocumentData>(),
             e => e.Entity.DocumentId == missingDocumentId);
@@ -129,11 +129,11 @@ public class DbDocumentStorageRetryStrategyTests : IDisposable
 /// <summary>
 /// Drives a genuine retry of the whole SaveAsync delegate (not just a
 /// pre-seeded stale-tracked-entity scenario) by installing an execution
-/// strategy that unconditionally retries once, and a source stream that
-/// throws on its first read. This exercises the real
-/// DetachTrackedDocumentData + stream-rewind recovery path, and the new
-/// non-seekable-stream retry guard, under an actual second invocation of
-/// the ExecuteAsync delegate — not a simulation of its aftermath.
+/// strategy that unconditionally retries once, and a factory whose first
+/// invocation returns a stream that always faults. This exercises the real
+/// DetachTrackedDocumentData + factory-reinvocation recovery path under an
+/// actual second invocation of the ExecuteAsync delegate — not a simulation
+/// of its aftermath.
 /// </summary>
 public class DbDocumentStorageForcedRetryTests : IDisposable
 {
@@ -166,7 +166,7 @@ public class DbDocumentStorageForcedRetryTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveAsync_RecoversFromAGenuineRetry_WhenSourceStreamIsSeekable()
+    public async Task SaveAsync_RecoversFromAGenuineRetry_ByReinvokingTheFactory()
     {
         var storage = new DbDocumentStorage(_db);
         var doc = new Document
@@ -182,97 +182,50 @@ public class DbDocumentStorageForcedRetryTests : IDisposable
         await _db.SaveChangesAsync();
 
         var bytes = new byte[] { 4, 3, 2, 1 };
-        var faultOnceStream = new FaultOnceStream(new MemoryStream(bytes), seekable: true);
+        var invocations = 0;
+        Stream OpenData()
+        {
+            invocations++;
+            return invocations == 1 ? new FaultingStream() : new MemoryStream(bytes);
+        }
 
-        var key = await storage.SaveAsync(doc.Id, "application/pdf", faultOnceStream);
+        var (key, fileSize) = await storage.SaveAsync(doc.Id, "application/pdf", OpenData);
 
-        // Proves a genuine second attempt actually re-read the stream from the
-        // start, rather than the save succeeding without ever retrying.
-        Assert.True(faultOnceStream.ReadAttempts > 1,
-            "expected the source stream to be read again after the simulated fault");
+        // Proves a genuine second attempt actually re-invoked the factory,
+        // rather than the save succeeding without ever retrying.
+        Assert.True(invocations > 1, "expected the factory to be re-invoked after the simulated fault");
+        Assert.Equal(4, fileSize);
         var loaded = await storage.LoadAsync(key);
         Assert.Equal(bytes, loaded);
     }
 
-    [Fact]
-    public async Task SaveAsync_ThrowsClearly_WhenRetriedWithANonSeekableSourceStream()
+    /// <summary>A stream that throws on every read, simulating a mid-write transient failure.</summary>
+    private sealed class FaultingStream : Stream
     {
-        var storage = new DbDocumentStorage(_db);
-        var doc = new Document
-        {
-            OrganisationId = _organisationId,
-            FileName = "test.pdf",
-            ContentType = "application/pdf",
-            FileSize = 4,
-            UploadedAt = DateTime.UtcNow,
-            StorageKey = ""
-        };
-        _db.Documents.Add(doc);
-        await _db.SaveChangesAsync();
-
-        var bytes = new byte[] { 4, 3, 2, 1 };
-        var faultOnceStream = new FaultOnceStream(new MemoryStream(bytes), seekable: false);
-
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            storage.SaveAsync(doc.Id, "application/pdf", faultOnceStream));
-        Assert.Contains("not seekable", ex.Message);
-
-        // No half-written DocumentData row should have been left behind or committed.
-        var row = await _db.DocumentData.FindAsync(doc.Id);
-        Assert.Null(row);
-    }
-
-    /// <summary>Wraps a stream, throwing once on its first read to simulate a mid-write transient failure.</summary>
-    private sealed class FaultOnceStream(Stream inner, bool seekable) : Stream
-    {
-        private bool _hasFaulted;
-
-        public int ReadAttempts { get; private set; }
-
         public override bool CanRead => true;
-        public override bool CanSeek => seekable;
+        public override bool CanSeek => false;
         public override bool CanWrite => false;
-        public override long Length => inner.Length;
-
+        public override long Length => throw new NotSupportedException();
         public override long Position
         {
-            get => seekable ? inner.Position : throw new NotSupportedException();
-            set
-            {
-                if (!seekable) throw new NotSupportedException();
-                inner.Position = value;
-            }
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
         }
-
-        public override void Flush() => inner.Flush();
-
+        public override void Flush() { }
         public override int Read(byte[] buffer, int offset, int count) =>
-            ReadAsync(buffer, offset, count, default).GetAwaiter().GetResult();
-
-        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        {
-            ReadAttempts++;
-            if (!_hasFaulted)
-            {
-                _hasFaulted = true;
-                throw new IOException("Simulated transient failure mid-write.");
-            }
-            return await inner.ReadAsync(buffer.AsMemory(offset, count), cancellationToken);
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) =>
-            seekable ? inner.Seek(offset, origin) : throw new NotSupportedException();
+            throw new IOException("Simulated transient failure mid-write.");
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            throw new IOException("Simulated transient failure mid-write.");
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     /// <summary>Retries exactly once on the simulated transient IOException from
-    /// FaultOnceStream, mirroring how NpgsqlRetryingExecutionStrategy retries only
-    /// exceptions it classifies as transient — deliberately does NOT retry the new
-    /// InvalidOperationException guard, so that exception propagates directly instead
-    /// of being wrapped in a RetryLimitExceededException once retries are exhausted.
-    /// This deterministically drives a second invocation of SaveAsync's delegate
-    /// without depending on provoking a genuine Postgres-classified transient failure.</summary>
+    /// FaultingStream, mirroring how NpgsqlRetryingExecutionStrategy retries only
+    /// exceptions it classifies as transient. This deterministically drives a second
+    /// invocation of SaveAsync's delegate without depending on provoking a genuine
+    /// Postgres-classified transient failure.</summary>
     private sealed class AlwaysRetryOnceExecutionStrategy(ExecutionStrategyDependencies dependencies)
         : ExecutionStrategy(dependencies, maxRetryCount: 1, maxRetryDelay: TimeSpan.Zero)
     {

@@ -85,7 +85,7 @@ else
 }
 
 @code {
-    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IJournalEntryReportingService JournalReportingService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
@@ -108,7 +108,7 @@ else
 
     private async Task LoadReport()
     {
-        var result = await JournalEntryService.GetIncomeStatementAsync(SelectedFiscalYearId, FromDate, ToDate);
+        var result = await JournalReportingService.GetIncomeStatementAsync(SelectedFiscalYearId, FromDate, ToDate);
         _sections = result.Sections;
         _netResult = result.NetResult;
     }

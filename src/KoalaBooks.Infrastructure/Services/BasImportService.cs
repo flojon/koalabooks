@@ -1,16 +1,14 @@
 using ExcelDataReader;
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
-using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
 using System.Text;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-public record BasImportResult(int ImportedCount, int SkippedCount, List<string> Errors);
-
-public class BasImportService
+public class BasImportService : IBasImportService
 {
     private readonly AppDbContext _db;
 
@@ -26,7 +24,7 @@ public class BasImportService
             "KoalaBooks.Infrastructure.Resources.BAS_kontoplan_2026_v2.xlsx")
             ?? throw new InvalidOperationException(
                 "Embedded BAS 2026 resource not found. Ensure the file is marked as EmbeddedResource.");
-        return await ImportFromExcelAsync(stream, fiscalYearId);
+        return await ImportFromExcelAsync(stream, fiscalYearId).ConfigureAwait(false);
     }
 
     public async Task<BasImportResult> ImportFromExcelAsync(Stream fileStream, int fiscalYearId)
@@ -41,7 +39,7 @@ public class BasImportService
         var existing = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
             .Select(a => a.AccountNumber)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
 
         DataTable sheet;
         try
@@ -101,7 +99,7 @@ public class BasImportService
         if (toAdd.Count > 0)
         {
             _db.Accounts.AddRange(toAdd);
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
         }
 
         return new BasImportResult(imported, skipped, errors);

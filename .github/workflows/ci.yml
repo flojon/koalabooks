@@ -33,8 +33,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Build (analyzer warnings as errors)
+        run: dotnet build --configuration Release /p:TreatWarningsAsErrors=true /p:WarningsNotAsErrors=NU1903
+
       - name: Test
-        run: dotnet test --configuration Release
+        run: dotnet test --configuration Release --no-build
 
   build:
     runs-on: ubuntu-latest

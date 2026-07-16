@@ -21,19 +21,21 @@ public static class DemoDataSeeder
     public static async Task SeedAsync(IServiceProvider services)
     {
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        if (await userManager.FindByEmailAsync(DemoNonAdminUserEmail) is not null)
+        if (await userManager.FindByEmailAsync(DemoNonAdminUserEmail).ConfigureAwait(false) is not null)
             return;
 
         var options = services.GetRequiredService<DbContextOptions<AppDbContext>>();
         var tenant = new LocalCurrentUser();
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
         await using var db = new AppDbContext(options, tenant);
+#pragma warning restore CA2007
 
-        var org = await db.Organisations.FirstOrDefaultAsync(o => o.Slug == "demo");
+        var org = await db.Organisations.FirstOrDefaultAsync(o => o.Slug == "demo").ConfigureAwait(false);
         if (org is null)
         {
             org = new Organisation { Name = "Demo AB", Slug = "demo", LegalForm = LegalForm.Aktiebolag };
             db.Organisations.Add(org);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
         }
         tenant.OrganisationId = org.Id;
 
@@ -41,8 +43,8 @@ public static class DemoDataSeeder
         var previousYearName = (currentYearNumber - 1).ToString();
         var currentYearName = currentYearNumber.ToString();
 
-        var previousFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == previousYearName);
-        var currentFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == currentYearName);
+        var previousFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == previousYearName).ConfigureAwait(false);
+        var currentFiscalYear = await db.FiscalYears.FirstOrDefaultAsync(f => f.Name == currentYearName).ConfigureAwait(false);
 
         // Existence-checked (not just the demo user) so a retry after a partial failure can't add a duplicate pair.
         if (previousFiscalYear is null || currentFiscalYear is null)
@@ -64,20 +66,21 @@ public static class DemoDataSeeder
                 IsClosed = false
             };
             db.FiscalYears.AddRange(previousFiscalYear, currentFiscalYear);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
 
             currentFiscalYear.PreviousFiscalYearId = previousFiscalYear.Id;
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
 
-            await new BasImportService(db).ImportDefaultAsync(previousFiscalYear.Id);
-            await new BasImportService(db).ImportDefaultAsync(currentFiscalYear.Id);
+            await new BasImportService(db).ImportDefaultAsync(previousFiscalYear.Id).ConfigureAwait(false);
+            await new BasImportService(db).ImportDefaultAsync(currentFiscalYear.Id).ConfigureAwait(false);
 
-            await SeedPreviousYearEntriesAsync(db, tenant, previousFiscalYear);
-            await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id);
+            await SeedPreviousYearEntriesAsync(db, tenant, previousFiscalYear).ConfigureAwait(false);
+            await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id).ConfigureAwait(false);
+            await SeedCustomersAndInvoicesAsync(db, org.Id, currentFiscalYear.Id).ConfigureAwait(false);
         }
 
         // Existence-checked so a retry after a partial failure can't fail as a duplicate.
-        if (await userManager.FindByEmailAsync(DemoUserEmail) is null)
+        if (await userManager.FindByEmailAsync(DemoUserEmail).ConfigureAwait(false) is null)
         {
             var demoUser = new ApplicationUser
             {
@@ -87,7 +90,7 @@ public static class DemoDataSeeder
                 DisplayName = "Admin",
                 OrganisationId = org.Id
             };
-            var createResult = await userManager.CreateAsync(demoUser, DemoUserPassword);
+            var createResult = await userManager.CreateAsync(demoUser, DemoUserPassword).ConfigureAwait(false);
             if (!createResult.Succeeded)
                 throw new InvalidOperationException(
                     $"Failed to create demo user: {string.Join("; ", createResult.Errors.Select(e => e.Description))}");
@@ -102,7 +105,7 @@ public static class DemoDataSeeder
             DisplayName = "Member",
             OrganisationId = org.Id
         };
-        var nonAdminCreateResult = await userManager.CreateAsync(demoNonAdminUser, DemoNonAdminUserPassword);
+        var nonAdminCreateResult = await userManager.CreateAsync(demoNonAdminUser, DemoNonAdminUserPassword).ConfigureAwait(false);
         if (!nonAdminCreateResult.Succeeded)
             throw new InvalidOperationException(
                 $"Failed to create demo non-admin user: {string.Join("; ", nonAdminCreateResult.Errors.Select(e => e.Description))}");
@@ -113,8 +116,9 @@ public static class DemoDataSeeder
         return await db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
             .Where(a => a.AccountNumber == "1910" || a.AccountNumber == "2440"
-                || a.AccountNumber == "2081" || a.AccountNumber == "3001" || a.AccountNumber == "5010")
-            .ToDictionaryAsync(a => a.AccountNumber);
+                || a.AccountNumber == "2081" || a.AccountNumber == "3001" || a.AccountNumber == "5010"
+                || a.AccountNumber == "2641")
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
     }
 
     private static async Task PostEntryAsync(
@@ -133,18 +137,18 @@ public static class DemoDataSeeder
             ]
         };
 
-        var (created, error) = await journalEntryService.CreateAsync(entry);
+        var (created, error) = await journalEntryService.CreateAsync(entry).ConfigureAwait(false);
         if (error is not null)
             throw new InvalidOperationException($"Demo seed failed to create journal entry '{description}': {error}");
 
-        var postError = await journalEntryService.PostAsync(created!.Id);
+        var postError = await journalEntryService.PostAsync(created!.Id).ConfigureAwait(false);
         if (postError is not null)
             throw new InvalidOperationException($"Demo seed failed to post journal entry '{description}': {postError}");
     }
 
     private static async Task SeedPreviousYearEntriesAsync(AppDbContext db, LocalCurrentUser tenant, FiscalYear previousFiscalYear)
     {
-        var accounts = await LoadDemoAccountsAsync(db, previousFiscalYear.Id);
+        var accounts = await LoadDemoAccountsAsync(db, previousFiscalYear.Id).ConfigureAwait(false);
         var cash = accounts["1910"].Id;
         var payables = accounts["2440"].Id;
         var revenue = accounts["3001"].Id;
@@ -153,24 +157,24 @@ public static class DemoDataSeeder
         var year = previousFiscalYear.StartDate.Year;
         var journalEntryService = new JournalEntryService(db);
 
-        await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 2, 10), cash, revenue, 9000m, "Kontantförsäljning");
-        await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 5, 15), expense, cash, 8000m, "Lokalhyra");
-        await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 8, 20), cash, revenue, 11000m, "Kontantförsäljning");
-        await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 11, 5), expense, payables, 4000m, "Inköp material");
+        await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 2, 10), cash, revenue, 9000m, "Kontantförsäljning").ConfigureAwait(false);
+        await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 5, 15), expense, cash, 8000m, "Lokalhyra").ConfigureAwait(false);
+        await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 8, 20), cash, revenue, 11000m, "Kontantförsäljning").ConfigureAwait(false);
+        await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 11, 5), expense, payables, 4000m, "Inköp material").ConfigureAwait(false);
 
         // Close via the real service so it posts closing entries and propagates balances forward; wrap in the execution strategy since it opens its own transaction.
         var fiscalYearService = new FiscalYearService(db, tenant);
         var voucherGapService = new VoucherGapService(db);
         var closingService = new YearEndClosingService(db, fiscalYearService, voucherGapService);
         var strategy = db.Database.CreateExecutionStrategy();
-        var closingResult = await strategy.ExecuteAsync(() => closingService.ExecuteClosingAsync(previousFiscalYear.Id));
+        var closingResult = await strategy.ExecuteAsync(() => closingService.ExecuteClosingAsync(previousFiscalYear.Id)).ConfigureAwait(false);
         if (!closingResult.Success)
             throw new InvalidOperationException($"Demo seed failed to close previous fiscal year: {closingResult.Error}");
     }
 
     private static async Task SeedCurrentYearEntriesAsync(AppDbContext db, int fiscalYearId)
     {
-        var accounts = await LoadDemoAccountsAsync(db, fiscalYearId);
+        var accounts = await LoadDemoAccountsAsync(db, fiscalYearId).ConfigureAwait(false);
         var cash = accounts["1910"].Id;
         var payables = accounts["2440"].Id;
         var equity = accounts["2081"].Id;
@@ -192,7 +196,7 @@ public static class DemoDataSeeder
 
         foreach (var (date, debitAccountId, creditAccountId, amount, description) in entries)
         {
-            await PostEntryAsync(journalEntryService, fiscalYearId, date, debitAccountId, creditAccountId, amount, description);
+            await PostEntryAsync(journalEntryService, fiscalYearId, date, debitAccountId, creditAccountId, amount, description).ConfigureAwait(false);
         }
 
         // Bypass JournalEntryService and the ChangeTracker (via ExecuteDelete) to delete voucher #3,
@@ -201,10 +205,96 @@ public static class DemoDataSeeder
             .Where(j => j.FiscalYearId == fiscalYearId)
             .OrderBy(j => j.EntryNumber)
             .Select(j => j.Id)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var gapEntryId = postedEntryIds[2];
-        await db.JournalEntryLines.Where(l => l.JournalEntryId == gapEntryId).ExecuteDeleteAsync();
-        await db.JournalEntries.Where(j => j.Id == gapEntryId).ExecuteDeleteAsync();
+        await db.JournalEntryLines.Where(l => l.JournalEntryId == gapEntryId).ExecuteDeleteAsync().ConfigureAwait(false);
+        await db.JournalEntries.Where(j => j.Id == gapEntryId).ExecuteDeleteAsync().ConfigureAwait(false);
+    }
+
+    private static async Task SeedCustomersAndInvoicesAsync(AppDbContext db, int organisationId, int fiscalYearId)
+    {
+        var customerService = new CustomerService(db);
+        var customers = new[]
+        {
+            new Customer { OrganisationId = organisationId, Name = "Nordic Design AB", OrgNumber = "556677-8899", Email = "info@nordicdesign.se" },
+            new Customer { OrganisationId = organisationId, Name = "Café Solglimt", OrgNumber = "556211-3344", Email = "kontakt@cafesolglimt.se" },
+            new Customer { OrganisationId = organisationId, Name = "Björk & Partners HB", OrgNumber = "969712-5566", Email = "info@bjorkpartners.se" }
+        };
+
+        Customer? nordicDesign = null;
+        foreach (var customer in customers)
+        {
+            var (created, error) = await customerService.CreateAsync(customer).ConfigureAwait(false);
+            if (error is not null)
+                throw new InvalidOperationException($"Demo seed failed to create customer '{customer.Name}': {error}");
+            if (customer.Name == "Nordic Design AB")
+                nordicDesign = created;
+        }
+
+        var year = DateTime.UtcNow.Year;
+        var accounts = await LoadDemoAccountsAsync(db, fiscalYearId).ConfigureAwait(false);
+        var supplierInvoiceService = new SupplierInvoiceService(db);
+
+        // Left unposted so the "obokförd leverantörsfaktura" demo state exists.
+        var (unposted, unpostedError) = await supplierInvoiceService.CreateAsync(new SupplierInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            SupplierName = "Kontorsmaterial Nord AB",
+            InvoiceNumber = "F-2024-118",
+            InvoiceDate = new DateOnly(year, 7, 2),
+            DueDate = new DateOnly(year, 8, 1),
+            AmountExclVat = 1200m,
+            VatAmount = 300m,
+            TotalAmount = 1500m
+        }).ConfigureAwait(false);
+        if (unpostedError is not null)
+            throw new InvalidOperationException($"Demo seed failed to create supplier invoice: {unpostedError}");
+
+        var (paidInvoice, paidCreateError) = await supplierInvoiceService.CreateAsync(new SupplierInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            SupplierName = "Städservice Karlsson AB",
+            InvoiceNumber = "2024-0087",
+            InvoiceDate = new DateOnly(year, 7, 8),
+            DueDate = new DateOnly(year, 8, 7),
+            AmountExclVat = 4000m,
+            VatAmount = 1000m,
+            TotalAmount = 5000m
+        }).ConfigureAwait(false);
+        if (paidCreateError is not null)
+            throw new InvalidOperationException($"Demo seed failed to create supplier invoice: {paidCreateError}");
+
+        var (_, postError) = await supplierInvoiceService.PostAsync(
+            paidInvoice!.Id, accounts["5010"].Id, accounts["2440"].Id, accounts["2641"].Id
+        ).ConfigureAwait(false);
+        if (postError is not null)
+            throw new InvalidOperationException($"Demo seed failed to post supplier invoice: {postError}");
+
+        var (_, payError) = await supplierInvoiceService.MarkAsPaidAsync(
+            paidInvoice.Id, new DateOnly(year, 7, 13), accounts["1910"].Id, accounts["2440"].Id
+        ).ConfigureAwait(false);
+        if (payError is not null)
+            throw new InvalidOperationException($"Demo seed failed to mark supplier invoice as paid: {payError}");
+
+        // A draft (unposted) customer invoice so the customer-invoice flow is testable end to end.
+        var customerInvoiceService = new CustomerInvoiceService(db);
+        var draftInvoice = new CustomerInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            CustomerId = nordicDesign!.Id,
+            CustomerName = nordicDesign.Name,
+            InvoiceDate = new DateOnly(year, 7, 14),
+            DueDate = new DateOnly(year, 8, 13),
+            OurReference = "Admin"
+        };
+        List<CustomerInvoiceLine> draftLines =
+        [
+            new() { Description = "Konsulttimmar – webbutveckling", Quantity = 20, UnitPrice = 950m, VatRate = 25 },
+            new() { Description = "Domän & hosting", Quantity = 1, UnitPrice = 800m, VatRate = 25 }
+        ];
+        var (_, draftError) = await customerInvoiceService.CreateAsync(draftInvoice, draftLines).ConfigureAwait(false);
+        if (draftError is not null)
+            throw new InvalidOperationException($"Demo seed failed to create draft customer invoice: {draftError}");
     }
 }

@@ -4,7 +4,7 @@
 @using KoalaBooks.Domain.Entities
 @using static KoalaBooks.Application.Services.VatQuarterHelper
 @inject IJSRuntime JS
-@inject VatReportCsvExporter CsvExporter
+@inject IVatReportCsvExporter CsvExporter
 
 <PageTitle>Momsredovisning — KoalaBooks</PageTitle>
 
@@ -155,7 +155,7 @@ else
 }
 
 @code {
-    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IJournalEntryReportingService JournalReportingService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
@@ -209,7 +209,7 @@ else
         _loading = true;
         try
         {
-            _data = await JournalEntryService.GetVatReportAsync(SelectedFiscalYearId, FromDate, ToDate);
+            _data = await JournalReportingService.GetVatReportAsync(SelectedFiscalYearId, FromDate, ToDate);
         }
         finally
         {

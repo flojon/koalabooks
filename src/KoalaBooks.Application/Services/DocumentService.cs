@@ -11,7 +11,7 @@ public class DocumentService(
     AppDbContext db,
     IDocumentStorage storage,
     IDocumentExtractionQueue extractionQueue,
-    ICurrentUser currentUser)
+    ICurrentUser currentUser) : IDocumentService
 {
     private const long MaxBytes = 10 * 1024 * 1024;
     private const long ZipMaxBytes = 50 * 1024 * 1024;
@@ -33,43 +33,84 @@ public class DocumentService(
         [".jpeg"] = "image/jpeg",
     };
 
-    public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, Stream data)
+    private sealed class DocumentTooLargeException : Exception;
+
+    private sealed class MaxBytesEnforcingStream(Stream inner, long maxBytes) : Stream
+    {
+        private long _totalRead;
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            _totalRead += read;
+            if (_totalRead > maxBytes) throw new DocumentTooLargeException();
+            return read;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            await inner.DisposeAsync().ConfigureAwait(false);
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    public async Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, Func<Stream> openData)
     {
         if (currentUser.OrganisationId is null)
             return (null, "Ingen aktiv organisation.");
         if (!AllowedContentTypes.Contains(contentType))
             return (null, "Otillåten filtyp. Tillåtna typer: PDF, PNG, JPEG.");
 
-        var (bytes, oversized) = await ReadBoundedAsync(data, MaxBytes);
-        if (oversized)
-            return (null, "Filen är för stor (max 10 MB).");
-
         var doc = new Document
         {
             OrganisationId = currentUser.OrganisationId.Value,
             FileName = fileName,
             ContentType = contentType,
-            FileSize = bytes!.Length,
+            FileSize = 0,
             UploadedAt = DateTime.UtcNow,
             StorageKey = ""
         };
         db.Documents.Add(doc);
-        await db.SaveChangesAsync(); // gets doc.Id
+        await db.SaveChangesAsync().ConfigureAwait(false); // gets doc.Id
 
         try
         {
-            doc.StorageKey = await storage.SaveAsync(doc.Id, contentType, new MemoryStream(bytes));
+            (doc.StorageKey, doc.FileSize) = await storage.SaveAsync(
+                doc.Id, contentType, () => new MaxBytesEnforcingStream(openData(), MaxBytes)).ConfigureAwait(false);
+        }
+        catch (DocumentTooLargeException)
+        {
+            db.Documents.Remove(doc);
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            return (null, "Filen är för stor (max 10 MB).");
         }
         catch (Exception ex)
         {
             // Storage failed — roll back the DB row to avoid orphaned metadata
             db.Documents.Remove(doc);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
             return (null, $"Lagring misslyckades: {ex.Message}");
         }
 
         doc.ExtractionStatus = ExtractionStatus.Pending;
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync().ConfigureAwait(false);
         extractionQueue.Enqueue(doc.Id);
 
         return (doc, null);
@@ -77,26 +118,26 @@ public class DocumentService(
 
     public virtual async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
     {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
+        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return "Dokumentet hittades inte.";
         doc.ClassifiedType = classifiedType;
         doc.DocumentDate = documentDate;
-        return await SaveChangesResolvingConcurrencyAsync(doc);
+        return await SaveChangesResolvingConcurrencyAsync().ConfigureAwait(false);
     }
 
     // Scoped AppDbContext lives for the whole Blazor circuit, so a Document tracked earlier
     // (e.g. by UploadAsync) can go stale once the background extraction job updates it.
-    private async Task<string?> SaveChangesResolvingConcurrencyAsync(Document doc)
+    private async Task<string?> SaveChangesResolvingConcurrencyAsync()
     {
         try
         {
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
             return null;
         }
         catch (DbUpdateConcurrencyException ex)
         {
             var entry = ex.Entries.Single();
-            var databaseValues = await entry.GetDatabaseValuesAsync();
+            var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
             if (databaseValues is null) return "Dokumentet hittades inte.";
 
             // Refresh only the concurrency token, not the whole entity — this method never
@@ -105,7 +146,7 @@ public class DocumentService(
 
             try
             {
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync().ConfigureAwait(false);
                 return null;
             }
             catch (DbUpdateConcurrencyException)
@@ -173,25 +214,48 @@ public class DocumentService(
         return await db.JournalEntries
             .Where(j => ids.Contains(j.Id))
             .Select(j => new { j.Id, Count = j.Documents.Count() })
-            .ToDictionaryAsync(x => x.Id, x => x.Count);
+            .ToDictionaryAsync(x => x.Id, x => x.Count).ConfigureAwait(false);
     }
 
     public async Task<(string ContentType, byte[] Data, string FileName)?> GetDownloadAsync(int documentId)
     {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
+        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return null;
-        var data = await storage.LoadAsync(doc.StorageKey);
+        var data = await storage.LoadAsync(doc.StorageKey).ConfigureAwait(false);
         return (doc.ContentType, data, doc.FileName);
     }
 
     public async Task<bool> DeleteAsync(int documentId)
     {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
+        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return false;
-        await storage.DeleteAsync(doc.StorageKey);
+        await storage.DeleteAsync(doc.StorageKey).ConfigureAwait(false);
         db.Documents.Remove(doc);
-        await db.SaveChangesAsync();
-        return true;
+        return await DeleteResolvingConcurrencyAsync().ConfigureAwait(false);
+    }
+
+    // Same staleness risk as SaveChangesResolvingConcurrencyAsync: doc may have been
+    // tracked earlier in this circuit and gone stale since. Unlike an update, a mismatch
+    // here just means someone else already changed or deleted the row — either way the
+    // delete's goal (row gone) is met, so re-fetching the current xmin and retrying once
+    // is enough; a missing row on retry means it's already gone.
+    private async Task<bool> DeleteResolvingConcurrencyAsync()
+    {
+        try
+        {
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            var entry = ex.Entries.Single();
+            var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
+            if (databaseValues is null) return true;
+
+            entry.Property("xmin").OriginalValue = databaseValues["xmin"];
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            return true;
+        }
     }
 
     public async Task LinkAsync(int documentId, DocumentEntityType entityType, int entityId)
@@ -200,36 +264,36 @@ public class DocumentService(
             .Include(d => d.JournalEntries)
             .Include(d => d.SupplierInvoices)
             .Include(d => d.CustomerInvoices)
-            .FirstOrDefaultAsync(d => d.Id == documentId);
+            .FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return;
 
         switch (entityType)
         {
             case DocumentEntityType.JournalEntry:
-                var entry = await db.JournalEntries.FindAsync(entityId);
+                var entry = await db.JournalEntries.FindAsync(entityId).ConfigureAwait(false);
                 if (entry is not null && !doc.JournalEntries.Any(j => j.Id == entityId))
                     doc.JournalEntries.Add(entry);
                 break;
             case DocumentEntityType.SupplierInvoice:
-                var inv = await db.SupplierInvoices.FindAsync(entityId);
+                var inv = await db.SupplierInvoices.FindAsync(entityId).ConfigureAwait(false);
                 if (inv is not null && !doc.SupplierInvoices.Any(s => s.Id == entityId))
                     doc.SupplierInvoices.Add(inv);
                 break;
             case DocumentEntityType.CustomerInvoice:
-                var cinv = await db.CustomerInvoices.FindAsync(entityId);
+                var cinv = await db.CustomerInvoices.FindAsync(entityId).ConfigureAwait(false);
                 if (cinv is not null && !doc.CustomerInvoices.Any(c => c.Id == entityId))
                     doc.CustomerInvoices.Add(cinv);
                 break;
         }
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync().ConfigureAwait(false);
     }
 
     public async Task<(Document? Doc, string? Error)> UploadAndLinkAsync(
-        string fileName, string contentType, Stream data, DocumentEntityType entityType, int entityId)
+        string fileName, string contentType, Func<Stream> openData, DocumentEntityType entityType, int entityId)
     {
-        var (doc, err) = await UploadAsync(fileName, contentType, data);
+        var (doc, err) = await UploadAsync(fileName, contentType, openData).ConfigureAwait(false);
         if (doc is null) return (null, err);
-        await LinkAsync(doc.Id, entityType, entityId);
+        await LinkAsync(doc.Id, entityType, entityId).ConfigureAwait(false);
         return (doc, null);
     }
 
@@ -238,27 +302,14 @@ public class DocumentService(
         if (zipData.Length > ZipMaxBytes)
             return (null, "Zip-filen är för stor (max 50 MB).");
 
-        ZipArchive archive;
+        var zipStream = new MemoryStream(zipData);
+        ZipArchive? archive = null;
         try
         {
-            archive = new ZipArchive(new MemoryStream(zipData), ZipArchiveMode.Read);
-        }
-        catch (InvalidDataException)
-        {
-            return (null, "Ogiltig zip-fil.");
-        }
-
-        using (archive)
-        {
-            List<ZipArchiveEntry> fileEntries;
-            try
-            {
-                fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
-            }
-            catch (InvalidDataException)
-            {
-                return (null, "Ogiltig zip-fil.");
-            }
+#pragma warning disable CA2000 // disposed in finally below; CA2000's dataflow analysis doesn't track disposal across await points in async methods
+            archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+#pragma warning restore CA2000
+            var fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
 
             if (fileEntries.Count > ZipMaxEntries)
                 return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
@@ -284,7 +335,7 @@ public class DocumentService(
                 try
                 {
                     using var entryStream = entry.Open();
-                    var (readData, oversized) = await ReadBoundedAsync(entryStream, MaxBytes);
+                    var (readData, oversized) = await ReadBoundedAsync(entryStream, MaxBytes).ConfigureAwait(false);
                     if (oversized)
                     {
                         skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
@@ -298,7 +349,7 @@ public class DocumentService(
                     continue;
                 }
 
-                var (doc, err) = await UploadAsync(entry.Name, contentType, new MemoryStream(data));
+                var (doc, err) = await UploadAsync(entry.Name, contentType, () => new MemoryStream(data)).ConfigureAwait(false);
                 if (doc is not null)
                     imported.Add(doc);
                 else
@@ -306,6 +357,19 @@ public class DocumentService(
             }
 
             return (new ZipImportResult(imported, skipped), null);
+        }
+        catch (InvalidDataException)
+        {
+            return (null, "Ogiltig zip-fil.");
+        }
+        finally
+        {
+            // ZipArchive takes ownership of the stream (disposes it) once constructed;
+            // only dispose zipStream ourselves if construction never got that far.
+            if (archive is not null)
+                archive.Dispose();
+            else
+                zipStream.Dispose();
         }
     }
 
@@ -315,12 +379,12 @@ public class DocumentService(
         var chunk = new byte[81920];
         long totalRead = 0;
         int bytesRead;
-        while ((bytesRead = await stream.ReadAsync(chunk)) > 0)
+        while ((bytesRead = await stream.ReadAsync(chunk).ConfigureAwait(false)) > 0)
         {
             totalRead += bytesRead;
             if (totalRead > maxBytes)
                 return (null, true);
-            await buffer.WriteAsync(chunk.AsMemory(0, bytesRead));
+            await buffer.WriteAsync(chunk.AsMemory(0, bytesRead)).ConfigureAwait(false);
         }
         return (buffer.ToArray(), false);
     }
@@ -343,7 +407,7 @@ public class DocumentService(
                 ExtractionStatus = d.ExtractionStatus
             },
             Xmin = EF.Property<uint>(d, "xmin")
-        }).ToListAsync();
+        }).ToListAsync().ConfigureAwait(false);
 
         // Piggyback on this read to refresh the xmin of any Document already tracked in this
         // circuit (e.g. from UploadAsync), so polling keeps stale entities from ever forming.

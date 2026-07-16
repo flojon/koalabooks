@@ -44,16 +44,16 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
             Substitute.For<IDocumentExtractionQueue>(),
             Substitute.For<ICurrentUser>());
 
-        Services.AddSingleton(_documentService);
+        Services.AddSingleton<IDocumentService>(_documentService);
 
         // ClassifyDocumentDialog's other dependencies, needed only by
         // ClickingBokfor_EditedDateCarriesIntoClassifyDialog below. They must be
         // registered here, before any component renders - bUnit locks the service
         // collection against further registrations after the first resolve.
-        Services.AddSingleton(new SupplierInvoiceService(db));
-        Services.AddSingleton(new CustomerInvoiceService(db));
+        Services.AddSingleton<ISupplierInvoiceService>(new SupplierInvoiceService(db));
+        Services.AddSingleton<ICustomerInvoiceService>(new CustomerInvoiceService(db));
         Services.AddSingleton<IAccountService>(new AccountService(db));
-        Services.AddSingleton(new CustomerService(db));
+        Services.AddSingleton<ICustomerService>(new CustomerService(db));
         var fiscalYearService = Substitute.For<IFiscalYearService>();
         fiscalYearService.GetActiveAsync().Returns((FiscalYear?)null);
         Services.AddSingleton(fiscalYearService);

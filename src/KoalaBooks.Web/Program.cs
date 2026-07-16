@@ -140,20 +140,22 @@ builder.Services.AddOpenIddict()
         options.UseAspNetCore();
     });
 
-builder.Services.AddScoped<SieImportService>();
+builder.Services.AddScoped<ISieImportService, SieImportService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IFiscalYearService, FiscalYearService>();
-builder.Services.AddScoped<IJournalEntryService, JournalEntryService>();
-builder.Services.AddScoped<VoucherGapService>();
-builder.Services.AddScoped<SieExportService>();
-builder.Services.AddScoped<YearEndClosingService>();
-builder.Services.AddScoped<BasImportService>();
-builder.Services.AddScoped<AccountMappingService>();
-builder.Services.AddScoped<BankImportService>();
-builder.Services.AddScoped<SupplierInvoiceService>();
-builder.Services.AddScoped<CustomerService>();
-builder.Services.AddScoped<CustomerInvoiceService>();
-builder.Services.AddScoped<OrganisationService>();
+builder.Services.AddScoped<JournalEntryService>();
+builder.Services.AddScoped<IJournalEntryService>(sp => sp.GetRequiredService<JournalEntryService>());
+builder.Services.AddScoped<IJournalEntryReportingService>(sp => sp.GetRequiredService<JournalEntryService>());
+builder.Services.AddScoped<IVoucherGapService, VoucherGapService>();
+builder.Services.AddScoped<ISieExportService, SieExportService>();
+builder.Services.AddScoped<IYearEndClosingService, YearEndClosingService>();
+builder.Services.AddScoped<IBasImportService, BasImportService>();
+builder.Services.AddScoped<IAccountMappingService, AccountMappingService>();
+builder.Services.AddScoped<IBankImportService, BankImportService>();
+builder.Services.AddScoped<ISupplierInvoiceService, SupplierInvoiceService>();
+builder.Services.AddScoped<ICustomerService, CustomerService>();
+builder.Services.AddScoped<ICustomerInvoiceService, CustomerInvoiceService>();
+builder.Services.AddScoped<IOrganisationService, OrganisationService>();
 builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.FilenameExtractor>();
 builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.PdfTextExtractor>();
 builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.CompositeExtractor>();
@@ -161,9 +163,9 @@ builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractor>(sp =
     sp.GetRequiredService<KoalaBooks.Infrastructure.Services.CompositeExtractor>());
 builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentStorage,
     KoalaBooks.Infrastructure.Services.DbDocumentStorage>();
-builder.Services.AddScoped<DocumentService>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
 builder.Services.AddScoped<IDocumentProvider, WebDocumentProvider>();
-builder.Services.AddSingleton<VatReportCsvExporter>();
+builder.Services.AddSingleton<IVatReportCsvExporter, VatReportCsvExporter>();
 
 builder.Services.AddMudServices(config =>
 {
@@ -219,7 +221,7 @@ if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"
 
 app.MapDefaultEndpoints();
 
-app.MapGet("/documents/{id:int}", async (int id, DocumentService svc) =>
+app.MapGet("/documents/{id:int}", async (int id, IDocumentService svc) =>
 {
     var result = await svc.GetDownloadAsync(id);
     return result is null
@@ -235,7 +237,7 @@ if (!app.Environment.IsEnvironment("Testing"))
     });
 }
 
-app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, CustomerInvoiceService svc) =>
+app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, ICustomerInvoiceService svc) =>
 {
     var invoice = await svc.GetByIdAsync(id);
     if (invoice is null) return Results.NotFound();
