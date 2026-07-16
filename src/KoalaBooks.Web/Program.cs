@@ -179,7 +179,8 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddRazorPages();
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents()
+    .AddAuthenticationStateSerialization(options => options.SerializeAllClaims = true);
 
 builder.Services.AddAuthorization();
 
