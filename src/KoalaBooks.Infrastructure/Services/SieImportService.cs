@@ -43,7 +43,7 @@ public record SieImportAllResult(
     int TotalBalancesImported,
     List<string> Warnings);
 
-public class SieImportService
+public class SieImportService : ISieImportService
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;
@@ -89,7 +89,7 @@ public class SieImportService
 
             // Check if fiscal year exists in DB
             var existing = await _db.FiscalYears
-                .FirstOrDefaultAsync(f => f.StartDate == start && f.EndDate == end);
+                .FirstOrDefaultAsync(f => f.StartDate == start && f.EndDate == end).ConfigureAwait(false);
 
             fiscalYears.Add(new SieImportFiscalYear(
                 RarId: kvp.Key,
@@ -144,7 +144,7 @@ public class SieImportService
 
         foreach (var rarId in rarKeys)
         {
-            var result = await ImportFiscalYearAsync(doc, rarId, overwrite);
+            var result = await ImportFiscalYearAsync(doc, rarId, overwrite).ConfigureAwait(false);
             results.Add(result);
             allWarnings.AddRange(result.Warnings);
         }
@@ -171,14 +171,14 @@ public class SieImportService
 
         // 1. Find or create fiscal year (must happen before account upsert)
         var fiscalYear = await _db.FiscalYears
-            .FirstOrDefaultAsync(f => f.StartDate == fyStart && f.EndDate == fyEnd);
+            .FirstOrDefaultAsync(f => f.StartDate == fyStart && f.EndDate == fyEnd).ConfigureAwait(false);
 
         if (fiscalYear is not null && overwrite)
         {
             var existingEntries = await _db.JournalEntries
                 .Include(j => j.Lines)
                 .Where(j => j.FiscalYearId == fiscalYear.Id)
-                .ToListAsync();
+                .ToListAsync().ConfigureAwait(false);
 
             if (existingEntries.Any(j => j.Status != JournalEntryStatus.Draft))
                 throw new InvalidOperationException(
@@ -189,10 +189,10 @@ public class SieImportService
 
             var existingAccounts = await _db.Accounts
                 .Where(a => a.FiscalYearId == fiscalYear.Id)
-                .ToListAsync();
+                .ToListAsync().ConfigureAwait(false);
             _db.Accounts.RemoveRange(existingAccounts);
 
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
             fiscalYear.IsClosed = false;
         }
         else if (fiscalYear is not null && !overwrite)
@@ -212,19 +212,19 @@ public class SieImportService
                 IsClosed = false
             };
             _db.FiscalYears.Add(fiscalYear);
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
         }
 
         // 2. Upsert accounts scoped to this fiscal year
-        var (accountsCreated, accountsUpdated) = await UpsertAccountsAsync(doc, fiscalYear.Id, warnings);
+        var (accountsCreated, accountsUpdated) = await UpsertAccountsAsync(doc, fiscalYear.Id, warnings).ConfigureAwait(false);
 
         // 3. Import IB/UB balances for this fiscal year
-        var balancesImported = await ImportBalancesAsync(doc, rarId, fiscalYear.Id, warnings);
+        var balancesImported = await ImportBalancesAsync(doc, rarId, fiscalYear.Id, warnings).ConfigureAwait(false);
 
         // 4. Import vouchers for this fiscal year
         var accountLookup = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYear.Id)
-            .ToDictionaryAsync(a => a.AccountNumber);
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
         var vouchers = doc.VER.Where(v =>
         {
             var vDate = DateOnly.FromDateTime(v.VoucherDate);
@@ -285,8 +285,8 @@ public class SieImportService
             }
         }
 
-        await _db.SaveChangesAsync();
-        await PropagateToLinkedNextYearAsync(fiscalYear.Id);
+        await _db.SaveChangesAsync().ConfigureAwait(false);
+        await PropagateToLinkedNextYearAsync(fiscalYear.Id).ConfigureAwait(false);
 
         return new SieImportResult(
             FiscalYearId: fiscalYear.Id,
@@ -302,16 +302,16 @@ public class SieImportService
     private async Task PropagateToLinkedNextYearAsync(int fiscalYearId)
     {
         var nextYear = await _db.FiscalYears
-            .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId);
+            .FirstOrDefaultAsync(f => f.PreviousFiscalYearId == fiscalYearId).ConfigureAwait(false);
         if (nextYear is null) return;
 
         var sourceAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var nextAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == nextYear.Id)
-            .ToDictionaryAsync(a => a.AccountNumber);
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
 
         foreach (var src in sourceAccounts)
         {
@@ -320,7 +320,7 @@ public class SieImportService
             if (nextAccounts.TryGetValue(src.AccountNumber, out var next))
                 next.IncomingBalance = src.OutgoingBalance;
         }
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
     }
 
     private async Task<(int Created, int Updated)> UpsertAccountsAsync(
@@ -328,7 +328,7 @@ public class SieImportService
     {
         var existingAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .ToDictionaryAsync(a => a.AccountNumber);
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
         int created = 0, updated = 0;
 
         foreach (var kvp in doc.KONTO)
@@ -366,7 +366,7 @@ public class SieImportService
             }
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return (created, updated);
     }
 
@@ -375,7 +375,7 @@ public class SieImportService
     {
         var accountLookup = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
-            .ToDictionaryAsync(a => a.AccountNumber);
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
 
         int count = 0;
 
@@ -407,7 +407,7 @@ public class SieImportService
             }
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return count;
     }
 

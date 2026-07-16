@@ -1,8 +1,9 @@
 @page "/export/sie"
+@using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Infrastructure.Services
 @using KoalaBooks.Application.Services
 @using MudBlazor
-@inject SieExportService SieExportService
+@inject ISieExportService SieExportService
 @inject IFiscalYearService FiscalYearService
 @inject IJSRuntime JS
 @inject ISnackbar Snackbar

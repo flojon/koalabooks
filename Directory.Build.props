@@ -1,0 +1,8 @@
+<Project>
+
+  <PropertyGroup>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <WarningsAsErrors>$(WarningsAsErrors);Nullable</WarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

@@ -378,11 +378,11 @@ else
 }
 
 @code {
-    [Inject] private SupplierInvoiceService InvoiceService { get; set; } = default!;
+    [Inject] private ISupplierInvoiceService InvoiceService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
-    [Inject] private DocumentService DocumentService { get; set; } = default!;
+    [Inject] private IDocumentService DocumentService { get; set; } = default!;
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
 
     private FiscalYear? _fiscalYear;

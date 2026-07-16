@@ -1,0 +1,9 @@
+[*.cs]
+dotnet_diagnostic.CA2016.severity = error
+dotnet_diagnostic.CA2000.severity = error
+dotnet_diagnostic.IDE0060.severity = error
+
+# CA2007 (ConfigureAwait) only matters for library-layer code without a
+# SynchronizationContext concern; ASP.NET Core has none, so scope it to
+# Application/Infrastructure only via their own .editorconfig.
+dotnet_diagnostic.CA2007.severity = none

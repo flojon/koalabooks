@@ -18,37 +18,37 @@ public class AccountService : IAccountService
         return await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
             .OrderBy(a => a.AccountNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<Account?> GetByIdAsync(int id)
     {
-        return await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id);
+        return await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id).ConfigureAwait(false);
     }
 
     public async Task<Account> CreateAsync(Account account)
     {
-        var fiscalYearExists = await _db.FiscalYears.AnyAsync(f => f.Id == account.FiscalYearId);
+        var fiscalYearExists = await _db.FiscalYears.AnyAsync(f => f.Id == account.FiscalYearId).ConfigureAwait(false);
         if (!fiscalYearExists) throw new InvalidOperationException("Fiscal year not found.");
 
         _db.Accounts.Add(account);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return account;
     }
 
     public async Task UpdateAsync(Account account)
     {
         _db.Accounts.Update(account);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
     }
 
     public async Task ToggleActiveAsync(int id)
     {
-        var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id);
+        var account = await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id).ConfigureAwait(false);
         if (account is not null)
         {
             account.IsActive = !account.IsActive;
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
         }
     }
 
@@ -57,27 +57,27 @@ public class AccountService : IAccountService
         var existing = await _db.Accounts
             .Where(a => a.FiscalYearId == currentFiscalYearId)
             .Select(a => a.AccountNumber)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
 
         return await _db.Accounts
             .Where(a => a.FiscalYearId == sourceFiscalYearId && !existing.Contains(a.AccountNumber))
             .OrderBy(a => a.AccountNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<int> CopyAccountsAsync(int targetFiscalYearId, List<int> sourceAccountIds)
     {
-        if (!await _db.FiscalYears.AnyAsync(f => f.Id == targetFiscalYearId))
+        if (!await _db.FiscalYears.AnyAsync(f => f.Id == targetFiscalYearId).ConfigureAwait(false))
             return 0;
 
         var sources = await _db.Accounts
             .Where(a => sourceAccountIds.Contains(a.Id))
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var existing = await _db.Accounts
             .Where(a => a.FiscalYearId == targetFiscalYearId)
             .Select(a => a.AccountNumber)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
 
         var toAdd = sources
             .Where(s => !existing.Contains(s.AccountNumber))
@@ -95,7 +95,7 @@ public class AccountService : IAccountService
         if (toAdd.Count > 0)
         {
             _db.Accounts.AddRange(toAdd);
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
         }
 
         return toAdd.Count;

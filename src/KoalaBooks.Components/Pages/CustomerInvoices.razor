@@ -401,13 +401,13 @@ else
 }
 
 @code {
-    [Inject] private CustomerInvoiceService InvoiceService { get; set; } = default!;
-    [Inject] private CustomerService CustomerSvc { get; set; } = default!;
+    [Inject] private ICustomerInvoiceService InvoiceService { get; set; } = default!;
+    [Inject] private ICustomerService CustomerSvc { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
-    [Inject] private DocumentService DocumentService { get; set; } = default!;
+    [Inject] private IDocumentService DocumentService { get; set; } = default!;
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
 
     private FiscalYear? _fiscalYear;

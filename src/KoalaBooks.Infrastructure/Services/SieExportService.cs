@@ -2,12 +2,13 @@ using System.Globalization;
 using System.Text;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-public class SieExportService
+public class SieExportService : ISieExportService
 {
     private readonly AppDbContext _db;
 
@@ -23,7 +24,7 @@ public class SieExportService
             .Include(f => f.JournalEntries)
                 .ThenInclude(j => j.Lines)
                     .ThenInclude(l => l.Account)
-            .FirstOrDefaultAsync(f => f.Id == fiscalYearId)
+            .FirstOrDefaultAsync(f => f.Id == fiscalYearId).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Fiscal year {fiscalYearId} not found.");
 
         var sb = new StringBuilder();

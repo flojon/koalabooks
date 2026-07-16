@@ -1,0 +1,42 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json,md}]
+indent_size = 2
+
+[*.cs]
+charset = utf-8-bom
+
+# Naming conventions
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel_case.required_prefix = _
+dotnet_naming_style.underscore_camel_case.capitalization = camel_case
+dotnet_naming_rule.private_fields_underscore_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore_camel_case.style = underscore_camel_case
+dotnet_naming_rule.private_fields_underscore_camel_case.severity = suggestion
+
+dotnet_naming_symbols.types_and_methods.applicable_kinds = class, struct, interface, enum, method, property, event
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_rule.types_and_methods_pascal_case.symbols = types_and_methods
+dotnet_naming_rule.types_and_methods_pascal_case.style = pascal_case
+dotnet_naming_rule.types_and_methods_pascal_case.severity = suggestion
+
+dotnet_naming_symbols.async_methods.applicable_kinds = method
+dotnet_naming_symbols.async_methods.required_modifiers = async
+dotnet_naming_style.async_suffix.required_suffix = Async
+dotnet_naming_style.async_suffix.capitalization = pascal_case
+dotnet_naming_rule.async_methods_end_in_async.symbols = async_methods
+dotnet_naming_rule.async_methods_end_in_async.style = async_suffix
+dotnet_naming_rule.async_methods_end_in_async.severity = suggestion
+
+# Curated analyzer rules (CA2000/CA2016/CA2007/IDE0060) are scoped to src/ only - see
+# src/.editorconfig. Test code has idiomatic patterns (e.g. undisposed HttpContent in
+# HttpClient calls, unused xunit [Theory] parameters) these rules flag as false positives.

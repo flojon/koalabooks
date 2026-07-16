@@ -21,13 +21,13 @@ public record ClosingLinePreview(string AccountNumber, string AccountName, decim
 
 public record ClosingResult(bool Success, string? Error, int? ClosingEntry1Number, int? ClosingEntry2Number);
 
-public class YearEndClosingService
+public class YearEndClosingService : IYearEndClosingService
 {
     private readonly AppDbContext _db;
     private readonly IFiscalYearService _fiscalYearService;
-    private readonly VoucherGapService _voucherGapService;
+    private readonly IVoucherGapService _voucherGapService;
 
-    public YearEndClosingService(AppDbContext db, IFiscalYearService fiscalYearService, VoucherGapService voucherGapService)
+    public YearEndClosingService(AppDbContext db, IFiscalYearService fiscalYearService, IVoucherGapService voucherGapService)
     {
         _db = db;
         _fiscalYearService = fiscalYearService;
@@ -38,7 +38,7 @@ public class YearEndClosingService
     {
         var errors = new List<string>();
 
-        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId).ConfigureAwait(false);
         if (fiscalYear is null)
         {
             errors.Add("Fiscal year not found.");
@@ -51,13 +51,13 @@ public class YearEndClosingService
         }
 
         var draftCount = await _db.JournalEntries
-            .CountAsync(j => j.FiscalYearId == fiscalYearId && !j.IsPosted);
+            .CountAsync(j => j.FiscalYearId == fiscalYearId && !j.IsPosted).ConfigureAwait(false);
         if (draftCount > 0)
         {
             errors.Add($"Det finns {draftCount} ej bokförda verifikationer. Alla verifikationer måste bokföras innan bokslut.");
         }
 
-        var unexplainedGaps = await _voucherGapService.GetUnexplainedGapsAsync(fiscalYearId);
+        var unexplainedGaps = await _voucherGapService.GetUnexplainedGapsAsync(fiscalYearId).ConfigureAwait(false);
         if (unexplainedGaps.Count > 0)
         {
             errors.Add(
@@ -70,15 +70,15 @@ public class YearEndClosingService
 
     public async Task<ClosingPreview> PreviewClosingAsync(int fiscalYearId)
     {
-        var validation = await ValidateForClosingAsync(fiscalYearId);
+        var validation = await ValidateForClosingAsync(fiscalYearId).ConfigureAwait(false);
         if (!validation.IsValid)
             return new ClosingPreview(false, validation.Errors, 0, 0, 0, []);
 
-        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId).ConfigureAwait(false);
         if (fiscalYear is null)
             return new ClosingPreview(false, ["Fiscal year not found."], 0, 0, 0, []);
 
-        var plBalances = await GetPnLAccountBalancesAsync(fiscalYearId);
+        var plBalances = await GetPnLAccountBalancesAsync(fiscalYearId).ConfigureAwait(false);
 
         decimal totalRevenue = plBalances
             .Where(a => a.AccountClass == AccountClass.Revenue)
@@ -91,7 +91,7 @@ public class YearEndClosingService
         // Look up existing account names for 8999/2099
         var specialAccounts = await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId && (a.AccountNumber == "8999" || a.AccountNumber == "2099"))
-            .ToDictionaryAsync(a => a.AccountNumber);
+            .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
         string name8999 = specialAccounts.GetValueOrDefault("8999")?.Name ?? "Årets resultat";
         string name2099 = specialAccounts.GetValueOrDefault("2099")?.Name ?? "Årets resultat";
 
@@ -155,21 +155,21 @@ public class YearEndClosingService
 
     public async Task<ClosingResult> ExecuteClosingAsync(int fiscalYearId)
     {
-        var validation = await ValidateForClosingAsync(fiscalYearId);
+        var validation = await ValidateForClosingAsync(fiscalYearId).ConfigureAwait(false);
         if (!validation.IsValid)
             return new ClosingResult(false, string.Join("; ", validation.Errors), null, null);
 
-        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId);
+        var fiscalYear = await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == fiscalYearId).ConfigureAwait(false);
         if (fiscalYear is null)
             return new ClosingResult(false, "Fiscal year not found.", null, null);
 
-        using var transaction = await _db.Database.BeginTransactionAsync();
+        using var transaction = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
         try
         {
             // Step 1: Auto-create 8999 and 2099 if missing
             var accounts = await _db.Accounts
                 .Where(a => a.FiscalYearId == fiscalYearId)
-                .ToListAsync();
+                .ToListAsync().ConfigureAwait(false);
 
             var account8999 = accounts.FirstOrDefault(a => a.AccountNumber == "8999");
             if (account8999 is null)
@@ -206,14 +206,14 @@ public class YearEndClosingService
             }
 
             // Save to get IDs for auto-created accounts
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
 
             // Get transaction totals for all accounts
             var transactionTotals = await _db.JournalEntryLines
                 .Where(l => l.JournalEntry.FiscalYearId == fiscalYearId && l.JournalEntry.IsPosted)
                 .GroupBy(l => l.AccountId)
                 .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-                .ToDictionaryAsync(t => t.AccountId);
+                .ToDictionaryAsync(t => t.AccountId).ConfigureAwait(false);
 
             // Compute P&L balances (excluding 8999)
             var plAccounts = accounts
@@ -273,7 +273,7 @@ public class YearEndClosingService
             // Get next entry number
             var maxNumber = await _db.JournalEntries
                 .Where(j => j.FiscalYearId == fiscalYearId)
-                .MaxAsync(j => (int?)j.EntryNumber) ?? 0;
+                .MaxAsync(j => (int?)j.EntryNumber).ConfigureAwait(false) ?? 0;
 
             int? entry1Number = null;
             int? entry2Number = null;
@@ -362,18 +362,18 @@ public class YearEndClosingService
             fiscalYear.ClosedAt = DateTime.UtcNow;
 
             // Save all changes
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
 
             // Step 6: Propagate balances to next year if it exists
-            await _fiscalYearService.PropagateBalancesToNextYearAsync(fiscalYearId);
+            await _fiscalYearService.PropagateBalancesToNextYearAsync(fiscalYearId).ConfigureAwait(false);
 
-            await transaction.CommitAsync();
+            await transaction.CommitAsync().ConfigureAwait(false);
 
             return new ClosingResult(true, null, entry1Number, entry2Number);
         }
         catch (Exception ex)
         {
-            await transaction.RollbackAsync();
+            await transaction.RollbackAsync().ConfigureAwait(false);
             return new ClosingResult(false, $"An error occurred during closing: {ex.Message}", null, null);
         }
     }
@@ -384,7 +384,7 @@ public class YearEndClosingService
             .Where(a => a.FiscalYearId == fiscalYearId)
             .Where(a => a.AccountClass == AccountClass.Revenue || a.AccountClass == AccountClass.Expense)
             .Where(a => a.AccountNumber != "8999")
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var accountIds = accounts.Select(a => a.Id).ToHashSet();
 
@@ -393,7 +393,7 @@ public class YearEndClosingService
             .Where(l => accountIds.Contains(l.AccountId))
             .GroupBy(l => l.AccountId)
             .Select(g => new { AccountId = g.Key, Debit = g.Sum(l => l.DebitAmount), Credit = g.Sum(l => l.CreditAmount) })
-            .ToDictionaryAsync(t => t.AccountId);
+            .ToDictionaryAsync(t => t.AccountId).ConfigureAwait(false);
 
         return accounts.Select(account =>
         {

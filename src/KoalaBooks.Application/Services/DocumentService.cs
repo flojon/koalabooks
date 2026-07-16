@@ -15,7 +15,7 @@ public class DocumentService(
     IDocumentStorage storage,
     IDocumentExtractionQueue extractionQueue,
     IZipImportQueue zipImportQueue,
-    ICurrentUser currentUser)
+    ICurrentUser currentUser) : IDocumentService
 {
     private const long MaxBytes = 10 * 1024 * 1024;
     private const long ZipMaxBytes = 500 * 1024 * 1024;
@@ -45,7 +45,7 @@ public class DocumentService(
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            var read = await inner.ReadAsync(buffer, cancellationToken);
+            var read = await inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
             _totalRead += read;
             if (_totalRead > maxBytes) throw new DocumentTooLargeException();
             return read;
@@ -70,8 +70,8 @@ public class DocumentService(
 
         public override async ValueTask DisposeAsync()
         {
-            await inner.DisposeAsync();
-            await base.DisposeAsync();
+            await inner.DisposeAsync().ConfigureAwait(false);
+            await base.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -92,29 +92,29 @@ public class DocumentService(
             StorageKey = ""
         };
         db.Documents.Add(doc);
-        await db.SaveChangesAsync(); // gets doc.Id
+        await db.SaveChangesAsync().ConfigureAwait(false); // gets doc.Id
 
         try
         {
             (doc.StorageKey, doc.FileSize) = await storage.SaveAsync(
-                doc.Id, contentType, () => new MaxBytesEnforcingStream(openData(), MaxBytes));
+                doc.Id, contentType, () => new MaxBytesEnforcingStream(openData(), MaxBytes)).ConfigureAwait(false);
         }
         catch (DocumentTooLargeException)
         {
             db.Documents.Remove(doc);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
             return (null, "Filen är för stor (max 10 MB).");
         }
         catch (Exception ex)
         {
             // Storage failed — roll back the DB row to avoid orphaned metadata
             db.Documents.Remove(doc);
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
             return (null, $"Lagring misslyckades: {ex.Message}");
         }
 
         doc.ExtractionStatus = ExtractionStatus.Pending;
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync().ConfigureAwait(false);
         extractionQueue.Enqueue(doc.Id);
 
         return (doc, null);
@@ -122,26 +122,26 @@ public class DocumentService(
 
     public virtual async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
     {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
+        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return "Dokumentet hittades inte.";
         doc.ClassifiedType = classifiedType;
         doc.DocumentDate = documentDate;
-        return await SaveChangesResolvingConcurrencyAsync(doc);
+        return await SaveChangesResolvingConcurrencyAsync().ConfigureAwait(false);
     }
 
     // Scoped AppDbContext lives for the whole Blazor circuit, so a Document tracked earlier
     // (e.g. by UploadAsync) can go stale once the background extraction job updates it.
-    private async Task<string?> SaveChangesResolvingConcurrencyAsync(Document doc)
+    private async Task<string?> SaveChangesResolvingConcurrencyAsync()
     {
         try
         {
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
             return null;
         }
         catch (DbUpdateConcurrencyException ex)
         {
             var entry = ex.Entries.Single();
-            var databaseValues = await entry.GetDatabaseValuesAsync();
+            var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
             if (databaseValues is null) return "Dokumentet hittades inte.";
 
             // Refresh only the concurrency token, not the whole entity — this method never
@@ -150,7 +150,7 @@ public class DocumentService(
 
             try
             {
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync().ConfigureAwait(false);
                 return null;
             }
             catch (DbUpdateConcurrencyException)
@@ -201,14 +201,14 @@ public class DocumentService(
                 Done = b.Done,
                 CreatedAt = b.CreatedAt,
             })
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
     public async Task AcknowledgeZipBatchAsync(int batchId)
     {
-        var batch = await db.ZipImportBatches.FirstOrDefaultAsync(b => b.Id == batchId);
+        var batch = await db.ZipImportBatches.FirstOrDefaultAsync(b => b.Id == batchId).ConfigureAwait(false);
         if (batch is null) return;
         batch.Acknowledged = true;
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync().ConfigureAwait(false);
     }
 
     private IQueryable<Document> PendingQuery(string? typeFilter)
@@ -242,24 +242,24 @@ public class DocumentService(
         return await db.JournalEntries
             .Where(j => ids.Contains(j.Id))
             .Select(j => new { j.Id, Count = j.Documents.Count() })
-            .ToDictionaryAsync(x => x.Id, x => x.Count);
+            .ToDictionaryAsync(x => x.Id, x => x.Count).ConfigureAwait(false);
     }
 
     public async Task<(string ContentType, byte[] Data, string FileName)?> GetDownloadAsync(int documentId)
     {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
+        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return null;
-        var data = await storage.LoadAsync(doc.StorageKey);
+        var data = await storage.LoadAsync(doc.StorageKey).ConfigureAwait(false);
         return (doc.ContentType, data, doc.FileName);
     }
 
     public async Task<bool> DeleteAsync(int documentId)
     {
-        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId);
+        var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return false;
-        await storage.DeleteAsync(doc.StorageKey);
+        await storage.DeleteAsync(doc.StorageKey).ConfigureAwait(false);
         db.Documents.Remove(doc);
-        return await DeleteResolvingConcurrencyAsync(doc);
+        return await DeleteResolvingConcurrencyAsync().ConfigureAwait(false);
     }
 
     // Same staleness risk as SaveChangesResolvingConcurrencyAsync: doc may have been
@@ -267,21 +267,21 @@ public class DocumentService(
     // here just means someone else already changed or deleted the row — either way the
     // delete's goal (row gone) is met, so re-fetching the current xmin and retrying once
     // is enough; a missing row on retry means it's already gone.
-    private async Task<bool> DeleteResolvingConcurrencyAsync(Document doc)
+    private async Task<bool> DeleteResolvingConcurrencyAsync()
     {
         try
         {
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
             return true;
         }
         catch (DbUpdateConcurrencyException ex)
         {
             var entry = ex.Entries.Single();
-            var databaseValues = await entry.GetDatabaseValuesAsync();
+            var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
             if (databaseValues is null) return true;
 
             entry.Property("xmin").OriginalValue = databaseValues["xmin"];
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync().ConfigureAwait(false);
             return true;
         }
     }
@@ -292,36 +292,36 @@ public class DocumentService(
             .Include(d => d.JournalEntries)
             .Include(d => d.SupplierInvoices)
             .Include(d => d.CustomerInvoices)
-            .FirstOrDefaultAsync(d => d.Id == documentId);
+            .FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return;
 
         switch (entityType)
         {
             case DocumentEntityType.JournalEntry:
-                var entry = await db.JournalEntries.FindAsync(entityId);
+                var entry = await db.JournalEntries.FindAsync(entityId).ConfigureAwait(false);
                 if (entry is not null && !doc.JournalEntries.Any(j => j.Id == entityId))
                     doc.JournalEntries.Add(entry);
                 break;
             case DocumentEntityType.SupplierInvoice:
-                var inv = await db.SupplierInvoices.FindAsync(entityId);
+                var inv = await db.SupplierInvoices.FindAsync(entityId).ConfigureAwait(false);
                 if (inv is not null && !doc.SupplierInvoices.Any(s => s.Id == entityId))
                     doc.SupplierInvoices.Add(inv);
                 break;
             case DocumentEntityType.CustomerInvoice:
-                var cinv = await db.CustomerInvoices.FindAsync(entityId);
+                var cinv = await db.CustomerInvoices.FindAsync(entityId).ConfigureAwait(false);
                 if (cinv is not null && !doc.CustomerInvoices.Any(c => c.Id == entityId))
                     doc.CustomerInvoices.Add(cinv);
                 break;
         }
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync().ConfigureAwait(false);
     }
 
     public async Task<(Document? Doc, string? Error)> UploadAndLinkAsync(
         string fileName, string contentType, Func<Stream> openData, DocumentEntityType entityType, int entityId)
     {
-        var (doc, err) = await UploadAsync(fileName, contentType, openData);
+        var (doc, err) = await UploadAsync(fileName, contentType, openData).ConfigureAwait(false);
         if (doc is null) return (null, err);
-        await LinkAsync(doc.Id, entityType, entityId);
+        await LinkAsync(doc.Id, entityType, entityId).ConfigureAwait(false);
         return (doc, null);
     }
 
@@ -334,27 +334,31 @@ public class DocumentService(
         try
         {
             long totalBytes;
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
             await using (var tempWriteStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             await using (var source = openZipData())
+#pragma warning restore CA2007
             {
                 var buffer = new byte[81920];
                 totalBytes = 0;
                 int read;
-                while ((read = await source.ReadAsync(buffer)) > 0)
+                while ((read = await source.ReadAsync(buffer).ConfigureAwait(false)) > 0)
                 {
                     totalBytes += read;
                     if (totalBytes > ZipMaxBytes)
                     {
                         return (null, "Zip-filen är för stor (max 500 MB).");
                     }
-                    await tempWriteStream.WriteAsync(buffer.AsMemory(0, read));
+                    await tempWriteStream.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
                 }
             }
 
             int entryCount;
             try
             {
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
                 await using var tempReadStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read);
+#pragma warning restore CA2007
                 using var archive = new ZipArchive(tempReadStream, ZipArchiveMode.Read);
                 entryCount = archive.Entries.Count(e => !string.IsNullOrEmpty(e.Name));
             }
@@ -376,10 +380,14 @@ public class DocumentService(
                 foreach (var stale in db.ChangeTracker.Entries<ZipImportBatch>().Where(e => e.State == EntityState.Added).ToList())
                     stale.State = EntityState.Detached;
 
-                await using var tx = await db.Database.BeginTransactionAsync();
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+                await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning restore CA2007
                 var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
                 await using var tempReadStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read);
-                var (oid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, tempReadStream);
+#pragma warning restore CA2007
+                var (oid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, tempReadStream).ConfigureAwait(false);
 
                 var batch = new ZipImportBatch
                 {
@@ -388,11 +396,11 @@ public class DocumentService(
                     TotalEntries = entryCount,
                 };
                 db.ZipImportBatches.Add(batch);
-                await db.SaveChangesAsync();
+                await db.SaveChangesAsync().ConfigureAwait(false);
 
-                await tx.CommitAsync();
+                await tx.CommitAsync().ConfigureAwait(false);
                 return batch.Id;
-            });
+            }).ConfigureAwait(false);
 
             zipImportQueue.Enqueue(batchId);
 
@@ -422,7 +430,7 @@ public class DocumentService(
                 ExtractionStatus = d.ExtractionStatus
             },
             Xmin = EF.Property<uint>(d, "xmin")
-        }).ToListAsync();
+        }).ToListAsync().ConfigureAwait(false);
 
         // Piggyback on this read to refresh the xmin of any Document already tracked in this
         // circuit (e.g. from UploadAsync), so polling keeps stale entities from ever forming.
@@ -465,8 +473,6 @@ public class DocumentMeta
     public static DateTime? ResolvePrefillDate(DateOnly? documentDate, DateOnly? extractedInvoiceDate) =>
         (documentDate ?? extractedInvoiceDate)?.ToDateTime(TimeOnly.MinValue);
 }
-
-public record ZipImportResult(IReadOnlyList<Document> Imported, IReadOnlyList<(string FileName, string Reason)> Skipped);
 
 public class ZipBatchStatus
 {

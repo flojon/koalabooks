@@ -46,17 +46,21 @@ public class ZipImportJob(
         // setting it to the batch's own OrganisationId once known, so DocumentService's writes and
         // this context's own tenant query filter both scope correctly from that point on.
         var tenant = new LocalCurrentUser();
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
         await using var db = new AppDbContext(dbOptions, tenant);
+#pragma warning restore CA2007
         var documentService = new DocumentService(db, storage, extractionQueue, zipImportQueue, tenant);
 
-        var batch = await db.ZipImportBatches.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == batchId);
+        var batch = await db.ZipImportBatches.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == batchId).ConfigureAwait(false);
         if (batch is null || batch.Done) return;
         tenant.OrganisationId = batch.OrganisationId;
 
         var tempPath = Path.GetTempFileName();
         try
         {
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
             await using (var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite))
+#pragma warning restore CA2007
             {
                 var readStrategy = db.Database.CreateExecutionStrategy();
                 await readStrategy.ExecuteAsync(async () =>
@@ -66,36 +70,38 @@ public class ZipImportJob(
                     // can't leave leftover bytes ahead of this attempt's data.
                     tempStream.Position = 0;
                     tempStream.SetLength(0);
-                    await using var tx = await db.Database.BeginTransactionAsync();
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+                    await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning restore CA2007
                     var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-                    await PostgresLargeObjects.CopyLargeObjectIntoStreamAsync(conn, batch.StagingOid!.Value, tempStream);
-                    await tx.CommitAsync();
-                });
+                    await PostgresLargeObjects.CopyLargeObjectIntoStreamAsync(conn, batch.StagingOid!.Value, tempStream).ConfigureAwait(false);
+                    await tx.CommitAsync().ConfigureAwait(false);
+                }).ConfigureAwait(false);
                 tempStream.Position = 0;
 
-                ZipArchive archive;
+                ZipArchive? archive = null;
                 try
                 {
-                    archive = new ZipArchive(tempStream, ZipArchiveMode.Read, leaveOpen: true);
-                }
-                catch (InvalidDataException)
-                {
-                    await AppendSkippedAsync(batch, "(zip-fil)", "Ogiltig zip-fil.");
-                    batch.Done = true;
-                    await db.SaveChangesAsync();
-                    await DeleteStagingAsync(db, batch);
-                    return;
-                }
+                    try
+                    {
+                        archive = new ZipArchive(tempStream, ZipArchiveMode.Read, leaveOpen: true);
+                    }
+                    catch (InvalidDataException)
+                    {
+                        await AppendSkippedAsync(batch, "(zip-fil)", "Ogiltig zip-fil.").ConfigureAwait(false);
+                        batch.Done = true;
+                        await db.SaveChangesAsync().ConfigureAwait(false);
+                        await DeleteStagingAsync(db, batch).ConfigureAwait(false);
+                        return;
+                    }
 
-                using (archive)
-                {
                     var fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
 
                     foreach (var entry in fileEntries.Skip(batch.ProcessedEntries))
                     {
                         if (!ZipEntryContentTypes.TryGetValue(Path.GetExtension(entry.Name), out var contentType))
                         {
-                            await AppendSkippedAsync(batch, entry.Name, "Otillåten filtyp.");
+                            await AppendSkippedAsync(batch, entry.Name, "Otillåten filtyp.").ConfigureAwait(false);
                         }
                         else
                         {
@@ -103,27 +109,31 @@ public class ZipImportJob(
                             {
                                 var entryFullName = entry.FullName;
                                 var (doc, err) = await documentService.UploadAsync(
-                                    entry.Name, contentType, () => archive.GetEntry(entryFullName)!.Open());
+                                    entry.Name, contentType, () => archive.GetEntry(entryFullName)!.Open()).ConfigureAwait(false);
                                 if (doc is not null)
                                     batch.ImportedCount++;
                                 else
-                                    await AppendSkippedAsync(batch, entry.Name, err ?? "Okänt fel.");
+                                    await AppendSkippedAsync(batch, entry.Name, err ?? "Okänt fel.").ConfigureAwait(false);
                             }
                             catch (InvalidDataException)
                             {
-                                await AppendSkippedAsync(batch, entry.Name, "Skadad fil.");
+                                await AppendSkippedAsync(batch, entry.Name, "Skadad fil.").ConfigureAwait(false);
                             }
                         }
 
                         batch.ProcessedEntries++;
-                        await db.SaveChangesAsync();
+                        await db.SaveChangesAsync().ConfigureAwait(false);
                     }
+                }
+                finally
+                {
+                    archive?.Dispose();
                 }
             }
 
             batch.Done = true;
-            await db.SaveChangesAsync();
-            await DeleteStagingAsync(db, batch);
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            await DeleteStagingAsync(db, batch).ConfigureAwait(false);
         }
         finally
         {
@@ -137,7 +147,7 @@ public class ZipImportJob(
         skipped.Add(new SkippedEntry(fileName, reason));
         batch.SkippedReasonsJson = JsonSerializer.Serialize(skipped);
         batch.SkippedCount++;
-        await Task.CompletedTask;
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     private async Task DeleteStagingAsync(AppDbContext db, ZipImportBatch batch)
@@ -149,13 +159,15 @@ public class ZipImportJob(
             var strategy = db.Database.CreateExecutionStrategy();
             await strategy.ExecuteAsync(async () =>
             {
-                await using var tx = await db.Database.BeginTransactionAsync();
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+                await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning restore CA2007
                 var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-                await PostgresLargeObjects.DeleteLargeObjectAsync(conn, batch.StagingOid!.Value);
+                await PostgresLargeObjects.DeleteLargeObjectAsync(conn, batch.StagingOid!.Value).ConfigureAwait(false);
                 batch.StagingOid = null;
-                await db.SaveChangesAsync();
-                await tx.CommitAsync();
-            });
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                await tx.CommitAsync().ConfigureAwait(false);
+            }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

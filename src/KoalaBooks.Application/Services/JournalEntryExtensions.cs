@@ -10,9 +10,9 @@ internal static class JournalEntryExtensions
     internal static async Task<int> NextEntryNumberAsync(this AppDbContext db, int fiscalYearId)
     {
         await db.Database.ExecuteSqlRawAsync(
-            "SELECT pg_advisory_xact_lock(43000 + {0})", fiscalYearId);
+            "SELECT pg_advisory_xact_lock(43000 + {0})", fiscalYearId).ConfigureAwait(false);
         return (await db.JournalEntries
             .Where(j => j.FiscalYearId == fiscalYearId)
-            .MaxAsync(j => (int?)j.EntryNumber) ?? 0) + 1;
+            .MaxAsync(j => (int?)j.EntryNumber).ConfigureAwait(false) ?? 0) + 1;
     }
 }

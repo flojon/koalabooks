@@ -10,24 +10,7 @@ using System.Text;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-public record BankFileParseResult(
-    bool Success,
-    string? Error,
-    List<string> Headers,
-    List<string[]> DataRows);
-
-public record BankTransactionPreview(
-    int RowIndex,
-    DateOnly? Date,
-    decimal? Amount,
-    string Description,
-    string? Reference,
-    bool IsDuplicate,
-    string? ParseError);
-
-public record BankImportResult(int Imported, int Skipped, int Duplicates, List<string> Errors);
-
-public class BankImportService
+public class BankImportService : IBankImportService
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;
@@ -157,7 +140,7 @@ public class BankImportService
         var existingKeys = await _db.BankTransactions
             .Where(b => b.AccountId == accountId)
             .Select(b => new { b.Date, b.Amount, b.Description })
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var dupSet = existingKeys
             .Select(e => MakeKey(e.Date, e.Amount, e.Description))
@@ -223,7 +206,7 @@ public class BankImportService
         var existingKeys = await _db.BankTransactions
             .Where(b => b.AccountId == accountId)
             .Select(b => new { b.Date, b.Amount, b.Description })
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var dupSet = existingKeys
             .Select(e => MakeKey(e.Date, e.Amount, e.Description))
@@ -258,7 +241,7 @@ public class BankImportService
         if (toAdd.Count > 0)
         {
             _db.BankTransactions.AddRange(toAdd);
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync().ConfigureAwait(false);
         }
 
         return new BankImportResult(imported, skipped, duplicates, errors);
@@ -276,7 +259,7 @@ public class BankImportService
             .Where(b => b.Account.FiscalYearId == fiscalYearId && b.Status == BankTransactionStatus.Unmatched)
             .OrderBy(b => b.Date)
             .ThenBy(b => b.Id)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<List<BankTransaction>> GetByAccountAsync(int accountId)
@@ -286,7 +269,7 @@ public class BankImportService
             .Where(b => b.AccountId == accountId)
             .OrderByDescending(b => b.Date)
             .ThenByDescending(b => b.Id)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<List<Account>> GetImportableAccountsAsync(int fiscalYearId, string prefix)
@@ -294,30 +277,30 @@ public class BankImportService
         return await _db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId && a.AccountNumber.StartsWith(prefix))
             .OrderBy(a => a.AccountNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task SetStatusAsync(int bankTransactionId, BankTransactionStatus status)
     {
-        var tx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == bankTransactionId);
+        var tx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == bankTransactionId).ConfigureAwait(false);
         if (tx is null) return;
         tx.Status = status;
         if (status != BankTransactionStatus.Matched)
             tx.JournalEntryId = null;
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
     }
 
     public async Task<string?> MatchToEntryAsync(int bankTransactionId, int journalEntryId)
     {
-        var tx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == bankTransactionId);
+        var tx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == bankTransactionId).ConfigureAwait(false);
         if (tx is null) return "Banktransaktion hittades inte.";
 
-        var entry = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Id == journalEntryId);
+        var entry = await _db.JournalEntries.FirstOrDefaultAsync(j => j.Id == journalEntryId).ConfigureAwait(false);
         if (entry is null) return "Verifikation hittades inte.";
 
         tx.JournalEntryId = journalEntryId;
         tx.Status = BankTransactionStatus.Matched;
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync().ConfigureAwait(false);
         return null;
     }
 
@@ -327,7 +310,7 @@ public class BankImportService
         var matchedEntryIds = await _db.BankTransactions
             .Where(b => b.AccountId == bankAccountId && b.JournalEntryId.HasValue)
             .Select(b => b.JournalEntryId!.Value)
-            .ToHashSetAsync();
+            .ToHashSetAsync().ConfigureAwait(false);
 
         return await _db.JournalEntries
             .Include(j => j.Lines)
@@ -336,7 +319,7 @@ public class BankImportService
             .Where(j => !matchedEntryIds.Contains(j.Id))
             .OrderByDescending(j => j.Date)
             .ThenByDescending(j => j.EntryNumber)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
     }
 
     public async Task<int?> SuggestContraAccountAsync(int bankAccountId, string description, decimal amount)
@@ -350,7 +333,7 @@ public class BankImportService
                      && b.Status == BankTransactionStatus.Matched
                      && b.JournalEntryId.HasValue)
             .Select(b => new { DescUpper = b.Description.ToUpper(), b.JournalEntryId })
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
 
         var entryIds = matched
             .Where(t => t.DescUpper == desc
@@ -366,18 +349,18 @@ public class BankImportService
                 .GroupBy(l => l.AccountId)
                 .OrderByDescending(g => g.Count())
                 .Select(g => (int?)g.Key)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync().ConfigureAwait(false);
 
             if (fromHistory.HasValue)
                 return fromHistory;
         }
 
-        return await GetLegalFormDefaultAsync(bankAccountId, amount);
+        return await GetLegalFormDefaultAsync(bankAccountId, amount).ConfigureAwait(false);
     }
 
     private async Task<int?> GetLegalFormDefaultAsync(int bankAccountId, decimal amount)
     {
-        var org = await _db.Organisations.FindAsync(_currentUser.OrganisationId);
+        var org = await _db.Organisations.FindAsync(_currentUser.OrganisationId).ConfigureAwait(false);
         if (org is null) return null;
 
         var accountNumber = org.LegalForm switch
@@ -389,13 +372,13 @@ public class BankImportService
 
         if (accountNumber is null) return null;
 
-        var bankAccount = await _db.Accounts.FindAsync(bankAccountId);
+        var bankAccount = await _db.Accounts.FindAsync(bankAccountId).ConfigureAwait(false);
         if (bankAccount is null) return null;
 
         return await _db.Accounts
             .Where(a => a.FiscalYearId == bankAccount.FiscalYearId && a.AccountNumber == accountNumber)
             .Select(a => (int?)a.Id)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync().ConfigureAwait(false);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
