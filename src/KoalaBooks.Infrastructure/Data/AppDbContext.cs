@@ -51,6 +51,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
     public DbSet<CustomerInvoiceLine> CustomerInvoiceLines => Set<CustomerInvoiceLine>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<DocumentData> DocumentData => Set<DocumentData>();
+    public DbSet<ZipImportBatch> ZipImportBatches => Set<ZipImportBatch>();
     public DbSet<Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey> DataProtectionKeys => Set<Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -297,6 +298,17 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                   .WithOne()
                   .HasForeignKey<DocumentData>(d => d.DocumentId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ZipImportBatch>(entity =>
+        {
+            entity.Property(b => b.StagingOid).HasColumnType("oid");
+            entity.HasQueryFilter(b => _currentUser.OrganisationId != null && b.OrganisationId == _currentUser.OrganisationId);
+            entity.HasOne<Organisation>()
+                  .WithMany()
+                  .HasForeignKey(b => b.OrganisationId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(b => b.OrganisationId);
         });
 
         modelBuilder.Entity<BankTransaction>(entity =>
