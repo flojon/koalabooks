@@ -2,7 +2,9 @@ using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
+using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.IO.Compression;
 
 namespace KoalaBooks.Application.Services;
@@ -11,11 +13,12 @@ public class DocumentService(
     AppDbContext db,
     IDocumentStorage storage,
     IDocumentExtractionQueue extractionQueue,
+    IZipImportQueue zipImportQueue,
     ICurrentUser currentUser)
 {
     private const long MaxBytes = 10 * 1024 * 1024;
-    private const long ZipMaxBytes = 50 * 1024 * 1024;
-    private const int ZipMaxEntries = 50;
+    private const long ZipMaxBytes = 500 * 1024 * 1024;
+    private const int ZipMaxEntries = 500;
 
     private static readonly HashSet<string> AllowedContentTypes =
     [
@@ -297,96 +300,75 @@ public class DocumentService(
         return (doc, null);
     }
 
-    public async Task<(ZipImportResult? Result, string? Error)> UploadZipAsync(byte[] zipData)
+    public async Task<(int? BatchId, string? Error)> UploadZipAsync(Func<Stream> openZipData)
     {
-        if (zipData.Length > ZipMaxBytes)
-            return (null, "Zip-filen är för stor (max 50 MB).");
+        if (currentUser.OrganisationId is null)
+            return (null, "Ingen aktiv organisation.");
 
-        ZipArchive archive;
+        var tempPath = Path.GetTempFileName();
         try
         {
-            archive = new ZipArchive(new MemoryStream(zipData), ZipArchiveMode.Read);
-        }
-        catch (InvalidDataException)
-        {
-            return (null, "Ogiltig zip-fil.");
-        }
+            long totalBytes;
+            await using (var tempWriteStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
+            await using (var source = openZipData())
+            {
+                var buffer = new byte[81920];
+                totalBytes = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer)) > 0)
+                {
+                    totalBytes += read;
+                    if (totalBytes > ZipMaxBytes)
+                    {
+                        return (null, "Zip-filen är för stor (max 500 MB).");
+                    }
+                    await tempWriteStream.WriteAsync(buffer.AsMemory(0, read));
+                }
+            }
 
-        using (archive)
-        {
-            List<ZipArchiveEntry> fileEntries;
+            int entryCount;
             try
             {
-                fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
+                await using var tempReadStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read);
+                using var archive = new ZipArchive(tempReadStream, ZipArchiveMode.Read);
+                entryCount = archive.Entries.Count(e => !string.IsNullOrEmpty(e.Name));
             }
             catch (InvalidDataException)
             {
                 return (null, "Ogiltig zip-fil.");
             }
 
-            if (fileEntries.Count > ZipMaxEntries)
+            if (entryCount > ZipMaxEntries)
                 return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
 
-            var imported = new List<Document>();
-            var skipped = new List<(string FileName, string Reason)>();
-
-            foreach (var entry in fileEntries)
+            var strategy = db.Database.CreateExecutionStrategy();
+            var stagingOid = await strategy.ExecuteAsync(async () =>
             {
-                if (!ZipEntryContentTypes.TryGetValue(Path.GetExtension(entry.Name), out var contentType))
-                {
-                    skipped.Add((entry.Name, "Otillåten filtyp."));
-                    continue;
-                }
+                await using var tx = await db.Database.BeginTransactionAsync();
+                var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+                await using var tempReadStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read);
+                var (oid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, tempReadStream);
+                await tx.CommitAsync();
+                return oid;
+            });
 
-                if (entry.Length > MaxBytes)
-                {
-                    skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
-                    continue;
-                }
+            var batch = new ZipImportBatch
+            {
+                OrganisationId = currentUser.OrganisationId.Value,
+                StagingOid = stagingOid,
+                TotalEntries = entryCount,
+            };
+            db.ZipImportBatches.Add(batch);
+            await db.SaveChangesAsync();
 
-                byte[] data;
-                try
-                {
-                    using var entryStream = entry.Open();
-                    var (readData, oversized) = await ReadBoundedAsync(entryStream, MaxBytes);
-                    if (oversized)
-                    {
-                        skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
-                        continue;
-                    }
-                    data = readData!;
-                }
-                catch (InvalidDataException)
-                {
-                    skipped.Add((entry.Name, "Skadad fil."));
-                    continue;
-                }
+            zipImportQueue.Enqueue(batch.Id);
 
-                var (doc, err) = await UploadAsync(entry.Name, contentType, () => new MemoryStream(data));
-                if (doc is not null)
-                    imported.Add(doc);
-                else
-                    skipped.Add((entry.Name, err ?? "Okänt fel."));
-            }
-
-            return (new ZipImportResult(imported, skipped), null);
+            return (batch.Id, null);
         }
-    }
-
-    private static async Task<(byte[]? Data, bool Oversized)> ReadBoundedAsync(Stream stream, long maxBytes)
-    {
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        long totalRead = 0;
-        int bytesRead;
-        while ((bytesRead = await stream.ReadAsync(chunk)) > 0)
+        finally
         {
-            totalRead += bytesRead;
-            if (totalRead > maxBytes)
-                return (null, true);
-            await buffer.WriteAsync(chunk.AsMemory(0, bytesRead));
+            File.Delete(tempPath);
         }
-        return (buffer.ToArray(), false);
     }
 
     private async Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query)
