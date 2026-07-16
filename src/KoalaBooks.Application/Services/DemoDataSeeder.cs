@@ -76,6 +76,7 @@ public static class DemoDataSeeder
 
             await SeedPreviousYearEntriesAsync(db, tenant, previousFiscalYear).ConfigureAwait(false);
             await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id).ConfigureAwait(false);
+            await SeedCustomersAndInvoicesAsync(db, org.Id, currentFiscalYear.Id).ConfigureAwait(false);
         }
 
         // Existence-checked so a retry after a partial failure can't fail as a duplicate.
@@ -115,7 +116,8 @@ public static class DemoDataSeeder
         return await db.Accounts
             .Where(a => a.FiscalYearId == fiscalYearId)
             .Where(a => a.AccountNumber == "1910" || a.AccountNumber == "2440"
-                || a.AccountNumber == "2081" || a.AccountNumber == "3001" || a.AccountNumber == "5010")
+                || a.AccountNumber == "2081" || a.AccountNumber == "3001" || a.AccountNumber == "5010"
+                || a.AccountNumber == "2641")
             .ToDictionaryAsync(a => a.AccountNumber).ConfigureAwait(false);
     }
 
@@ -208,5 +210,89 @@ public static class DemoDataSeeder
         var gapEntryId = postedEntryIds[2];
         await db.JournalEntryLines.Where(l => l.JournalEntryId == gapEntryId).ExecuteDeleteAsync().ConfigureAwait(false);
         await db.JournalEntries.Where(j => j.Id == gapEntryId).ExecuteDeleteAsync().ConfigureAwait(false);
+    }
+
+    private static async Task SeedCustomersAndInvoicesAsync(AppDbContext db, int organisationId, int fiscalYearId)
+    {
+        var customerService = new CustomerService(db);
+        var customers = new[]
+        {
+            new Customer { OrganisationId = organisationId, Name = "Nordic Design AB", OrgNumber = "556677-8899", Email = "info@nordicdesign.se" },
+            new Customer { OrganisationId = organisationId, Name = "Café Solglimt", OrgNumber = "556211-3344", Email = "kontakt@cafesolglimt.se" },
+            new Customer { OrganisationId = organisationId, Name = "Björk & Partners HB", OrgNumber = "969712-5566", Email = "info@bjorkpartners.se" }
+        };
+
+        Customer? nordicDesign = null;
+        foreach (var customer in customers)
+        {
+            var (created, error) = await customerService.CreateAsync(customer);
+            if (error is not null)
+                throw new InvalidOperationException($"Demo seed failed to create customer '{customer.Name}': {error}");
+            if (customer.Name == "Nordic Design AB")
+                nordicDesign = created;
+        }
+
+        var year = DateTime.UtcNow.Year;
+        var accounts = await LoadDemoAccountsAsync(db, fiscalYearId);
+        var supplierInvoiceService = new SupplierInvoiceService(db);
+
+        // Left unposted so the "obokförd leverantörsfaktura" demo state exists.
+        var (unposted, unpostedError) = await supplierInvoiceService.CreateAsync(new SupplierInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            SupplierName = "Kontorsmaterial Nord AB",
+            InvoiceNumber = "F-2024-118",
+            InvoiceDate = new DateOnly(year, 7, 2),
+            DueDate = new DateOnly(year, 8, 1),
+            AmountExclVat = 1200m,
+            VatAmount = 300m,
+            TotalAmount = 1500m
+        });
+        if (unpostedError is not null)
+            throw new InvalidOperationException($"Demo seed failed to create supplier invoice: {unpostedError}");
+
+        var (paidInvoice, paidCreateError) = await supplierInvoiceService.CreateAsync(new SupplierInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            SupplierName = "Städservice Karlsson AB",
+            InvoiceNumber = "2024-0087",
+            InvoiceDate = new DateOnly(year, 7, 8),
+            DueDate = new DateOnly(year, 8, 7),
+            AmountExclVat = 4000m,
+            VatAmount = 1000m,
+            TotalAmount = 5000m
+        });
+        if (paidCreateError is not null)
+            throw new InvalidOperationException($"Demo seed failed to create supplier invoice: {paidCreateError}");
+
+        var (_, postError) = await supplierInvoiceService.PostAsync(
+            paidInvoice!.Id, accounts["5010"].Id, accounts["2440"].Id, accounts["2641"].Id);
+        if (postError is not null)
+            throw new InvalidOperationException($"Demo seed failed to post supplier invoice: {postError}");
+
+        var (_, payError) = await supplierInvoiceService.MarkAsPaidAsync(
+            paidInvoice.Id, new DateOnly(year, 7, 13), accounts["1910"].Id, accounts["2440"].Id);
+        if (payError is not null)
+            throw new InvalidOperationException($"Demo seed failed to mark supplier invoice as paid: {payError}");
+
+        // A draft (unposted) customer invoice so the customer-invoice flow is testable end to end.
+        var customerInvoiceService = new CustomerInvoiceService(db);
+        var draftInvoice = new CustomerInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            CustomerId = nordicDesign!.Id,
+            CustomerName = nordicDesign.Name,
+            InvoiceDate = new DateOnly(year, 7, 14),
+            DueDate = new DateOnly(year, 8, 13),
+            OurReference = "Admin"
+        };
+        List<CustomerInvoiceLine> draftLines =
+        [
+            new() { Description = "Konsulttimmar – webbutveckling", Quantity = 20, UnitPrice = 950m, VatRate = 25 },
+            new() { Description = "Domän & hosting", Quantity = 1, UnitPrice = 800m, VatRate = 25 }
+        ];
+        var (_, draftError) = await customerInvoiceService.CreateAsync(draftInvoice, draftLines);
+        if (draftError is not null)
+            throw new InvalidOperationException($"Demo seed failed to create draft customer invoice: {draftError}");
     }
 }
