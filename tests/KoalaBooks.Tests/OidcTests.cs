@@ -1,4 +1,6 @@
 using KoalaBooks.Domain;
+using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
@@ -9,9 +11,18 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace KoalaBooks.Tests;
+
+internal static class OidcTestHelpers
+{
+    public static string ExtractAntiforgeryToken(string html) =>
+        Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+}
 
 // Reproduces a production incident where dashboard.koalasoft.se returned 500: the token endpoint
 // (Token.cshtml.cs) only ever implemented the "password" grant, so the Aspire dashboard's real
@@ -44,7 +55,7 @@ public class OidcAuthorizationCodeGrantTests
             }
 
             var loginPage = await client.GetAsync("/account/login");
-            var antiforgeryToken = ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+            var antiforgeryToken = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
 
             var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(
                 new Dictionary<string, string>
@@ -81,9 +92,6 @@ public class OidcAuthorizationCodeGrantTests
             PostgresContainerFixture.DropDatabase(dbName);
         }
     }
-
-    private static string ExtractAntiforgeryToken(string html) =>
-        Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
 }
 
 // Reproduces a production incident where the dashboard's authorize request (scope=openid profile)
@@ -308,5 +316,106 @@ public class WasmClientSeedingTests : IDisposable
     {
         _sp.Dispose();
         PostgresContainerFixture.DropDatabase(_dbName);
+    }
+}
+
+// Proves Track B of #257: the WASM client's silent authorization-code + PKCE exchange,
+// driven manually here instead of by a real browser, yields an access token that both
+// authenticates against the API and carries org_id for tenant scoping.
+public class OidcSilentPkceForOwnClientTests
+{
+    [Fact]
+    public async Task SilentPkceExchange_ForWasmClient_ReturnsAccessTokenWithOrgId()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            const string email = "wasm-user@test.com";
+            const string password = "ValidPass123!";
+            var redirectUri = new Uri("https://localhost:7154/authentication/login-callback");
+            int orgId;
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var org = new Organisation { Name = "Wasm Test Org", Slug = "wasm-test", LegalForm = LegalForm.Aktiebolag };
+                db.Organisations.Add(org);
+                await db.SaveChangesAsync();
+                orgId = org.Id;
+
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                var created = await userManager.CreateAsync(
+                    new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true, OrganisationId = orgId },
+                    password);
+                Assert.True(created.Succeeded);
+
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, redirectUri);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var antiforgeryToken = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+
+            var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["Email"] = email,
+                    ["Password"] = password,
+                    ["__RequestVerificationToken"] = antiforgeryToken,
+                }));
+            Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
+
+            var codeVerifier = GenerateCodeVerifier();
+            var codeChallenge = ComputeCodeChallenge(codeVerifier);
+
+            var authorizeResponse = await client.GetAsync(
+                $"/connect/authorize?client_id={WasmClientSeeder.ClientId}&response_type=code" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile%20email" +
+                $"&code_challenge={codeChallenge}&code_challenge_method=S256");
+            Assert.Equal(HttpStatusCode.Redirect, authorizeResponse.StatusCode);
+
+            var code = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["code"].ToString();
+            Assert.False(string.IsNullOrEmpty(code));
+
+            var tokenResponse = await client.PostAsync("/connect/token", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["grant_type"] = "authorization_code",
+                    ["code"] = code,
+                    ["redirect_uri"] = redirectUri.ToString(),
+                    ["client_id"] = WasmClientSeeder.ClientId,
+                    ["code_verifier"] = codeVerifier,
+                }));
+
+            var body = await tokenResponse.Content.ReadAsStringAsync();
+            Assert.True(tokenResponse.IsSuccessStatusCode, body);
+
+            var json = JsonSerializer.Deserialize<JsonElement>(body);
+            var accessToken = json.GetProperty("access_token").GetString()!;
+            var payload = accessToken.Split('.')[1];
+            var padded = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+            var claimsJson = Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+            var claims = JsonSerializer.Deserialize<JsonElement>(claimsJson);
+
+            Assert.Equal(orgId.ToString(), claims.GetProperty("org_id").GetString());
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
+    }
+
+    private static string GenerateCodeVerifier()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
+
+    private static string ComputeCodeChallenge(string codeVerifier)
+    {
+        var hash = SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier));
+        return Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 }
