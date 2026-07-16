@@ -765,4 +765,119 @@ public class ApiTests : IAsyncLifetime
         var response = await client.GetAsync($"/api/v1/supplier-invoices/{otherInvoice.Id}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
+
+    // ── Bank transaction tests ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BankTransactions_List_ReturnsPaginatedResult()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var cashAccount = await db.Accounts.IgnoreQueryFilters()
+                .FirstAsync(a => a.FiscalYearId == _fiscalYearId && a.AccountNumber == "1910");
+            db.BankTransactions.Add(new BankTransaction
+            {
+                OrganisationId = _orgId, AccountId = cashAccount.Id,
+                Date = new DateOnly(2025, 6, 1), Amount = 500m, Description = "Deposit"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/bank-transactions?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items").EnumerateArray().ToList();
+        Assert.Single(items);
+        Assert.Equal("Deposit", items[0].GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task BankTransactions_List_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/bank-transactions");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task BankTransactions_List_FiltersByDateRange()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var cashAccount = await db.Accounts.IgnoreQueryFilters()
+                .FirstAsync(a => a.FiscalYearId == _fiscalYearId && a.AccountNumber == "1910");
+            db.BankTransactions.AddRange(
+                new BankTransaction { OrganisationId = _orgId, AccountId = cashAccount.Id, Date = new DateOnly(2025, 1, 1), Amount = 100m, Description = "January" },
+                new BankTransaction { OrganisationId = _orgId, AccountId = cashAccount.Id, Date = new DateOnly(2025, 8, 1), Amount = 200m, Description = "August" });
+            await db.SaveChangesAsync();
+        }
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/bank-transactions?from=2025-07-01&to=2025-12-31");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items").EnumerateArray().ToList();
+        Assert.Single(items);
+        Assert.Equal("August", items[0].GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task BankTransactions_GetById_ReturnsTransaction()
+    {
+        int txId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var cashAccount = await db.Accounts.IgnoreQueryFilters()
+                .FirstAsync(a => a.FiscalYearId == _fiscalYearId && a.AccountNumber == "1910");
+            var tx = new BankTransaction
+            {
+                OrganisationId = _orgId, AccountId = cashAccount.Id,
+                Date = new DateOnly(2025, 5, 1), Amount = 300m, Description = "Read-back tx"
+            };
+            db.BankTransactions.Add(tx);
+            await db.SaveChangesAsync();
+            txId = tx.Id;
+        }
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/bank-transactions/{txId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Read-back tx", json.GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task BankTransactions_GetById_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/bank-transactions/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task BankTransactions_GetById_CrossTenant_Returns404()
+    {
+        var (otherOrgId, _, otherAccountId) = await SeedSecondTenantAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherTx = new BankTransaction
+        {
+            OrganisationId = otherOrgId, AccountId = otherAccountId,
+            Date = new DateOnly(2025, 5, 1), Amount = 100m, Description = "Other tenant tx"
+        };
+        db.BankTransactions.Add(otherTx);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/bank-transactions/{otherTx.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 }
