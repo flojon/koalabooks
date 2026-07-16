@@ -25,6 +25,7 @@ There is no lint/format command configured yet.
 
 ## Workflow
 
+- Before starting new work, `git fetch origin` and work in a worktree — don't branch off a possibly-stale local `main`.
 - When finishing a branch, always push and open a PR — never merge locally.
 - Code comments: keep them minimal and concise, and never reference issue/PR numbers or ticket context (put that in the commit message / PR description instead).
 
