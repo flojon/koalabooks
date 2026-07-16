@@ -90,7 +90,7 @@
     [Parameter, EditorRequired] public IDocumentProvider DocumentProvider { get; set; } = default!;
 
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
-    [Inject] private DocumentService DocumentService { get; set; } = default!;
+    [Inject] private IDocumentService DocumentService { get; set; } = default!;
 
     private string _type = "";
     private DateTime _documentDate = DateTime.Today;
