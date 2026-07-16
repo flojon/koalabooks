@@ -34,9 +34,7 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
             try
             {
 #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-    #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-            await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
-#pragma warning restore CA2007
+                await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
 #pragma warning restore CA2007
                 var conn = (NpgsqlConnection)db.Database.GetDbConnection();
 
@@ -125,9 +123,7 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
             try
             {
 #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-    #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-            await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
-#pragma warning restore CA2007
+                await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
 #pragma warning restore CA2007
                 var row = await db.DocumentData.FindAsync(id).ConfigureAwait(false);
                 if (row is null) return;
