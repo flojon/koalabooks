@@ -107,7 +107,7 @@ public class DocumentServiceTests : IDisposable
         // svc's doc stays tracked with a stale xmin after upload; a second DbContext simulates
         // the background extraction job writing to the row concurrently.
         var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_fx.Db.Database.GetConnectionString()!).Options;
         await using (var concurrentDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId)))
@@ -137,7 +137,7 @@ public class DocumentServiceTests : IDisposable
         // svc's doc stays tracked with a stale xmin after upload; a second DbContext simulates
         // the background extraction job writing to the row concurrently before the delete.
         var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_fx.Db.Database.GetConnectionString()!).Options;
         await using (var concurrentDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId)))
@@ -163,7 +163,7 @@ public class DocumentServiceTests : IDisposable
         // a third DbContext right before each of its own SaveChangesAsync calls, so both the
         // initial save and the retry land against an already-stale xmin.
         var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         var connStr = _fx.Db.Database.GetConnectionString()!;
         var raceOptions = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connStr).Options;
@@ -209,7 +209,7 @@ public class DocumentServiceTests : IDisposable
     {
         // Simulates the Inbox page's poll tick keeping a stale-tracked doc's xmin in sync.
         var svc = _fx.MakeDocumentService();
-        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
         var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_fx.Db.Database.GetConnectionString()!).Options;
         uint freshXmin;
