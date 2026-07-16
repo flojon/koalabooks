@@ -424,14 +424,51 @@ git commit -m "Register a public, PKCE-required OpenIddict client for the WASM a
 ### Task 3: Prove the fixed authorization-code + PKCE flow yields an org_id-bearing token
 
 **Files:**
-- Modify: `tests/KoalaBooks.Tests/OidcTests.cs` (append new test class at end of file, after `WasmClientSeedingTests` from Task 2)
+- Modify: `tests/KoalaBooks.Tests/OidcTests.cs` (extract shared `OidcTestHelpers` class; append new test class at end of file, after `WasmClientSeedingTests` from Task 2)
 
 **Interfaces:**
 - Consumes: `KoalaBooks.Infrastructure.Services.WasmClientSeeder.ClientId`, `WasmClientSeeder.SeedAsync(IServiceProvider, Uri)` (Task 2); `KoalaBooks.Web.Pages.Connect.OpenIddictIdentityBuilder` indirectly via the fixed `Authorize.cshtml.cs` (Task 1).
+- Produces: `KoalaBooks.Tests.OidcTestHelpers.ExtractAntiforgeryToken(string html) -> string`, shared by `OidcAuthorizationCodeGrantTests` (existing) and the new `OidcSilentPkceForOwnClientTests` in this task.
 
 This is the end-to-end proof the design doc's Testing section calls for: it drives the same silent PKCE exchange the WASM handler will perform, using `WebApplicationFactory` directly instead of a real browser (consistent with the design's non-goal of not requiring a live browser POC).
 
-- [ ] **Step 1: Write the failing integration test**
+This test needs the same antiforgery-token-extraction helper `OidcAuthorizationCodeGrantTests` already has privately at the bottom of its class (`tests/KoalaBooks.Tests/OidcTests.cs:85-86`). Rather than duplicate it, extract it into a shared helper both classes use.
+
+- [ ] **Step 1: Extract the shared antiforgery helper**
+
+In `tests/KoalaBooks.Tests/OidcTests.cs`, replace the private method at the end of `OidcAuthorizationCodeGrantTests` (lines 85-86):
+
+```csharp
+    private static string ExtractAntiforgeryToken(string html) =>
+        Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+}
+```
+
+with just the closing brace (removing the method):
+
+```csharp
+}
+```
+
+Then update its one call site inside `OidcAuthorizationCodeGrantTests.TokenEndpoint_RedeemsAuthorizationCode_ReturnsAccessToken` (currently `ExtractAntiforgeryToken(...)`) to call `OidcTestHelpers.ExtractAntiforgeryToken(...)` instead.
+
+Add the shared helper as a new top-level class in the same file, right before `OidcAuthorizationCodeGrantTests`:
+
+```csharp
+internal static class OidcTestHelpers
+{
+    public static string ExtractAntiforgeryToken(string html) =>
+        Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+}
+
+```
+
+- [ ] **Step 2: Run the existing test to verify the extraction didn't break it**
+
+Run: `dotnet test tests/KoalaBooks.Tests --filter OidcAuthorizationCodeGrantTests`
+Expected: 1 passed (unchanged behavior, just relocated).
+
+- [ ] **Step 3: Write the failing integration test**
 
 In `tests/KoalaBooks.Tests/OidcTests.cs`, add these usings near the top of the file (alongside the existing ones):
 
@@ -480,7 +517,7 @@ public class OidcSilentPkceForOwnClientTests
             }
 
             var loginPage = await client.GetAsync("/account/login");
-            var antiforgeryToken = ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+            var antiforgeryToken = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
 
             var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(
                 new Dictionary<string, string>
@@ -542,30 +579,25 @@ public class OidcSilentPkceForOwnClientTests
         var hash = SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier));
         return Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
-
-    private static string ExtractAntiforgeryToken(string html) =>
-        Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
 }
 ```
 
-Note this duplicates `ExtractAntiforgeryToken` from `OidcAuthorizationCodeGrantTests` earlier in the same file (test-local helper, matching that class's own existing self-contained style — not shared production code).
-
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 4: Run the test to verify it fails**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter OidcSilentPkceForOwnClientTests`
 Expected (before Task 1/2 existed, this would fail; since Tasks 1-2 are already done at this point in the plan, this should instead expose whether PKCE + org_id truly work end-to-end). If it fails, the failure message (invalid_grant, invalid_request, or a null `org_id` claim) tells you which of Task 1/2's pieces to check — most likely a mismatch between the seeded `redirectUri` and the one sent in the `/connect/authorize` request.
 
-- [ ] **Step 3: Run the test to verify it passes**
+- [ ] **Step 5: Run the test to verify it passes**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter OidcSilentPkceForOwnClientTests`
 Expected: 1 passed.
 
-- [ ] **Step 4: Run the full test suite**
+- [ ] **Step 6: Run the full test suite**
 
 Run: `dotnet test tests/KoalaBooks.Tests`
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add tests/KoalaBooks.Tests/OidcTests.cs
