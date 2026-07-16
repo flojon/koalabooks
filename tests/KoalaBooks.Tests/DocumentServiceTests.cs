@@ -126,6 +126,31 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteAsync_StaleTrackedEntityFromUpload_RetriesInsteadOfThrowing()
+    {
+        // svc's doc stays tracked with a stale xmin after upload; a second DbContext simulates
+        // the background extraction job writing to the row concurrently before the delete.
+        var svc = _fx.MakeDocumentService();
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", new MemoryStream([1, 2, 3]));
+
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_fx.Db.Database.GetConnectionString()!).Options;
+        await using (var concurrentDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId)))
+        {
+            var concurrentDoc = await concurrentDb.Documents.FirstAsync(d => d.Id == doc!.Id);
+            concurrentDoc.SuggestedType = "SupplierInvoice";
+            concurrentDoc.ExtractionStatus = ExtractionStatus.Completed;
+            await concurrentDb.SaveChangesAsync();
+        }
+
+        var deleted = await svc.DeleteAsync(doc!.Id);
+
+        Assert.True(deleted);
+
+        await using var verifyDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId));
+        Assert.False(await verifyDb.Documents.IgnoreQueryFilters().AnyAsync(d => d.Id == doc.Id));
+    }
+
+    [Fact]
     public async Task UpdateMetadataAsync_CollidesTwice_ReturnsFriendlyErrorInsteadOfThrowing()
     {
         // A separate DbContext/service instance whose interceptor bumps the row's xmin via

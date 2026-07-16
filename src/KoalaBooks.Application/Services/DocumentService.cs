@@ -190,8 +190,31 @@ public class DocumentService(
         if (doc is null) return false;
         await storage.DeleteAsync(doc.StorageKey);
         db.Documents.Remove(doc);
-        await db.SaveChangesAsync();
-        return true;
+        return await DeleteResolvingConcurrencyAsync(doc);
+    }
+
+    // Same staleness risk as SaveChangesResolvingConcurrencyAsync: doc may have been
+    // tracked earlier in this circuit and gone stale since. Unlike an update, a mismatch
+    // here just means someone else already changed or deleted the row — either way the
+    // delete's goal (row gone) is met, so re-fetching the current xmin and retrying once
+    // is enough; a missing row on retry means it's already gone.
+    private async Task<bool> DeleteResolvingConcurrencyAsync(Document doc)
+    {
+        try
+        {
+            await db.SaveChangesAsync();
+            return true;
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            var entry = ex.Entries.Single();
+            var databaseValues = await entry.GetDatabaseValuesAsync();
+            if (databaseValues is null) return true;
+
+            entry.Property("xmin").OriginalValue = databaseValues["xmin"];
+            await db.SaveChangesAsync();
+            return true;
+        }
     }
 
     public async Task LinkAsync(int documentId, DocumentEntityType entityType, int entityId)
