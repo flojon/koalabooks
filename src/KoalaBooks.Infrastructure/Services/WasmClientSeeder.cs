@@ -36,15 +36,15 @@ public static class WasmClientSeeder
 
         descriptor.RedirectUris.Add(redirectUri);
 
-        var existing = await manager.FindByClientIdAsync(ClientId);
+        var existing = await manager.FindByClientIdAsync(ClientId).ConfigureAwait(false);
         if (existing is null)
         {
-            await manager.CreateAsync(descriptor);
+            await manager.CreateAsync(descriptor).ConfigureAwait(false);
             logger.LogInformation("Created OpenIddict client '{ClientId}' with redirect URI {RedirectUri}", ClientId, redirectUri);
         }
         else
         {
-            await manager.UpdateAsync(existing, descriptor);
+            await manager.UpdateAsync(existing, descriptor).ConfigureAwait(false);
             logger.LogInformation("Updated OpenIddict client '{ClientId}' with redirect URI {RedirectUri}", ClientId, redirectUri);
         }
     }
