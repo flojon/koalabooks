@@ -13,7 +13,7 @@
 - No real `InteractiveWebAssembly`/`InteractiveAuto` page is added — see `docs/superpowers/specs/2026-07-16-wasm-auth-bridge-design.md` non-goals. The new `KoalaBooks.Client` project and its `/authentication/{action}` route are infrastructure only; nothing in the Web project references them yet, so no existing behavior changes for real users.
 - No new OpenIddict grant type. Everything rides the already-configured `/connect/authorize` + `/connect/token` endpoints (`options.AllowAuthorizationCodeFlow()` etc. in `src/KoalaBooks.Web/Program.cs`).
 - All new NuGet packages pinned to `10.0.9`, matching the version already used for `Microsoft.AspNetCore.OpenApi`/`Microsoft.EntityFrameworkCore.Design` in `src/KoalaBooks.Web/KoalaBooks.Web.csproj`.
-- The new `KoalaBooks.Client` project targets `net10.0`, references only `KoalaBooks.Application` (no `Infrastructure`), matching the direction issue #79 is already pushing the RCL toward.
+- The new `KoalaBooks.Client` project targets `net10.0` and references no other KoalaBooks project — discovered during Task 5 that `KoalaBooks.Application` itself has a (pre-existing, backwards) `ProjectReference` to `KoalaBooks.Infrastructure`, which carries a `FrameworkReference` to `Microsoft.AspNetCore.App` incompatible with browser-wasm. Nothing in Tasks 5-6 uses any Application type, so the reference is dropped rather than worked around. A future real WASM page consuming Application-layer services will need #79/#224-style interface extraction resolved first regardless.
 - Building `KoalaBooks.Client` for the first time will make NuGet fetch the `browser-wasm` runtime pack (not yet cached locally) — this needs network access and may take a few minutes the first time.
 
 ---
@@ -669,9 +669,11 @@ git commit -m "Serialize authentication state for future WASM/Auto components"
 - Modify: `KoalaBooks.slnx` (add project entry)
 
 **Interfaces:**
-- Produces: a buildable `KoalaBooks.Client` project referencing `KoalaBooks.Application` only, with `AddAuthenticationStateDeserialization()` wired. Task 6 adds to this same project's `Program.cs`.
+- Produces: a buildable `KoalaBooks.Client` project with no `ProjectReference` to any other KoalaBooks project, with `AddAuthenticationStateDeserialization()` wired. Task 6 adds to this same project's `Program.cs`.
 
 No automated test: `WebAssemblyHostBuilder.CreateDefault()` performs JS interop at construction time (reading configuration from the hosting page), which only works inside an actual browser — it throws outside one, so this can't be exercised from an xunit test process. Verification is build-only, consistent with the design doc's verification plan.
+
+**Revised during Task 5's implementation**: the original plan had this project reference `KoalaBooks.Application`. That's not possible — `KoalaBooks.Application.csproj` has a pre-existing `ProjectReference` to `KoalaBooks.Infrastructure`, which has `<FrameworkReference Include="Microsoft.AspNetCore.App" />` — a shared framework with no browser-wasm asset, so anything transitively pulling it in cannot compile for `Microsoft.NET.Sdk.BlazorWebAssembly`. Nothing in Tasks 5-6 actually uses any `Application` type, so the reference is simply dropped rather than worked around.
 
 - [ ] **Step 1: Create the project file**
 
@@ -689,10 +691,6 @@ Create `src/KoalaBooks.Client/KoalaBooks.Client.csproj`:
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Authentication" Version="10.0.9" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\KoalaBooks.Application\KoalaBooks.Application.csproj" />
   </ItemGroup>
 
 </Project>

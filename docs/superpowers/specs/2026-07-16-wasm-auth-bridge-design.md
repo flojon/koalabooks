@@ -70,9 +70,13 @@ Use the built-in ASP.NET Core 8+ mechanism, rather than hand-rolling a
   claim explicitly (the default only serializes name/role claims) — WASM
   components that branch UI on tenant identity need it available without a
   round trip.
-- New `KoalaBooks.Client` project (WASM host, referencing only
-  `KoalaBooks.Application` — no `Infrastructure`, matching the direction
-  #79 is already pushing the RCL toward): `Program.cs` calls
+- New `KoalaBooks.Client` project (WASM host, with no `ProjectReference` to
+  any other KoalaBooks project — **revised during implementation**:
+  `KoalaBooks.Application` itself has a pre-existing, backwards
+  `ProjectReference` to `KoalaBooks.Infrastructure`, which carries a
+  `FrameworkReference` to `Microsoft.AspNetCore.App`, incompatible with
+  browser-wasm; nothing here uses any `Application` type, so the reference
+  is dropped rather than worked around): `Program.cs` calls
   `AddAuthenticationStateDeserialization()`. This automatically wires an
   `AuthenticationStateProvider` that deserializes the state the server
   persisted via `PersistentComponentState` at prerender — no custom
