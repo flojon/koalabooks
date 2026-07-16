@@ -22,3 +22,18 @@ dotnet ef database update --project src/KoalaBooks.Infrastructure --startup-proj
 ```
 
 There is no lint/format command configured yet.
+
+## Workflow
+
+- When finishing a branch, always push and open a PR — never merge locally.
+- Code comments: one short line max, and never reference issue/PR numbers or ticket context (put that in the commit message / PR description instead).
+
+## Debugging PR previews
+
+Previews run at `pr-<n>.books.koalasoft.se` on the same VM as prod, reachable via SSH alias `oraclevm`. Deploy state is at `/opt/koalabooks/pr-<n>/` (per-PR `docker-compose.yml`, Caddy snippet, and a `secrets/postgres_password` file — no shared Postgres password secret anymore). If a preview 502s, check there first:
+
+```bash
+ssh oraclevm 'docker ps -a --filter name=pr-<n>'
+ssh oraclevm 'docker logs pr-<n>-web-1'
+ssh oraclevm 'docker logs pr-<n>-postgres-1'
+```
