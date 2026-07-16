@@ -150,7 +150,7 @@ builder.Services.AddScoped<YearEndClosingService>();
 builder.Services.AddScoped<BasImportService>();
 builder.Services.AddScoped<AccountMappingService>();
 builder.Services.AddScoped<BankImportService>();
-builder.Services.AddScoped<SupplierInvoiceService>();
+builder.Services.AddScoped<ISupplierInvoiceService, SupplierInvoiceService>();
 builder.Services.AddScoped<CustomerService>();
 builder.Services.AddScoped<CustomerInvoiceService>();
 builder.Services.AddScoped<OrganisationService>();
