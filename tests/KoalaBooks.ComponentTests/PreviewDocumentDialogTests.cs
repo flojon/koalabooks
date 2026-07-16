@@ -50,7 +50,7 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
         // ClickingBokfor_EditedDateCarriesIntoClassifyDialog below. They must be
         // registered here, before any component renders - bUnit locks the service
         // collection against further registrations after the first resolve.
-        Services.AddSingleton(new SupplierInvoiceService(db));
+        Services.AddSingleton<ISupplierInvoiceService>(new SupplierInvoiceService(db));
         Services.AddSingleton(new CustomerInvoiceService(db));
         Services.AddSingleton<IAccountService>(new AccountService(db));
         Services.AddSingleton(new CustomerService(db));
