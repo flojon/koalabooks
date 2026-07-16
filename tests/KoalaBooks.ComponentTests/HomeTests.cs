@@ -13,14 +13,14 @@ namespace KoalaBooks.ComponentTests;
 public class HomeTests : BunitContext
 {
     private readonly IFiscalYearService _fiscalYearService = Substitute.For<IFiscalYearService>();
-    private readonly IJournalEntryService _journalEntryService = Substitute.For<IJournalEntryService>();
+    private readonly IJournalEntryReportingService _journalReportingService = Substitute.For<IJournalEntryReportingService>();
 
     public HomeTests()
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddMudServices();
         Services.AddSingleton(_fiscalYearService);
-        Services.AddSingleton(_journalEntryService);
+        Services.AddSingleton(_journalReportingService);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public class HomeTests : BunitContext
             EndDate = new DateOnly(2026, 12, 31),
         };
         _fiscalYearService.GetActiveAsync().Returns(fiscalYear);
-        _journalEntryService.GetDashboardStatsAsync(1).Returns(new DashboardStats
+        _journalReportingService.GetDashboardStatsAsync(1).Returns(new DashboardStats
         {
             EntryCount = 5,
             TotalDebit = 1000m,

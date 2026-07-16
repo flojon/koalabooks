@@ -47,7 +47,7 @@ else
 
 @code {
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
-    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IJournalEntryReportingService JournalReportingService { get; set; } = default!;
 
     private KoalaBooks.Domain.Entities.FiscalYear? _activeFiscalYear;
     private DashboardStats _stats = new();
@@ -57,7 +57,7 @@ else
         _activeFiscalYear = await FiscalYearService.GetActiveAsync();
         if (_activeFiscalYear is not null)
         {
-            _stats = await JournalEntryService.GetDashboardStatsAsync(_activeFiscalYear.Id);
+            _stats = await JournalReportingService.GetDashboardStatsAsync(_activeFiscalYear.Id);
         }
     }
 }
