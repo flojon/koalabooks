@@ -560,4 +560,209 @@ public class ApiTests : IAsyncLifetime
         var response = await client.PostAsJsonAsync("/api/v1/journal-entries/999999/reverse", new { reason = "Nope" });
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
+
+    // ── Supplier invoice tests ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SupplierInvoices_List_ReturnsPaginatedResult()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.TryGetProperty("items", out _));
+        Assert.True(json.TryGetProperty("totalCount", out _));
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_List_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/supplier-invoices");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Create_ValidInvoice_Returns201WithLocation()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var body = new
+        {
+            supplierName = "Acme AB",
+            invoiceDate = "2026-03-01",
+            dueDate = "2026-03-31",
+            amountExclVat = 800m,
+            vatAmount = 200m,
+            totalAmount = 1000m
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", body);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(response.Headers.Location);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Acme AB", json.GetProperty("supplierName").GetString());
+        Assert.Equal(1000m, json.GetProperty("totalAmount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Create_ZeroTotal_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var body = new
+        {
+            supplierName = "Acme AB",
+            invoiceDate = "2026-03-01",
+            dueDate = "2026-03-31",
+            amountExclVat = 0m,
+            vatAmount = 0m,
+            totalAmount = 0m
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_GetById_ReturnsInvoice()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var createBody = new
+        {
+            supplierName = "Read-back Supplier",
+            invoiceDate = "2026-04-01",
+            dueDate = "2026-04-30",
+            amountExclVat = 400m,
+            vatAmount = 100m,
+            totalAmount = 500m
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var invoiceId = created.GetProperty("id").GetInt32();
+
+        var response = await client.GetAsync($"/api/v1/supplier-invoices/{invoiceId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Read-back Supplier", json.GetProperty("supplierName").GetString());
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_GetById_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/supplier-invoices/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Update_DraftInvoice_Returns200WithUpdatedFields()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var createBody = new
+        {
+            supplierName = "Original Name",
+            invoiceDate = "2026-05-01",
+            dueDate = "2026-05-31",
+            amountExclVat = 400m,
+            vatAmount = 100m,
+            totalAmount = 500m
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var invoiceId = created.GetProperty("id").GetInt32();
+
+        var updateBody = new
+        {
+            supplierName = "Updated Name",
+            invoiceDate = "2026-05-02",
+            dueDate = "2026-06-01",
+            amountExclVat = 450m,
+            vatAmount = 112.5m,
+            totalAmount = 562.5m
+        };
+        var updateResp = await client.PutAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}", updateBody);
+        Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
+
+        var updated = await updateResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Updated Name", updated.GetProperty("supplierName").GetString());
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Update_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var body = new
+        {
+            supplierName = "Nope",
+            invoiceDate = "2026-05-01",
+            dueDate = "2026-05-31",
+            amountExclVat = 100m,
+            vatAmount = 0m,
+            totalAmount = 100m
+        };
+        var response = await client.PutAsJsonAsync("/api/v1/supplier-invoices/999999", body);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Delete_DraftInvoice_Returns204()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var createBody = new
+        {
+            supplierName = "To be deleted",
+            invoiceDate = "2026-06-01",
+            dueDate = "2026-06-30",
+            amountExclVat = 100m,
+            vatAmount = 25m,
+            totalAmount = 125m
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var invoiceId = created.GetProperty("id").GetInt32();
+
+        var deleteResp = await client.DeleteAsync($"/api/v1/supplier-invoices/{invoiceId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Delete_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.DeleteAsync("/api/v1/supplier-invoices/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_GetById_CrossTenant_Returns404()
+    {
+        var (_, otherFiscalYearId, _) = await SeedSecondTenantAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherInvoice = new SupplierInvoice
+        {
+            FiscalYearId = otherFiscalYearId,
+            SupplierName = "Other tenant supplier",
+            InvoiceDate = new DateOnly(2026, 1, 15),
+            DueDate = new DateOnly(2026, 2, 15),
+            AmountExclVat = 100m,
+            VatAmount = 25m,
+            TotalAmount = 125m
+        };
+        db.SupplierInvoices.Add(otherInvoice);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/supplier-invoices/{otherInvoice.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 }
