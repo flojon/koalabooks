@@ -94,32 +94,33 @@ of a second, separate claims-serialization mechanism to maintain.
 ### Track B — authenticating outbound API calls from WASM
 
 Drive the already-configured OpenIddict authorization-code + PKCE flow
-silently — same-origin `fetch`, the existing auth cookie sent automatically,
-no visible redirect or login prompt, because the user is already
-authenticated:
+silently — no visible redirect or login prompt, because the user is already
+authenticated via the server-side cookie:
 
 1. Register a new **public** OpenIddict client application at startup,
-   following the existing `AspireDashboardSeeder` pattern (a new
-   `WasmClientSeeder` or similar): `ClientType = Public` (no secret, since
-   it runs in the browser), PKCE required, `GrantTypes.AuthorizationCode` +
-   `GrantTypes.RefreshToken`, redirect URI pointing at a same-origin
-   callback route.
-2. On first API call (or when the cached token is expired), the WASM
-   `HttpClient`'s outgoing message handler:
-   - Generates a PKCE `code_verifier`/`code_challenge` pair.
-   - Fetches `/connect/authorize?...&code_challenge=...` with
-     `credentials: 'include'`. Because the OpenIddict cookie session is
-     already valid, `Authorize.cshtml.cs` signs the code straight through
-     with no consent/login screen (same as it does today for
-     `aspire-dashboard`).
-   - Captures the `code` from the redirect and posts it to `/connect/token`
-     with the verifier to exchange it for an access + refresh token.
-   - Caches both **in memory only** (not `localStorage`/`sessionStorage`) to
-     avoid XSS-exfiltration exposure; a full page reload re-runs the silent
-     exchange, which is cheap and invisible to the user.
-   - Attaches `Authorization: Bearer <token>` to the actual request, and
-     transparently uses the refresh token to renew when the access token is
-     close to expiry.
+   following the existing `AspireDashboardSeeder` pattern (`WasmClientSeeder`):
+   `ClientType = Public` (no secret, since it runs in the browser), PKCE
+   required (`Requirements.Features.ProofKeyForCodeExchange`),
+   `GrantTypes.AuthorizationCode` + `GrantTypes.RefreshToken`, redirect URI
+   pointing at a same-origin callback route (`/authentication/login-callback`).
+2. **Revised during planning**: the initial idea here was a hand-rolled
+   `HttpClient` message handler that drives the PKCE dance itself via
+   `fetch` with `credentials: 'include'`, reading the authorization code off
+   the redirect's `Location` header. That doesn't work — per the Fetch spec,
+   a manual-redirect response is always opaque (status 0, headers
+   inaccessible), even same-origin. This is exactly why every real OIDC JS
+   library (MSAL, oidc-client-js, angular-oauth2-oidc) uses a **hidden
+   iframe** for silent renewal instead of fetch: a same-origin, same-frame
+   navigation's `location.href` *is* readable once it lands. Rather than
+   hand-write that iframe/PKCE logic, this design uses the same
+   `Microsoft.AspNetCore.Components.WebAssembly.Authentication` package's
+   own generic OIDC client (`AddOidcAuthentication` + `RemoteAuthenticatorView`,
+   backed by `oidc-client-js`) against our own OpenIddict server — it
+   already implements silent hidden-iframe renewal, PKCE, and token caching
+   correctly against any standard OIDC provider, which our server already is.
+   This needs one small `/authentication/{action}` route (`RemoteAuthenticatorView`)
+   in the Client project to host the login/silent-renew callbacks —
+   infrastructure only, no app UI.
 3. **Fix a real gap surfaced by this design**: `Authorize.cshtml.cs` builds
    its `ClaimsIdentity` without the `org_id` claim that
    `Token.cshtml.cs`'s password-grant branch sets. Tokens minted via the
@@ -134,10 +135,10 @@ Add an integration test alongside `tests/KoalaBooks.Tests/Api/ApiTests.cs`,
 reusing its `WebApiFactory`/`PostgresContainerFixture` fixtures:
 
 - Log in via the cookie scheme (form login, as a real browser session
-  would), then drive the same silent PKCE exchange the WASM handler would
-  perform: hit `/connect/authorize` with a generated challenge, follow the
-  redirect to capture `code`, POST it to `/connect/token`, extract the
-  access token.
+  would), then drive the same silent PKCE exchange `AddOidcAuthentication`
+  would perform via its hidden iframe: hit `/connect/authorize` with a
+  generated challenge, follow the redirect to capture `code`, POST it to
+  `/connect/token`, extract the access token.
 - Call an existing `[Authorize]` API endpoint with that token and assert a
   200 plus correctly `org_id`-scoped data — mirroring
   `AuthenticatedClientAsync`'s assertions but sourced from the code+PKCE
