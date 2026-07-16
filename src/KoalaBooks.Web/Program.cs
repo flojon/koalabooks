@@ -144,7 +144,7 @@ builder.Services.AddScoped<ISieImportService, SieImportService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IFiscalYearService, FiscalYearService>();
 builder.Services.AddScoped<IJournalEntryService, JournalEntryService>();
-builder.Services.AddScoped<VoucherGapService>();
+builder.Services.AddScoped<IVoucherGapService, VoucherGapService>();
 builder.Services.AddScoped<ISieExportService, SieExportService>();
 builder.Services.AddScoped<IYearEndClosingService, YearEndClosingService>();
 builder.Services.AddScoped<IBasImportService, BasImportService>();

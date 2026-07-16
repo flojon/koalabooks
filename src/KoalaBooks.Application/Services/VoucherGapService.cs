@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class VoucherGapService
+public class VoucherGapService : IVoucherGapService
 {
     private readonly AppDbContext _db;
 

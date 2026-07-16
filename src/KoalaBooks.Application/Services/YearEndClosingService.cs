@@ -25,9 +25,9 @@ public class YearEndClosingService : IYearEndClosingService
 {
     private readonly AppDbContext _db;
     private readonly IFiscalYearService _fiscalYearService;
-    private readonly VoucherGapService _voucherGapService;
+    private readonly IVoucherGapService _voucherGapService;
 
-    public YearEndClosingService(AppDbContext db, IFiscalYearService fiscalYearService, VoucherGapService voucherGapService)
+    public YearEndClosingService(AppDbContext db, IFiscalYearService fiscalYearService, IVoucherGapService voucherGapService)
     {
         _db = db;
         _fiscalYearService = fiscalYearService;
