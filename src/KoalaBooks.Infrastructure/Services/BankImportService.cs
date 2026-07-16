@@ -10,24 +10,7 @@ using System.Text;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-public record BankFileParseResult(
-    bool Success,
-    string? Error,
-    List<string> Headers,
-    List<string[]> DataRows);
-
-public record BankTransactionPreview(
-    int RowIndex,
-    DateOnly? Date,
-    decimal? Amount,
-    string Description,
-    string? Reference,
-    bool IsDuplicate,
-    string? ParseError);
-
-public record BankImportResult(int Imported, int Skipped, int Duplicates, List<string> Errors);
-
-public class BankImportService
+public class BankImportService : IBankImportService
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;

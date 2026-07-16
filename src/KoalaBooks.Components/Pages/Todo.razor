@@ -2,7 +2,7 @@
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
-@using KoalaBooks.Infrastructure.Services
+@using KoalaBooks.Domain.Interfaces
 @using MudBlazor
 
 <PageTitle>Att göra — KoalaBooks</PageTitle>
@@ -125,7 +125,7 @@ else
 
 @code {
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
-    [Inject] private BankImportService BankImportService { get; set; } = default!;
+    [Inject] private IBankImportService BankImportService { get; set; } = default!;
     [Inject] private ISupplierInvoiceService SupplierInvoiceService { get; set; } = default!;
     [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
