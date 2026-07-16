@@ -342,28 +342,36 @@ public class DocumentService(
                 return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
 
             var strategy = db.Database.CreateExecutionStrategy();
-            var stagingOid = await strategy.ExecuteAsync(async () =>
+            var batchId = await strategy.ExecuteAsync(async () =>
             {
+                // A retry re-runs this whole delegate: a prior failed attempt may
+                // have left a ZipImportBatch row tracked (Added) without committing
+                // — detach it before adding a fresh one, or SaveChangesAsync would
+                // insert both and produce a duplicate row.
+                foreach (var stale in db.ChangeTracker.Entries<ZipImportBatch>().Where(e => e.State == EntityState.Added).ToList())
+                    stale.State = EntityState.Detached;
+
                 await using var tx = await db.Database.BeginTransactionAsync();
                 var conn = (NpgsqlConnection)db.Database.GetDbConnection();
                 await using var tempReadStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read);
                 var (oid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, tempReadStream);
+
+                var batch = new ZipImportBatch
+                {
+                    OrganisationId = currentUser.OrganisationId.Value,
+                    StagingOid = oid,
+                    TotalEntries = entryCount,
+                };
+                db.ZipImportBatches.Add(batch);
+                await db.SaveChangesAsync();
+
                 await tx.CommitAsync();
-                return oid;
+                return batch.Id;
             });
 
-            var batch = new ZipImportBatch
-            {
-                OrganisationId = currentUser.OrganisationId.Value,
-                StagingOid = stagingOid,
-                TotalEntries = entryCount,
-            };
-            db.ZipImportBatches.Add(batch);
-            await db.SaveChangesAsync();
+            zipImportQueue.Enqueue(batchId);
 
-            zipImportQueue.Enqueue(batch.Id);
-
-            return (batch.Id, null);
+            return (batchId, null);
         }
         finally
         {
