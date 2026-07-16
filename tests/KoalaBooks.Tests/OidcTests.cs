@@ -246,3 +246,67 @@ public class OidcClientSeedingTests : IDisposable
         PostgresContainerFixture.DropDatabase(_dbName);
     }
 }
+
+public class WasmClientSeedingTests : IDisposable
+{
+    private readonly ServiceProvider _sp;
+    private readonly string _dbName;
+    private static readonly Uri RedirectUri = new("https://localhost:7154/authentication/login-callback");
+
+    public WasmClientSeedingTests()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        _dbName = dbName;
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<ICurrentUser>(new LocalCurrentUser());
+        services.AddDbContext<AppDbContext>(opts => opts.UseNpgsql(connStr));
+        services.AddOpenIddict()
+            .AddCore(opts => opts.UseEntityFrameworkCore().UseDbContext<AppDbContext>());
+
+        _sp = services.BuildServiceProvider();
+        using var scope = _sp.CreateScope();
+        scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
+    }
+
+    [Fact]
+    public async Task SeedAsync_CreatesPublicClientRequiringPkce()
+    {
+        using var scope = _sp.CreateScope();
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, RedirectUri);
+
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        var app = await manager.FindByClientIdAsync(WasmClientSeeder.ClientId);
+        Assert.NotNull(app);
+
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(descriptor, app);
+
+        Assert.Equal(OpenIddictConstants.ClientTypes.Public, descriptor.ClientType);
+        Assert.Contains(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange, descriptor.Requirements);
+        Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.RefreshToken, descriptor.Permissions);
+        Assert.Contains(RedirectUri, descriptor.RedirectUris);
+    }
+
+    [Fact]
+    public async Task SeedAsync_IsIdempotent()
+    {
+        using (var scope = _sp.CreateScope())
+            await WasmClientSeeder.SeedAsync(scope.ServiceProvider, RedirectUri);
+
+        using (var scope = _sp.CreateScope())
+            await WasmClientSeeder.SeedAsync(scope.ServiceProvider, RedirectUri);
+
+        using var verifyScope = _sp.CreateScope();
+        var manager = verifyScope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        Assert.Equal(1, await manager.CountAsync());
+    }
+
+    public void Dispose()
+    {
+        _sp.Dispose();
+        PostgresContainerFixture.DropDatabase(_dbName);
+    }
+}
