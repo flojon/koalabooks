@@ -46,6 +46,19 @@ public class SupplierInvoicesController : ControllerBase
         });
     }
 
+    [HttpGet("fiscal-years/{fiscalYearId:int}/supplier-invoices/unpaid-count")]
+    [ProducesResponseType<CountResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetUnpaidCount(int fiscalYearId)
+    {
+        var fy = await _fiscalYearService.GetByIdAsync(fiscalYearId);
+        if (fy is null) return NotFound();
+
+        var count = await _supplierInvoiceService.CountUnpaidAsync(fiscalYearId);
+        return Ok(new CountResponse(count));
+    }
+
     [HttpGet("supplier-invoices/{id:int}")]
     [ProducesResponseType<SupplierInvoiceResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
