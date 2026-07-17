@@ -1,0 +1,15 @@
+#!/bin/bash
+# Restores .NET dependencies the first time a worktree (or fresh clone) is
+# checked out, so obj/bin exist and the C# LSP isn't working off a stale
+# project. Git passes an all-zero SHA as the previous HEAD on that first
+# checkout, which is what distinguishes it from an ordinary branch switch
+# in an already-restored worktree.
+set -e
+
+prev_head=$1
+is_branch_checkout=$3
+
+if [ "$is_branch_checkout" -eq 1 ] && [ "$prev_head" = "0000000000000000000000000000000000000000" ]; then
+    echo "New worktree detected, restoring .NET dependencies..."
+    dotnet restore
+fi
