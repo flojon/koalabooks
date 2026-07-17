@@ -104,6 +104,54 @@ public class JournalEntriesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = created!.Id }, MapEntry(created));
     }
 
+    [HttpPut("journal-entries/{id:int}")]
+    [ProducesResponseType<JournalEntryResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateJournalEntryRequest request)
+    {
+        var existing = await _journalEntryService.GetByIdAsync(id);
+        if (existing is null) return NotFound();
+
+        var entry = new JournalEntry
+        {
+            Id = id,
+            Date = request.Date,
+            Description = request.Description,
+            Lines = request.Lines.Select(l => new JournalEntryLine
+            {
+                AccountId = l.AccountId,
+                DebitAmount = l.DebitAmount,
+                CreditAmount = l.CreditAmount
+            }).ToList()
+        };
+
+        var (updated, error) = await _journalEntryService.UpdateAsync(entry);
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return Ok(MapEntry(updated!));
+    }
+
+    [HttpPost("journal-entries/{id:int}/post")]
+    [ProducesResponseType<JournalEntryResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Post(int id)
+    {
+        var entry = await _journalEntryService.GetByIdAsync(id);
+        if (entry is null) return NotFound();
+
+        var error = await _journalEntryService.PostAsync(id);
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        var posted = await _journalEntryService.GetByIdAsync(id);
+        return Ok(MapEntry(posted!));
+    }
+
     [HttpDelete("journal-entries/{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
