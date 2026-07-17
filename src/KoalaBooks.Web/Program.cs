@@ -70,6 +70,7 @@ else
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
+builder.Services.AddScoped<ICurrentFiscalYearContext, CookieCurrentFiscalYearContext>();
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {

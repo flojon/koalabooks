@@ -13,6 +13,7 @@ namespace KoalaBooks.Tests;
 public class TestFixture : IDisposable
 {
     private readonly LocalCurrentUser _currentUser;
+    private readonly LocalCurrentFiscalYearContext _fiscalYearContext;
     private readonly string _dbName;
 
     public AppDbContext Db { get; }
@@ -40,6 +41,7 @@ public class TestFixture : IDisposable
         // After the org is created, SetActiveTenant sets the real id so all
         // subsequent service calls and query filters see the correct organisation.
         _currentUser = new LocalCurrentUser();
+        _fiscalYearContext = new LocalCurrentFiscalYearContext();
         Db = new AppDbContext(options, _currentUser);
         Db.Database.EnsureCreated();
 
@@ -50,7 +52,7 @@ public class TestFixture : IDisposable
         SetActiveTenant(OrganisationId);
 
         JournalEntryService = new JournalEntryService(Db);
-        FiscalYearService = new FiscalYearService(Db, _currentUser);
+        FiscalYearService = new FiscalYearService(Db, _currentUser, _fiscalYearContext);
         VoucherGapService = new VoucherGapService(Db);
         YearEndClosingService = new YearEndClosingService(Db, FiscalYearService, VoucherGapService);
         SieExportService = new SieExportService(Db);
@@ -62,6 +64,11 @@ public class TestFixture : IDisposable
     public void SetActiveTenant(int orgId)
     {
         _currentUser.OrganisationId = orgId;
+    }
+
+    public void SetSelectedFiscalYear(int? fiscalYearId)
+    {
+        _fiscalYearContext.SelectedFiscalYearId = fiscalYearId;
     }
 
     public void Dispose()

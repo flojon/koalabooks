@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Interfaces
 @using Microsoft.Extensions.DependencyInjection
 @using Microsoft.Extensions.Logging
@@ -17,6 +18,21 @@
         <MudSpacer />
         <AuthorizeView>
             <Authorized>
+                @if (_openFiscalYears.Count > 1)
+                {
+                    <form method="post" action="/FiscalYear/Select" style="display:inline-flex; align-items:center; margin-right:1rem;">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="returnUrl" value="@("/" + Navigation.ToBaseRelativePath(Navigation.Uri))" />
+                        <select name="fiscalYearId" onchange="this.form.submit()"
+                                title="Aktivt räkenskapsår — flera är öppna samtidigt"
+                                style="background:transparent; color:inherit; border:1px solid #CBD5E1; border-radius:4px; padding:2px 6px;">
+                            @foreach (var fy in _openFiscalYears)
+                            {
+                                <option value="@fy.Id" selected="@(fy.Id == _activeFiscalYearId ? "selected" : null)">@fy.Name</option>
+                            }
+                        </select>
+                    </form>
+                }
                 <MudText Typo="Typo.body2" Class="mr-2" Style="color:#CBD5E1;">@context.User.Identity?.Name</MudText>
                 <form method="post" action="/account/logout" style="display:inline;">
                     <AntiforgeryToken />
@@ -109,6 +125,9 @@
     private bool _loadingTodoCount;
     private int _draftCount;
     private bool _loadingDraftCount;
+    private List<FiscalYear> _openFiscalYears = [];
+    private int? _activeFiscalYearId;
+    private bool _loadingFiscalYearSwitcher;
 
     // Collapse state — persists across badge refreshes within the session
     // Transaktioner and Rapporter start expanded; Inställningar and Data collapsed (lower-frequency)
@@ -122,6 +141,7 @@
         Navigation.LocationChanged += OnLocationChanged;
         await LoadTodoCountAsync();
         await LoadDraftCountAsync();
+        await LoadFiscalYearSwitcherAsync();
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -139,6 +159,14 @@
             _ = InvokeAsync(async () =>
             {
                 await LoadDraftCountAsync();
+                StateHasChanged();
+            });
+        }
+        if (!_loadingFiscalYearSwitcher)
+        {
+            _ = InvokeAsync(async () =>
+            {
+                await LoadFiscalYearSwitcherAsync();
                 StateHasChanged();
             });
         }
@@ -198,6 +226,31 @@
         finally
         {
             _loadingDraftCount = false;
+        }
+    }
+
+    private async Task LoadFiscalYearSwitcherAsync()
+    {
+        if (_loadingFiscalYearSwitcher) return;
+        _loadingFiscalYearSwitcher = true;
+        try
+        {
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var fySvc = scope.ServiceProvider.GetRequiredService<IFiscalYearService>();
+
+            var all = await fySvc.GetAllAsync();
+            _openFiscalYears = all.Where(f => !f.IsClosed).OrderBy(f => f.StartDate).ToList();
+
+            var active = await fySvc.GetActiveAsync();
+            _activeFiscalYearId = active?.Id;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load fiscal year switcher");
+        }
+        finally
+        {
+            _loadingFiscalYearSwitcher = false;
         }
     }
 

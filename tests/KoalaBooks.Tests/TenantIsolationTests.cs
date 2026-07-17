@@ -1,4 +1,5 @@
 using KoalaBooks.Application.Services;
+using KoalaBooks.Domain;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
@@ -57,7 +58,7 @@ public class TenantIsolationTests : IDisposable
         SeedFiscalYear(_orgAId, "2026");
 
         using var dbB = DbFor(_orgBId);
-        IFiscalYearService fiscalYearService = new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId));
+        IFiscalYearService fiscalYearService = new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId), new LocalCurrentFiscalYearContext());
         var results = await fiscalYearService.GetAllAsync();
 
         Assert.Empty(results);
@@ -69,7 +70,7 @@ public class TenantIsolationTests : IDisposable
         var fyA = SeedFiscalYear(_orgAId, "2026");
 
         using var dbB = DbFor(_orgBId);
-        IFiscalYearService service = new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId));
+        IFiscalYearService service = new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId), new LocalCurrentFiscalYearContext());
         var result = await service.GetByIdAsync(fyA.Id);
 
         Assert.Null(result);
@@ -229,7 +230,7 @@ public class TenantIsolationTests : IDisposable
         var fyA = SeedFiscalYear(_orgAId, "2026");
 
         using var dbA = DbFor(_orgAId);
-        IFiscalYearService service = new FiscalYearService(dbA, TestFixture.MakeTenant(_orgAId));
+        IFiscalYearService service = new FiscalYearService(dbA, TestFixture.MakeTenant(_orgAId), new LocalCurrentFiscalYearContext());
         var result = await service.GetByIdAsync(fyA.Id);
 
         Assert.NotNull(result);
@@ -247,11 +248,11 @@ public class TenantIsolationTests : IDisposable
         // context type are alive simultaneously.
         List<FiscalYear> allA;
         using (var dbA = DbFor(_orgAId))
-            allA = await new FiscalYearService(dbA, TestFixture.MakeTenant(_orgAId)).GetAllAsync();
+            allA = await new FiscalYearService(dbA, TestFixture.MakeTenant(_orgAId), new LocalCurrentFiscalYearContext()).GetAllAsync();
 
         List<FiscalYear> allB;
         using (var dbB = DbFor(_orgBId))
-            allB = await new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId)).GetAllAsync();
+            allB = await new FiscalYearService(dbB, TestFixture.MakeTenant(_orgBId), new LocalCurrentFiscalYearContext()).GetAllAsync();
 
         Assert.All(allA, fy => Assert.Equal(_orgAId, fy.OrganisationId));
         Assert.All(allB, fy => Assert.Equal(_orgBId, fy.OrganisationId));

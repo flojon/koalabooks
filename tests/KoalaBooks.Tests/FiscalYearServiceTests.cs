@@ -70,6 +70,77 @@ public class FiscalYearServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetActiveAsync_MultipleOpenYears_PrefersExplicitSelection()
+    {
+        var y2025 = _f.CreateFiscalYear("2025",
+            new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31));
+        _f.CreateFiscalYear("2026",
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+
+        // Both years are open (2025 awaiting bokslut, 2026 already in use).
+        // A user working through 2025's gap explanations/late invoices should
+        // stay in 2025 once they've explicitly switched to it.
+        _f.SetSelectedFiscalYear(y2025.Id);
+
+        var active = await _f.FiscalYearService.GetActiveAsync();
+
+        Assert.NotNull(active);
+        Assert.Equal(y2025.Id, active.Id);
+    }
+
+    [Fact]
+    public async Task GetActiveAsync_SelectionPointsToClosedYear_FallsBackToDefault()
+    {
+        var y2025 = _f.CreateFiscalYear("2025",
+            new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31));
+        var y2026 = _f.CreateFiscalYear("2026",
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+
+        _f.SetSelectedFiscalYear(y2025.Id);
+        y2025.IsClosed = true;
+        _f.Db.SaveChanges();
+
+        var active = await _f.FiscalYearService.GetActiveAsync();
+
+        Assert.NotNull(active);
+        Assert.Equal(y2026.Id, active.Id);
+    }
+
+    [Fact]
+    public async Task GetActiveAsync_SelectionIsUnknownId_FallsBackToDefault()
+    {
+        var open = _f.CreateFiscalYear("2026",
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+
+        _f.SetSelectedFiscalYear(999_999);
+
+        var active = await _f.FiscalYearService.GetActiveAsync();
+
+        Assert.NotNull(active);
+        Assert.Equal(open.Id, active.Id);
+    }
+
+    [Fact]
+    public async Task GetActiveAsync_NoSelection_PrefersYearContainingToday()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // "Old" year is still ongoing today and hasn't been closed yet.
+        var oldYear = _f.CreateFiscalYear("Old",
+            today.AddYears(-1).AddDays(1), today);
+
+        // "Next" year was created early (starts tomorrow) while Old awaits closing.
+        // Latest-StartDate ordering alone would wrongly prefer this one.
+        _f.CreateFiscalYear("Next",
+            today.AddDays(1), today.AddYears(1));
+
+        var active = await _f.FiscalYearService.GetActiveAsync();
+
+        Assert.NotNull(active);
+        Assert.Equal(oldYear.Id, active.Id);
+    }
+
+    [Fact]
     public async Task GetAllAsync_ReturnsAllYears()
     {
         var fy1 = _f.CreateFiscalYear("2025",

@@ -163,7 +163,7 @@ public static class DemoDataSeeder
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 11, 5), expense, payables, 4000m, "Inköp material").ConfigureAwait(false);
 
         // Close via the real service so it posts closing entries and propagates balances forward; wrap in the execution strategy since it opens its own transaction.
-        var fiscalYearService = new FiscalYearService(db, tenant);
+        var fiscalYearService = new FiscalYearService(db, tenant, new LocalCurrentFiscalYearContext());
         var voucherGapService = new VoucherGapService(db);
         var closingService = new YearEndClosingService(db, fiscalYearService, voucherGapService);
         var strategy = db.Database.CreateExecutionStrategy();

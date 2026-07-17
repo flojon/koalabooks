@@ -11,11 +11,13 @@ public class FiscalYearService : IFiscalYearService
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly ICurrentFiscalYearContext _fiscalYearContext;
 
-    public FiscalYearService(AppDbContext db, ICurrentUser currentUser)
+    public FiscalYearService(AppDbContext db, ICurrentUser currentUser, ICurrentFiscalYearContext fiscalYearContext)
     {
         _db = db;
         _currentUser = currentUser;
+        _fiscalYearContext = fiscalYearContext;
     }
 
     public async Task<List<FiscalYear>> GetAllAsync()
@@ -32,10 +34,25 @@ public class FiscalYearService : IFiscalYearService
 
     public async Task<FiscalYear?> GetActiveAsync()
     {
-        return await _db.FiscalYears
+        // Multiple non-closed years can legitimately coexist (e.g. next year started
+        // while the previous year is still awaiting bokslut). If the user has explicitly
+        // switched to one of them, honor that unless it's since been closed or no longer
+        // resolves (stale selection, e.g. from a different tenant).
+        var selectedId = _fiscalYearContext.SelectedFiscalYearId;
+        if (selectedId is not null)
+        {
+            var selected = await _db.FiscalYears
+                .FirstOrDefaultAsync(f => f.Id == selectedId && !f.IsClosed).ConfigureAwait(false);
+            if (selected is not null) return selected;
+        }
+
+        var openYears = await _db.FiscalYears
             .Where(f => !f.IsClosed)
-            .OrderByDescending(f => f.StartDate)
-            .FirstOrDefaultAsync().ConfigureAwait(false);
+            .ToListAsync().ConfigureAwait(false);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return openYears.FirstOrDefault(f => f.StartDate <= today && f.EndDate >= today)
+            ?? openYears.OrderByDescending(f => f.StartDate).FirstOrDefault();
     }
 
     public async Task<FiscalYear> CreateAsync(FiscalYear fiscalYear)
