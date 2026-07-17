@@ -994,11 +994,11 @@ public class ApiTests : IAsyncLifetime
             await db.SaveChangesAsync();
         }
 
-        var client2 = await AuthenticatedClientAsync();
-        var countResponse = await client2.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/bank-transactions/unmatched-count");
-        Assert.Equal(HttpStatusCode.OK, countResponse.StatusCode);
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/bank-transactions/unmatched-count");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        var json = await countResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(1, json.GetProperty("count").GetInt32());
     }
 
