@@ -110,7 +110,7 @@ git commit -m "feat: add BackgroundJobRun entity and BackgroundJobType/Backgroun
 
 **Interfaces:**
 - Consumes: `BackgroundJobRun` (Task 1)
-- Produces: `AppDbContext.BackgroundJobRuns : DbSet<BackgroundJobRun>`, a `BackgroundJobRuns` Postgres table with an FK to `Organisations` and a composite index on `(OrganisationId, JobType, Status)`
+- Produces: `AppDbContext.BackgroundJobRuns : DbSet<BackgroundJobRun>`, a `BackgroundJobRuns` Postgres table with an FK to `Organisations` and a composite index on `(OrganisationId, JobType, Acknowledged)`
 
 - [ ] **Step 1: Add the `DbSet`**
 
@@ -136,10 +136,12 @@ In the same file, add a new block at the end of `OnModelCreating`, right after t
                   .OnDelete(DeleteBehavior.Restrict);
 
             // The shape of the "open/unacknowledged runs for this org+JobType" query
-            // IBackgroundJobRunService.GetOpenRunsAsync runs, and that
+            // IBackgroundJobRunService.GetOpenRunsAsync runs (filtered on Acknowledged,
+            // not Status — a completed-but-unacknowledged run must still be returned so
+            // the poller can fire OnRunCompleted for it), and that
             // BackgroundJobStatusPoller hits on every 5s tick for every open job on every
             // visible page.
-            entity.HasIndex(r => new { r.OrganisationId, r.JobType, r.Status });
+            entity.HasIndex(r => new { r.OrganisationId, r.JobType, r.Acknowledged });
         });
 ```
 
@@ -151,7 +153,7 @@ dotnet ef migrations add AddBackgroundJobRuns \
   --startup-project src/KoalaBooks.Web
 ```
 
-Expected: new files appear under `src/KoalaBooks.Infrastructure/Migrations/`, and `AppDbContextModelSnapshot.cs` is updated. The generated `Up()` should contain a `CreateTable("BackgroundJobRuns", ...)`, a `CreateIndex` for the FK on `OrganisationId`, and a `CreateIndex` for the composite `(OrganisationId, JobType, Status)` index — no hand-editing needed (this is a brand-new table, no backfill).
+Expected: new files appear under `src/KoalaBooks.Infrastructure/Migrations/`, and `AppDbContextModelSnapshot.cs` is updated. The generated `Up()` should contain a `CreateTable("BackgroundJobRuns", ...)`, a `CreateIndex` for the FK on `OrganisationId`, and a `CreateIndex` for the composite `(OrganisationId, JobType, Acknowledged)` index — no hand-editing needed (this is a brand-new table, no backfill).
 
 - [ ] **Step 4: Build to confirm it compiles**
 
@@ -488,6 +490,29 @@ public class BackgroundJobRunServiceTests : IDisposable
         var svc = _fx.MakeBackgroundJobRunService();
         await svc.AcknowledgeAsync(999_999);
     }
+
+    [Fact]
+    public async Task AcknowledgeAsync_AnotherOrganisationsRunId_NoOpsWithoutThrowing()
+    {
+        // Mirrors GetOpenRunsAsync_DoesNotReturnAnotherOrganisationsRuns: AcknowledgeAsync
+        // reads through the same tenant-filtered db.BackgroundJobRuns DbSet, so switching
+        // tenant mid-test should make the original org's run invisible to it rather than
+        // throwing or acknowledging across tenants.
+        var svc = _fx.MakeBackgroundJobRunService();
+        var run = await svc.CreateRunAsync(BackgroundJobType.SieImport);
+        var originalOrgId = _fx.OrganisationId;
+
+        var otherOrg = new Organisation { Name = "Other Org", Slug = "other-org" };
+        _fx.Db.Organisations.Add(otherOrg);
+        await _fx.Db.SaveChangesAsync();
+        _fx.SetActiveTenant(otherOrg.Id);
+
+        await svc.AcknowledgeAsync(run.Id);
+
+        _fx.SetActiveTenant(originalOrgId);
+        var reloaded = await _fx.Db.BackgroundJobRuns.FirstAsync(r => r.Id == run.Id);
+        Assert.False(reloaded.Acknowledged);
+    }
 }
 ```
 
@@ -578,7 +603,7 @@ builder.Services.AddScoped<IBackgroundJobRunService, BackgroundJobRunService>();
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter BackgroundJobRunServiceTests`
-Expected: 4 passed.
+Expected: 5 passed.
 
 - [ ] **Step 6: Commit**
 
@@ -819,17 +844,19 @@ git commit -m "feat: add BackgroundJobStatusPoller component"
 
 **Interfaces:**
 - Consumes: `AppDbContext.BackgroundJobRuns` (Task 2), `BackgroundJobStatus` (Task 1), Hangfire's `IApplyStateFilter`/`ApplyStateContext`/`FailedState`/`IWriteOnlyTransaction` (from `Hangfire.Core`, already referenced)
-- Produces: `KoalaBooks.Application.Jobs.BackgroundJobRunFailureFilter(IServiceScopeFactory scopeFactory) : IApplyStateFilter`, `internal static void BackgroundJobRunFailureFilter.MarkFailedIfOpen(AppDbContext db, int runId)`
+- Produces: `KoalaBooks.Application.Jobs.BackgroundJobRunFailureFilter(IServiceScopeFactory scopeFactory) : IApplyStateFilter`, `internal static void BackgroundJobRunFailureFilter.MarkFailedIfOpen(AppDbContext db, int runId)`, `internal static bool BackgroundJobRunFailureFilter.TryExtractRunId(Hangfire.Common.Job job, out int runId)`
 
-There's no existing `IApplyStateFilter` in this codebase and no Hangfire test infrastructure (Hangfire itself is excluded from the `Testing` environment — see `Program.cs`'s `if (!builder.Environment.IsEnvironment("Testing"))` guard around `AddHangfire`). Constructing a real `ApplyStateContext` in a unit test would mean faking several of Hangfire's internal types for no real gain, so this task separates the pure, testable failure-marking logic (`MarkFailedIfOpen`, tested directly against a real `AppDbContext`) from the thin `IApplyStateFilter` wiring around it (verified manually in Task 7's run-through, the same way `HangfireDocumentExtractionQueue` was in the #208 plan).
+There's no existing `IApplyStateFilter` in this codebase and no Hangfire test infrastructure (Hangfire itself is excluded from the `Testing` environment — see `Program.cs`'s `if (!builder.Environment.IsEnvironment("Testing"))` guard around `AddHangfire`). Constructing a real `ApplyStateContext` in a unit test would mean faking several of Hangfire's internal types for no real gain, so this task separates the pure, testable logic from the thin `IApplyStateFilter` wiring around it: `MarkFailedIfOpen` (tested directly against a real `AppDbContext`) and `TryExtractRunId` (tested directly against `Hangfire.Common.Job` — a plain data class Hangfire itself constructs from a `Type`/`MethodInfo`/args, unlike `ApplyStateContext`, so it needs no faking). `TryExtractRunId` is where the actual correlation risk lives: scoping by `BackgroundJobRunBase` rather than just "first arg is an int" is what stops a failed `DocumentExtractionJob.RunAsync(int documentId)` from being mistaken for a `BackgroundJobRun`-based job whose `Id` happens to numerically collide with that `documentId` — `Document.Id` and `BackgroundJobRun.Id` are independent identity sequences, so collisions are routine, not edge cases. That risk gets its own regression tests below rather than being left to manual verification. Only the outermost `OnStateApplied` plumbing (the `NewState` check and DI scope resolution) is left to Task 7's manual run-through, the same way `HangfireDocumentExtractionQueue` was in the #208 plan.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```csharp
 // tests/KoalaBooks.Tests/BackgroundJobRunFailureFilterTests.cs
+using Hangfire.Common;
 using KoalaBooks.Application.Jobs;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
@@ -873,6 +900,58 @@ public class BackgroundJobRunFailureFilterTests : IDisposable
     {
         BackgroundJobRunFailureFilter.MarkFailedIfOpen(_fx.Db, 999_999);
     }
+
+    [Fact]
+    public void TryExtractRunId_BackgroundJobRunBaseJob_ReturnsTrueWithRunId()
+    {
+        var method = typeof(FakeBackgroundJob).GetMethod(nameof(FakeBackgroundJob.RunAsync))!;
+        var job = new Job(typeof(FakeBackgroundJob), method, 42);
+
+        var found = BackgroundJobRunFailureFilter.TryExtractRunId(job, out var runId);
+
+        Assert.True(found);
+        Assert.Equal(42, runId);
+    }
+
+    [Fact]
+    public void TryExtractRunId_NonBackgroundJobRunBaseJob_ReturnsFalse()
+    {
+        // Regression test for the runId/documentId collision hazard: DocumentExtractionJob
+        // .RunAsync(int documentId) has the exact same (single int arg) shape as every
+        // BackgroundJobRunBase job's RunAsync(int runId). Without scoping by Type, a
+        // failed DocumentExtractionJob whose documentId happens to numerically match an
+        // unrelated open BackgroundJobRun.Id would wrongly mark that run Failed.
+        var method = typeof(FakeNonBackgroundJob).GetMethod(nameof(FakeNonBackgroundJob.RunAsync))!;
+        var job = new Job(typeof(FakeNonBackgroundJob), method, 42);
+
+        var found = BackgroundJobRunFailureFilter.TryExtractRunId(job, out _);
+
+        Assert.False(found);
+    }
+
+    [Fact]
+    public void TryExtractRunId_BackgroundJobRunBaseJobWithNoArgs_ReturnsFalse()
+    {
+        var method = typeof(FakeBackgroundJob).GetMethod(nameof(FakeBackgroundJob.RunWithNoArgs))!;
+        var job = new Job(typeof(FakeBackgroundJob), method);
+
+        var found = BackgroundJobRunFailureFilter.TryExtractRunId(job, out _);
+
+        Assert.False(found);
+    }
+}
+
+file class FakeBackgroundJob(DbContextOptions<AppDbContext> dbOptions) : BackgroundJobRunBase(dbOptions)
+{
+    public Task RunAsync(int runId) => Task.CompletedTask;
+    public Task RunWithNoArgs() => Task.CompletedTask;
+}
+
+file class FakeNonBackgroundJob
+{
+    // Mirrors DocumentExtractionJob.RunAsync(int documentId)'s shape on purpose — see
+    // TryExtractRunId_NonBackgroundJobRunBaseJob_ReturnsFalse above.
+    public Task RunAsync(int documentId) => Task.CompletedTask;
 }
 ```
 
@@ -905,17 +984,29 @@ public class BackgroundJobRunFailureFilter(IServiceScopeFactory scopeFactory) : 
     public void OnStateApplied(ApplyStateContext context, IWriteOnlyTransaction transaction)
     {
         if (context.NewState is not FailedState) return;
-
-        // Every BackgroundJobRun-based job's RunAsync(int runId) takes the run id as its
-        // sole argument, per the Enqueue(int runId) convention every Hangfire<Feature>Queue
-        // follows — so Args[0] is always the runId for jobs this filter cares about. Other
-        // jobs (e.g. DocumentExtractionJob.RunAsync(int documentId)) also hit this filter
-        // on failure; MarkFailedIfOpen below simply no-ops if the id doesn't match an open run.
-        if (context.BackgroundJob.Job.Args.Count == 0 || context.BackgroundJob.Job.Args[0] is not int runId) return;
+        if (!TryExtractRunId(context.BackgroundJob.Job, out var runId)) return;
 
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         MarkFailedIfOpen(db, runId);
+    }
+
+    // Every BackgroundJobRun-based job (ZipImportJob and the four #279-282 jobs) inherits
+    // BackgroundJobRunBase, and its RunAsync(int runId) takes the run id as its sole
+    // argument, per the Enqueue(int runId) convention every Hangfire<Feature>Queue
+    // follows. The Type check matters, not just the arg shape: other jobs — e.g.
+    // DocumentExtractionJob.RunAsync(int documentId) — also take a single int argument,
+    // and Document.Id/BackgroundJobRun.Id are independent identity sequences that will
+    // routinely collide numerically. Without scoping by Type, a failed
+    // DocumentExtractionJob could wrongly mark an unrelated open BackgroundJobRun Failed.
+    internal static bool TryExtractRunId(Job job, out int runId)
+    {
+        runId = 0;
+        if (!typeof(BackgroundJobRunBase).IsAssignableFrom(job.Type)) return false;
+        if (job.Args.Count == 0 || job.Args[0] is not int id) return false;
+
+        runId = id;
+        return true;
     }
 
     internal static void MarkFailedIfOpen(AppDbContext db, int runId)
@@ -968,7 +1059,7 @@ if (!app.Environment.IsEnvironment("Testing"))
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `dotnet test tests/KoalaBooks.Tests --filter BackgroundJobRunFailureFilterTests`
-Expected: 3 passed.
+Expected: 6 passed.
 
 - [ ] **Step 6: Build the Web project to confirm `Program.cs` compiles**
 
