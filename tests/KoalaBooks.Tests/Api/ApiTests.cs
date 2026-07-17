@@ -105,6 +105,7 @@ public class ApiTests : IAsyncLifetime
         var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("client_id", "koalabooks-api"),
             new KeyValuePair<string, string>("username", TestEmail),
             new KeyValuePair<string, string>("password", TestPassword)
         ]));
@@ -146,6 +147,36 @@ public class ApiTests : IAsyncLifetime
         Assert.NotEmpty(token);
         var orgId = DecodeOrgIdFromToken(token);
         Assert.Equal(_orgId.ToString(), orgId);
+    }
+
+    [Fact]
+    public async Task ConnectToken_UnregisteredClientId_ReturnsUnauthorized()
+    {
+        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("client_id", "not-a-real-client"),
+            new KeyValuePair<string, string>("username", TestEmail),
+            new KeyValuePair<string, string>("password", TestPassword)
+        ]));
+        // OpenIddict treats an unrecognized client_id as a client-authentication failure
+        // (RFC 6749 §5.2 "invalid_client"), reported as 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ConnectToken_MissingClientId_ReturnsUnauthorized()
+    {
+        // A request with no client_id at all used to be accepted anonymously; now that a
+        // real client is registered and anonymous clients are no longer accepted, client_id
+        // is mandatory and an omitted one must be rejected.
+        var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("grant_type", "password"),
+            new KeyValuePair<string, string>("username", TestEmail),
+            new KeyValuePair<string, string>("password", TestPassword)
+        ]));
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     // ── Fiscal year tests ───────────────────────────────────────────────────────
@@ -527,6 +558,326 @@ public class ApiTests : IAsyncLifetime
     {
         var client = await AuthenticatedClientAsync();
         var response = await client.PostAsJsonAsync("/api/v1/journal-entries/999999/reverse", new { reason = "Nope" });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // ── Supplier invoice tests ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SupplierInvoices_List_ReturnsPaginatedResult()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(json.TryGetProperty("items", out _));
+        Assert.True(json.TryGetProperty("totalCount", out _));
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_List_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/supplier-invoices");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Create_ValidInvoice_Returns201WithLocation()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var body = new
+        {
+            supplierName = "Acme AB",
+            invoiceDate = "2026-03-01",
+            dueDate = "2026-03-31",
+            amountExclVat = 800m,
+            vatAmount = 200m,
+            totalAmount = 1000m
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", body);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(response.Headers.Location);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Acme AB", json.GetProperty("supplierName").GetString());
+        Assert.Equal(1000m, json.GetProperty("totalAmount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Create_ZeroTotal_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var body = new
+        {
+            supplierName = "Acme AB",
+            invoiceDate = "2026-03-01",
+            dueDate = "2026-03-31",
+            amountExclVat = 0m,
+            vatAmount = 0m,
+            totalAmount = 0m
+        };
+
+        var response = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_GetById_ReturnsInvoice()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var createBody = new
+        {
+            supplierName = "Read-back Supplier",
+            invoiceDate = "2026-04-01",
+            dueDate = "2026-04-30",
+            amountExclVat = 400m,
+            vatAmount = 100m,
+            totalAmount = 500m
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var invoiceId = created.GetProperty("id").GetInt32();
+
+        var response = await client.GetAsync($"/api/v1/supplier-invoices/{invoiceId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Read-back Supplier", json.GetProperty("supplierName").GetString());
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_GetById_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/supplier-invoices/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Update_DraftInvoice_Returns200WithUpdatedFields()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var createBody = new
+        {
+            supplierName = "Original Name",
+            invoiceDate = "2026-05-01",
+            dueDate = "2026-05-31",
+            amountExclVat = 400m,
+            vatAmount = 100m,
+            totalAmount = 500m
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var invoiceId = created.GetProperty("id").GetInt32();
+
+        var updateBody = new
+        {
+            supplierName = "Updated Name",
+            invoiceDate = "2026-05-02",
+            dueDate = "2026-06-01",
+            amountExclVat = 450m,
+            vatAmount = 112.5m,
+            totalAmount = 562.5m
+        };
+        var updateResp = await client.PutAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}", updateBody);
+        Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
+
+        var updated = await updateResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Updated Name", updated.GetProperty("supplierName").GetString());
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Update_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var body = new
+        {
+            supplierName = "Nope",
+            invoiceDate = "2026-05-01",
+            dueDate = "2026-05-31",
+            amountExclVat = 100m,
+            vatAmount = 0m,
+            totalAmount = 100m
+        };
+        var response = await client.PutAsJsonAsync("/api/v1/supplier-invoices/999999", body);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Delete_DraftInvoice_Returns204()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var createBody = new
+        {
+            supplierName = "To be deleted",
+            invoiceDate = "2026-06-01",
+            dueDate = "2026-06-30",
+            amountExclVat = 100m,
+            vatAmount = 25m,
+            totalAmount = 125m
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var invoiceId = created.GetProperty("id").GetInt32();
+
+        var deleteResp = await client.DeleteAsync($"/api/v1/supplier-invoices/{invoiceId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_Delete_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.DeleteAsync("/api/v1/supplier-invoices/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_GetById_CrossTenant_Returns404()
+    {
+        var (_, otherFiscalYearId, _) = await SeedSecondTenantAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherInvoice = new SupplierInvoice
+        {
+            FiscalYearId = otherFiscalYearId,
+            SupplierName = "Other tenant supplier",
+            InvoiceDate = new DateOnly(2026, 1, 15),
+            DueDate = new DateOnly(2026, 2, 15),
+            AmountExclVat = 100m,
+            VatAmount = 25m,
+            TotalAmount = 125m
+        };
+        db.SupplierInvoices.Add(otherInvoice);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/supplier-invoices/{otherInvoice.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // ── Bank transaction tests ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BankTransactions_List_ReturnsPaginatedResult()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var cashAccount = await db.Accounts.IgnoreQueryFilters()
+                .FirstAsync(a => a.FiscalYearId == _fiscalYearId && a.AccountNumber == "1910");
+            db.BankTransactions.Add(new BankTransaction
+            {
+                OrganisationId = _orgId, AccountId = cashAccount.Id,
+                Date = new DateOnly(2025, 6, 1), Amount = 500m, Description = "Deposit"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/bank-transactions?page=1&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items").EnumerateArray().ToList();
+        Assert.Single(items);
+        Assert.Equal("Deposit", items[0].GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task BankTransactions_List_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/bank-transactions");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task BankTransactions_List_FiltersByDateRange()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var cashAccount = await db.Accounts.IgnoreQueryFilters()
+                .FirstAsync(a => a.FiscalYearId == _fiscalYearId && a.AccountNumber == "1910");
+            db.BankTransactions.AddRange(
+                new BankTransaction { OrganisationId = _orgId, AccountId = cashAccount.Id, Date = new DateOnly(2025, 1, 1), Amount = 100m, Description = "January" },
+                new BankTransaction { OrganisationId = _orgId, AccountId = cashAccount.Id, Date = new DateOnly(2025, 8, 1), Amount = 200m, Description = "August" });
+            await db.SaveChangesAsync();
+        }
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/bank-transactions?from=2025-07-01&to=2025-12-31");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items").EnumerateArray().ToList();
+        Assert.Single(items);
+        Assert.Equal("August", items[0].GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task BankTransactions_GetById_ReturnsTransaction()
+    {
+        int txId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var cashAccount = await db.Accounts.IgnoreQueryFilters()
+                .FirstAsync(a => a.FiscalYearId == _fiscalYearId && a.AccountNumber == "1910");
+            var tx = new BankTransaction
+            {
+                OrganisationId = _orgId, AccountId = cashAccount.Id,
+                Date = new DateOnly(2025, 5, 1), Amount = 300m, Description = "Read-back tx"
+            };
+            db.BankTransactions.Add(tx);
+            await db.SaveChangesAsync();
+            txId = tx.Id;
+        }
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/bank-transactions/{txId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Read-back tx", json.GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task BankTransactions_GetById_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/bank-transactions/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task BankTransactions_GetById_CrossTenant_Returns404()
+    {
+        var (otherOrgId, _, otherAccountId) = await SeedSecondTenantAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherTx = new BankTransaction
+        {
+            OrganisationId = otherOrgId, AccountId = otherAccountId,
+            Date = new DateOnly(2025, 5, 1), Amount = 100m, Description = "Other tenant tx"
+        };
+        db.BankTransactions.Add(otherTx);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/bank-transactions/{otherTx.Id}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }
