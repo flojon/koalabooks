@@ -28,7 +28,7 @@
                                 style="background:transparent; color:inherit; border:1px solid #CBD5E1; border-radius:4px; padding:2px 6px;">
                             @foreach (var fy in _openFiscalYears)
                             {
-                                <option value="@fy.Id" selected="@(fy.Id == _activeFiscalYearId ? "selected" : null)">@fy.Name</option>
+                                <option value="@fy.Id" selected="@(fy.Id == _activeFiscalYearId ? "selected" : null)" style="color:#0F172A; background:#FFFFFF;">@fy.Name</option>
                             }
                         </select>
                     </form>

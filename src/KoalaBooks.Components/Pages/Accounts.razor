@@ -240,7 +240,7 @@ else
     {
         _isLoading = true;
         var allYears = await FiscalYearService.GetAllAsync();
-        _activeFiscalYear = allYears.FirstOrDefault(f => !f.IsClosed)
+        _activeFiscalYear = await FiscalYearService.GetActiveAsync()
                          ?? allYears.OrderByDescending(f => f.StartDate).FirstOrDefault();
         _otherFiscalYears = allYears
             .Where(f => f.Id != _activeFiscalYear?.Id)

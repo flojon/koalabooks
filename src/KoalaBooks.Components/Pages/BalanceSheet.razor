@@ -106,7 +106,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _fiscalYears = await FiscalYearService.GetAllAsync();
-        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
+        var active = await FiscalYearService.GetActiveAsync() ?? _fiscalYears.FirstOrDefault();
         if (active is not null)
         {
             SelectedFiscalYearId = active.Id;

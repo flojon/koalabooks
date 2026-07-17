@@ -370,7 +370,7 @@ else
     {
         _isLoading = true;
         _allFiscalYears = await FiscalYearService.GetAllAsync();
-        _activeFiscalYear = _allFiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _allFiscalYears.FirstOrDefault();
+        _activeFiscalYear = await FiscalYearService.GetActiveAsync() ?? _allFiscalYears.FirstOrDefault();
         if (!_allFiscalYears.Any())
         {
             _isLoading = false;
