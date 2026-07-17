@@ -719,6 +719,10 @@ namespace KoalaBooks.Infrastructure.Migrations
                     b.Property<bool>("Done")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<int>("ImportedCount")
                         .HasColumnType("integer");
 

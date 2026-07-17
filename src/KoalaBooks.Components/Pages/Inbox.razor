@@ -180,7 +180,7 @@ else
         _openZipBatches = await DocumentService.GetOpenZipBatchesAsync();
         foreach (var batch in _openZipBatches.Where(b => b.Done).ToList())
         {
-            var summary = $"Import klar: {batch.ImportedCount} importerade";
+            var summary = $"{batch.FileName}: {batch.ImportedCount} dokument importerades";
             if (batch.SkippedCount > 0)
             {
                 var reasons = string.Join(", ", batch.SkippedReasons.Select(s => $"{s.FileName}: {s.Reason}"));
@@ -295,7 +295,7 @@ else
 
                 if (isZip)
                 {
-                    var (batchId, zipErr) = await DocumentService.UploadZipAsync(() => file.OpenReadStream(fileMaxBytes));
+                    var (batchId, zipErr) = await DocumentService.UploadZipAsync(file.Name, () => file.OpenReadStream(fileMaxBytes));
                     if (zipErr is not null)
                     {
                         _error = $"{file.Name}: {zipErr}";

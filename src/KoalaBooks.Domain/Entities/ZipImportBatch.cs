@@ -4,6 +4,7 @@ public class ZipImportBatch
 {
     public int Id { get; set; }
     public int OrganisationId { get; set; }
+    public string FileName { get; set; } = "";
     public uint? StagingOid { get; set; }
     public int TotalEntries { get; set; }
     public int ProcessedEntries { get; set; }

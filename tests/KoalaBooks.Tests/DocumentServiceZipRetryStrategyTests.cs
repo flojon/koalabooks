@@ -57,7 +57,7 @@ public class DocumentServiceZipRetryStrategyTests : IDisposable
         }
         var zipBytes = ms.ToArray();
 
-        var (batchId, err) = await svc.UploadZipAsync(() => new MemoryStream(zipBytes));
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zipBytes));
 
         Assert.Null(err);
         Assert.NotNull(batchId);

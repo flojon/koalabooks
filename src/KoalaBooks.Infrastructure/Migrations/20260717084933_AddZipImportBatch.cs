@@ -19,6 +19,7 @@ namespace KoalaBooks.Infrastructure.Migrations
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     OrganisationId = table.Column<int>(type: "integer", nullable: false),
+                    FileName = table.Column<string>(type: "text", nullable: false),
                     StagingOid = table.Column<uint>(type: "oid", nullable: true),
                     TotalEntries = table.Column<int>(type: "integer", nullable: false),
                     ProcessedEntries = table.Column<int>(type: "integer", nullable: false),

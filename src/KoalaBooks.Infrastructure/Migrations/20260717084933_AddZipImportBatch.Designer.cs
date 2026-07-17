@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace KoalaBooks.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260716074337_AddZipImportBatch")]
+    [Migration("20260717084933_AddZipImportBatch")]
     partial class AddZipImportBatch
     {
         /// <inheritdoc />
@@ -721,6 +721,10 @@ namespace KoalaBooks.Infrastructure.Migrations
 
                     b.Property<bool>("Done")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<int>("ImportedCount")
                         .HasColumnType("integer");

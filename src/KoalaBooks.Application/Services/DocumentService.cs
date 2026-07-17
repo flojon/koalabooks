@@ -193,6 +193,7 @@ public class DocumentService(
             .Select(b => new ZipBatchStatus
             {
                 Id = b.Id,
+                FileName = b.FileName,
                 TotalEntries = b.TotalEntries,
                 ProcessedEntries = b.ProcessedEntries,
                 ImportedCount = b.ImportedCount,
@@ -325,7 +326,7 @@ public class DocumentService(
         return (doc, null);
     }
 
-    public async Task<(int? BatchId, string? Error)> UploadZipAsync(Func<Stream> openZipData)
+    public async Task<(int? BatchId, string? Error)> UploadZipAsync(string fileName, Func<Stream> openZipData)
     {
         if (currentUser.OrganisationId is null)
             return (null, "Ingen aktiv organisation.");
@@ -392,6 +393,7 @@ public class DocumentService(
                 var batch = new ZipImportBatch
                 {
                     OrganisationId = currentUser.OrganisationId.Value,
+                    FileName = fileName,
                     StagingOid = oid,
                     TotalEntries = entryCount,
                 };
@@ -477,6 +479,7 @@ public class DocumentMeta
 public class ZipBatchStatus
 {
     public int Id { get; set; }
+    public string FileName { get; set; } = "";
     public int TotalEntries { get; set; }
     public int ProcessedEntries { get; set; }
     public int ImportedCount { get; set; }

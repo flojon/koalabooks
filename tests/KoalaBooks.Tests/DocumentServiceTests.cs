@@ -389,7 +389,7 @@ public class DocumentServiceTests : IDisposable
         var svc = _fx.MakeDocumentService(queue);
         var zip = BuildZip(("a.pdf", new byte[] { 1, 2, 3 }), ("b.png", new byte[] { 4, 5 }));
 
-        var (batchId, err) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
         Assert.Null(err);
         Assert.NotNull(batchId);
@@ -405,13 +405,28 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task UploadZipAsync_PersistsFileName_ReturnedByGetOpenZipBatchesAsync()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("a.pdf", new byte[] { 1 }));
+
+        var (batchId, _) = await svc.UploadZipAsync("fakturor.zip", () => new MemoryStream(zip));
+
+        var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        Assert.Equal("fakturor.zip", batch.FileName);
+
+        var open = await svc.GetOpenZipBatchesAsync();
+        Assert.Equal("fakturor.zip", Assert.Single(open).FileName);
+    }
+
+    [Fact]
     public async Task UploadZipAsync_RejectsOversizedZipContainer_NoStagingOrBatchCreated()
     {
         var queue = new RecordingZipImportQueue();
         var svc = _fx.MakeDocumentService(queue);
         var bigZip = new byte[501 * 1024 * 1024];
 
-        var (batchId, err) = await svc.UploadZipAsync(() => new MemoryStream(bigZip));
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(bigZip));
 
         Assert.Null(batchId);
         Assert.NotNull(err);
@@ -429,7 +444,7 @@ public class DocumentServiceTests : IDisposable
             .ToArray();
         var zip = BuildZip(entries);
 
-        var (batchId, err) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
         Assert.Null(batchId);
         Assert.NotNull(err);
@@ -447,7 +462,7 @@ public class DocumentServiceTests : IDisposable
             .ToArray();
         var zip = BuildZip(entries);
 
-        var (batchId, err) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
         Assert.Null(err);
         Assert.NotNull(batchId);
@@ -462,7 +477,7 @@ public class DocumentServiceTests : IDisposable
         var svc = _fx.MakeDocumentService(queue);
         var corruptBytes = new byte[] { 1, 2, 3, 4, 5 };
 
-        var (batchId, err) = await svc.UploadZipAsync(() => new MemoryStream(corruptBytes));
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(corruptBytes));
 
         Assert.Null(batchId);
         Assert.NotNull(err);
@@ -474,7 +489,7 @@ public class DocumentServiceTests : IDisposable
     {
         var svc = _fx.MakeDocumentService();
         var zip = BuildZip(("a.pdf", new byte[] { 1 }));
-        var (batchId, _) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+        var (batchId, _) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
         var open = await svc.GetOpenZipBatchesAsync();
         Assert.Single(open);
@@ -491,7 +506,7 @@ public class DocumentServiceTests : IDisposable
     {
         var svc = _fx.MakeDocumentService();
         var zip = BuildZip(("a.pdf", new byte[] { 1 }));
-        var (batchId, _) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+        var (batchId, _) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
         var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
         batch.Done = true;
@@ -509,7 +524,7 @@ public class DocumentServiceTests : IDisposable
     {
         var svc = _fx.MakeDocumentService();
         var zip = BuildZip(("a.pdf", new byte[] { 1 }));
-        var (batchId, _) = await svc.UploadZipAsync(() => new MemoryStream(zip));
+        var (batchId, _) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
         var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
         batch.SkippedReasonsJson = System.Text.Json.JsonSerializer.Serialize(new[] { new SkippedEntry("bad.exe", "Otillåten filtyp.") });
