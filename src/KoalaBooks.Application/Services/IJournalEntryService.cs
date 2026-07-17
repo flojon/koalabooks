@@ -12,4 +12,5 @@ public interface IJournalEntryService
     Task<string?> PostAsync(int entryId);
     Task<string?> DeleteDraftAsync(int entryId);
     Task<(JournalEntry? Entry, string? Error)> CreateReversalAsync(int entryId, string reason);
+    Task<(JournalEntry? Preview, string? Error)> PreviewReversalAsync(int entryId, string reason);
 }

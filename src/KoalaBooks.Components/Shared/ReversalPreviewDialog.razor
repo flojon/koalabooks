@@ -1,5 +1,6 @@
 @* src/KoalaBooks.Components/Shared/ReversalPreviewDialog.razor *@
 @using KoalaBooks.Application.Services
+@using static KoalaBooks.Application.Services.JournalEntryService
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
 @using MudBlazor
@@ -39,11 +40,11 @@
             <p style="margin:0 0 0.5rem; color:#64748b; font-size:0.85rem;">
                 @if (_reason.Length > 0)
                 {
-                    @JournalEntryService.BuildReversalDescription(Entry.EntryNumber, _reason)
+                    @BuildReversalDescription(Entry.EntryNumber, _reason)
                 }
                 else
                 {
-                    @JournalEntryService.BuildReversalDescription(Entry.EntryNumber, "")
+                    @BuildReversalDescription(Entry.EntryNumber, "")
                     <em>(fylls i när du skriver anledningen nedan)</em>
                 }
             </p>
@@ -75,7 +76,7 @@
     [Parameter, EditorRequired] public List<Account> Accounts { get; set; } = [];
 
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
-    [Inject] private JournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
 
     private Dictionary<int, Account> _accountsById = [];
     private JournalEntry? _preview;
