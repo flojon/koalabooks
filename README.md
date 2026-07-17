@@ -40,6 +40,18 @@ The SQLite database (`koalabooks.db`) is created automatically on first run.
 dotnet test
 ```
 
+### Git worktrees
+
+One-time setup, run once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+This enables a `post-checkout` hook that runs `dotnet restore` automatically the
+first time a new worktree (or a fresh clone) is checked out, so `obj`/`bin` exist
+and tooling like the C# LSP isn't working off an unrestored project.
+
 ## Project Structure
 
 ```
