@@ -235,6 +235,21 @@ public class ApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task FiscalYears_GetActive_CrossTenant_ReturnsOwnActiveYear()
+    {
+        // Seeds another org's fiscal year, which is active (not closed) by default — if the
+        // tenant query filter didn't apply to GetActiveAsync, this could leak into the result.
+        await SeedSecondTenantAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/active");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(_fiscalYearId, json.GetProperty("id").GetInt32());
+    }
+
     // ── Account tests ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -468,6 +483,64 @@ public class ApiTests : IAsyncLifetime
 
         var client = await AuthenticatedClientAsync();
         var response = await client.GetAsync($"/api/v1/journal-entries/{otherEntry.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Update_CrossTenant_Returns404()
+    {
+        var (_, otherFiscalYearId, otherAccountId) = await SeedSecondTenantAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherEntry = new JournalEntry
+        {
+            FiscalYearId = otherFiscalYearId,
+            Date = new DateOnly(2025, 1, 15),
+            Description = "Other tenant entry",
+            Lines =
+            [
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 100, CreditAmount = 0 },
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 0, CreditAmount = 100 }
+            ]
+        };
+        db.JournalEntries.Add(otherEntry);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var updateBody = new
+        {
+            date = "2025-01-16",
+            description = "Hijacked",
+            lines = new[] { new { accountId = otherAccountId, debitAmount = 200m, creditAmount = 0m } }
+        };
+        var response = await client.PutAsJsonAsync($"/api/v1/journal-entries/{otherEntry.Id}", updateBody);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Post_CrossTenant_Returns404()
+    {
+        var (_, otherFiscalYearId, otherAccountId) = await SeedSecondTenantAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherEntry = new JournalEntry
+        {
+            FiscalYearId = otherFiscalYearId,
+            Date = new DateOnly(2025, 1, 15),
+            Description = "Other tenant entry",
+            Lines =
+            [
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 100, CreditAmount = 0 },
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 0, CreditAmount = 100 }
+            ]
+        };
+        db.JournalEntries.Add(otherEntry);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.PostAsync($"/api/v1/journal-entries/{otherEntry.Id}/post", null);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
