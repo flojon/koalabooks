@@ -1,0 +1,100 @@
+# Design: Shared background-job infrastructure
+
+## Summary
+
+Four open issues (#279 SIE import, #280 BAS import, #281 year-end close, #282 archive export) each independently say "follow the pattern established by document extraction and zip import" — but that pattern has never been factored out. Today it exists twice, bespoke both times: `Document.ExtractionStatus` + `IDocumentExtractionQueue`/`HangfireDocumentExtractionQueue`/`DocumentExtractionJob` (#208, merged), and `ZipImportBatch` + `IZipImportQueue`/`HangfireZipImportQueue`/`ZipImportJob` (#207, PR #251 open/unmerged) — each with its own status entity, its own tenant-bootstrap boilerplate in the job class, and its own hand-rolled poll-timer/staleness-cutoff/acknowledge block in `Inbox.razor`.
+
+This design extracts the reusable parts before #279–282 add four more copies of the same duplication: a generic `BackgroundJobRun` status table, a shared job-side base class for the tenant-bootstrap dance, and a shared Blazor component for the poll/staleness/acknowledge dance. `ZipImportJob`/`ZipImportBatch` (PR #251, still unmerged) is retrofitted onto the new pattern before that PR merges, rather than merging first and migrating later. `DocumentExtractionJob` is retrofitted onto the shared tenant-bootstrap helper but keeps `Document.ExtractionStatus` as a per-row field rather than moving to `BackgroundJobRun` — it isn't a batch/job record, it's a status on the entity the job acts on.
+
+## Current state
+
+- `IDocumentExtractionQueue` → `HangfireDocumentExtractionQueue`/`NoOpDocumentExtractionQueue` → `DocumentExtractionJob` (`[AutomaticRetry(Attempts=3)]`, `IgnoreQueryFilters()`, `SaveChangesResolvingConcurrencyAsync` for the `DocumentDate` race) sets `Document.ExtractionStatus` (`Pending`/`Completed`/`Failed`) directly on the row it processes. `Inbox.razor` polls via a `System.Threading.Timer` (5s interval) that keeps running while any visible document is `Pending` and younger than `PendingStaleAfter` (10 min).
+- `IZipImportQueue` → `HangfireZipImportQueue`/`NoOpZipImportQueue` → `ZipImportJob` (PR #251, not yet merged) builds its own `LocalCurrentUser`-scoped `AppDbContext` (jobs have no `HttpContext`, so a DI-resolved `ICurrentUser` is always null — see the Hangfire/`ICurrentUser` note from #207), processes a staged zip against a `ZipImportBatch` row (`TotalEntries`/`ProcessedEntries`/`ImportedCount`/`SkippedCount`/`SkippedReasonsJson`/`Done`/`Acknowledged`), and wraps LO copy work in `CreateExecutionStrategy`. `Inbox.razor` extends the same poll-timer to also watch unacknowledged batches (`ZipBatchStaleAfter`), and shows a one-shot summary Snackbar on completion via `AcknowledgeZipBatchAsync`.
+- #279–282 each propose adding a `<Feature>Job` + `Hangfire<Feature>Queue` pair "mirroring" the above, with status reporting left vague ("via the Hangfire dashboard or a lightweight status check", "surface completion"). None of them specify a shared shape, so each would likely re-derive the tenant-bootstrap and poll-timer logic independently.
+- Existing pages that will host status reporting for the four new jobs already exist: `SieImport.razor`, `SieExport.razor`, `Accounts.razor` (BAS import), `FiscalYears.razor` (year-end close). No new "background jobs" overview page is needed.
+
+## Architecture
+
+### 1. `BackgroundJobRun` (generic status entity)
+
+```csharp
+public enum BackgroundJobType { ZipImport, SieImport, BasImport, YearEndClose, SieExport }
+public enum BackgroundJobStatus { Pending, Running, Completed, Failed }
+
+public class BackgroundJobRun
+{
+    public int Id { get; set; }
+    public int OrganisationId { get; set; }
+    public BackgroundJobType JobType { get; set; }
+    public BackgroundJobStatus Status { get; set; }
+    public int ProcessedCount { get; set; }
+    public int? TotalCount { get; set; }          // null where progress isn't meaningful (e.g. BAS import)
+    public string? ResultJson { get; set; }         // job-specific payload: skip reasons, output document key, ...
+    public bool Acknowledged { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+}
+```
+
+One table, one migration, replaces `ZipImportBatch` and the four status entities #279–282 would otherwise each add. `ResultJson` carries whatever shape a given job needs to report — e.g. zip/SIE import's `{ImportedCount, SkippedCount, SkippedReasons}`, archive export's `{DocumentStorageKey}` (per #282, export output is persisted "via the existing document storage" and needs to be fetchable once done) — read by the page that knows how to render it, not by shared code.
+
+`Document.ExtractionStatus` is explicitly **not** migrated onto this table — it's a field on the entity the job produces, not a batch record, and moving it would force an awkward join for no benefit.
+
+### 2. Tenant-bootstrap helper
+
+A small static factory (e.g. `JobTenantContext.CreateDbContext(DbContextOptions<AppDbContext> options, int organisationId)`) extracts the `LocalCurrentUser` + tenant-scoped `AppDbContext` construction that's currently duplicated verbatim between `DocumentExtractionJob`'s implicit DI-scoped context and `ZipImportJob`'s manual one. Every job — including `DocumentExtractionJob` — uses this instead of rolling its own.
+
+### 3. `BackgroundJobRunBase`
+
+An abstract base in `KoalaBooks.Application.Jobs`, built on #2, for the five jobs that use `BackgroundJobRun` (zip import + the four new ones):
+
+- `LoadRunAsync(int runId)` — `IgnoreQueryFilters()` lookup; returns null if missing or `Status` is already `Completed`/`Failed`.
+- Progress save helper — bumps `ProcessedCount` and saves, same incremental-save-per-entry approach `ZipImportJob` already uses so a Hangfire retry resumes from where it left off instead of reprocessing.
+- `CompleteAsync(BackgroundJobStatus status, object? resultPayload)` — serializes `resultPayload` into `ResultJson`, sets `Status`/`Acknowledged = false`.
+
+Concrete jobs (`SieImportJob`, `BasImportJob`, `YearEndCloseJob`, `SieExportJob`, and the refactored `ZipImportJob`) inherit this and implement only their business logic in `RunAsync`. `DocumentExtractionJob` uses the tenant-bootstrap helper (#2) directly but does not inherit `BackgroundJobRunBase`, since it has no `BackgroundJobRun` row to manage.
+
+### 4. `IBackgroundJobRunService`
+
+An Application-layer service wrapping the `BackgroundJobRun` queries every job and every page currently needs: create a run, get open/unacknowledged runs for an org+`JobType`, acknowledge a run. Both `BackgroundJobRunBase` (server-side, tenant-scoped context) and the Blazor poller (#5, request-scoped context via normal DI) go through this instead of writing ad-hoc LINQ against `AppDbContext` in each Razor page, which is how `Inbox.razor` does it today.
+
+### 5. `BackgroundJobStatusPoller` (Blazor component)
+
+Extracted from `Inbox.razor`'s existing `_pollTimer`/`Interlocked`/`Dispose` block, generalized to any `BackgroundJobType`:
+
+```razor
+<BackgroundJobStatusPoller JobType="BackgroundJobType.SieImport"
+                            OrganisationId="@OrganisationId"
+                            StaleAfter="TimeSpan.FromMinutes(10)"
+                            OnRunCompleted="HandleImportCompleted" />
+```
+
+Owns the timer lifecycle (5s default interval, configurable), the staleness cutoff (stops polling once every open run is older than `StaleAfter`, matching today's `PendingStaleAfter`/`ZipBatchStaleAfter`), and calls `IBackgroundJobRunService.AcknowledgeAsync` once the host page's `OnRunCompleted` callback returns. The host page owns only what's actually feature-specific: how to render the toast (or, for archive export, a download link built from `ResultJson`'s document key) from a completed `BackgroundJobRun`.
+
+`Inbox.razor` adopts this component for both its existing polled statuses (`Document.ExtractionStatus` stays a direct query since it isn't a `BackgroundJobRun`; the zip-batch half of its polling is replaced by `<BackgroundJobStatusPoller JobType="ZipImport" .../>`).
+
+### 6. Queue interfaces — unchanged pattern
+
+`ISieImportQueue`, `IBasImportQueue`, `IYearEndCloseQueue`, `ISieExportQueue` are each added the same way as `IZipImportQueue`: a narrow, single-method interface (`Enqueue(int runId)`) with a `Hangfire...Queue` implementation and a `NoOp...Queue` test double. This isn't consolidated into one generic queue interface — it matches the ISP precedent from #224 (each service depends only on the one queue capability it needs), and the Hangfire wrapper is 4 lines regardless.
+
+## Data flow (SIE import, representative of the four new jobs)
+
+1. User uploads a file on `SieImport.razor`. The upload handler stages the file (reusing #251's shared Postgres-LO copy helpers — `CopyStreamIntoNewLargeObjectAsync`/`CopyLargeObjectIntoStreamAsync`), creates a `BackgroundJobRun(JobType = SieImport, Status = Pending)`, and enqueues via `ISieImportQueue`.
+2. `SieImportJob : BackgroundJobRunBase` loads the run, gets a tenant-scoped `AppDbContext` via the bootstrap helper, runs the import updating `ProcessedCount`/`TotalCount` incrementally, and calls `CompleteAsync(Completed, new { ImportedCount, SkippedCount, SkippedReasons })` (or `Failed` — see Error handling).
+3. `SieImport.razor` hosts `<BackgroundJobStatusPoller JobType="SieImport" ... OnRunCompleted="ShowImportSummary" />`. When the run completes, the callback deserializes `ResultJson` and shows the page's own Snackbar text; the poller then acknowledges the run.
+
+Archive export (#282) differs only in step 3: `OnRunCompleted` reads a document storage key out of `ResultJson` and renders a download link instead of a plain summary.
+
+## Error handling
+
+Today, a batch/document that exhausts Hangfire's 3 retries is left `Done = false`/`Pending` forever — nothing ever marks it `Failed`; the UI only stops showing it once it ages past the client-side staleness cutoff, so a permanently-stuck job silently disappears rather than reporting failure. This is cheap to fix now that there's one table: a Hangfire global `IApplyStateFilter` marks the corresponding `BackgroundJobRun` `Failed` when a job transitions to Hangfire's `FailedState` after exhausting `[AutomaticRetry(Attempts = 3)]`, so `BackgroundJobStatusPoller`/`OnRunCompleted` can surface an actual failure instead of the run quietly going stale. `DocumentExtractionJob` already sets `ExtractionStatus.Failed` itself for content-level failures (e.g. malformed PDF) inside its own `catch` — that behavior is unchanged; the new filter only covers the case where Hangfire gives up after transient-failure retries are exhausted, which today isn't reported at all.
+
+## Testing
+
+`BackgroundJobRunBase` and `BackgroundJobStatusPoller` each get their own focused tests once (tenant-bootstrap correctness, progress/complete persistence, timer/staleness/acknowledge behavior). Each concrete job (`SieImportJob`, etc.) and each page's polling wire-up then only needs tests for its own business logic and its own `OnRunCompleted` rendering — not a re-test of the shared timer or context-bootstrap machinery, the way `ZipImportJobTests`/`ZipImportJobRetryStrategyTests` currently have to exercise the full stack themselves.
+
+## Sequencing
+
+1. Land `BackgroundJobRun`/`BackgroundJobType`/`BackgroundJobStatus`, the tenant-bootstrap helper, `BackgroundJobRunBase`, `IBackgroundJobRunService`, and `BackgroundJobStatusPoller` as one PR.
+2. Retrofit `ZipImportJob`/`ZipImportBatch` (PR #251, unmerged) onto this before it merges — swap `ZipImportBatch` for `BackgroundJobRun`, rebase `ZipImportJob` onto `BackgroundJobRunBase`, replace `Inbox.razor`'s hand-rolled batch-polling block with `<BackgroundJobStatusPoller>`. Avoids merging #251 with a status entity that's immediately migrated away.
+3. Retrofit `DocumentExtractionJob` onto the tenant-bootstrap helper only (no `BackgroundJobRun`, no `BackgroundJobRunBase`).
+4. Implement #279 (SIE import), #280 (BAS import), #281 (year-end close), #282 (archive export) on top of the shared infrastructure — each becomes primarily a `RunAsync` body plus a queue interface pair plus a page-specific `OnRunCompleted` handler.
