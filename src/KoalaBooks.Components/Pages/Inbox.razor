@@ -186,7 +186,13 @@ else
                 var reasons = string.Join(", ", batch.SkippedReasons.Select(s => $"{s.FileName}: {s.Reason}"));
                 summary += $", {batch.SkippedCount} hoppade över ({reasons})";
             }
-            Snackbar.Add(summary, batch.SkippedCount > 0 ? Severity.Warning : Severity.Success);
+            // The default 3s auto-dismiss (Program.cs's SnackbarConfiguration) is too short here:
+            // this toast only fires on the poll tick after the job finishes (up to 5s late), so a
+            // user not staring at the screen at that exact moment would otherwise never see the
+            // one place the imported/skipped counts are ever reported. RequireInteraction keeps it
+            // up until dismissed.
+            Snackbar.Add(summary, batch.SkippedCount > 0 ? Severity.Warning : Severity.Success,
+                config => config.RequireInteraction = true);
             await DocumentService.AcknowledgeZipBatchAsync(batch.Id);
             _openZipBatches.Remove(batch);
         }
