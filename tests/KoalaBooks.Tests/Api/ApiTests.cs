@@ -638,6 +638,93 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task JournalEntries_Update_PostedEntry_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-07",
+            description = "Already posted",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 150m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 150m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var postResp = await client.PostAsync($"/api/v1/journal-entries/{entryId}/post", null);
+        Assert.Equal(HttpStatusCode.OK, postResp.StatusCode);
+
+        var updateBody = new
+        {
+            date = "2025-10-07",
+            description = "Trying to edit a posted entry",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 150m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 150m }
+            }
+        };
+        var updateResp = await client.PutAsJsonAsync($"/api/v1/journal-entries/{entryId}", updateBody);
+        Assert.Equal(HttpStatusCode.BadRequest, updateResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Update_ClosedFiscalYear_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-08",
+            description = "Before the year closes",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 200m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 200m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var fy = await db.FiscalYears.IgnoreQueryFilters().FirstAsync(f => f.Id == _fiscalYearId);
+            fy.IsClosed = true;
+            await db.SaveChangesAsync();
+        }
+
+        var updateBody = new
+        {
+            date = "2025-10-08",
+            description = "Trying to edit after close",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 200m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 200m }
+            }
+        };
+        var updateResp = await client.PutAsJsonAsync($"/api/v1/journal-entries/{entryId}", updateBody);
+        Assert.Equal(HttpStatusCode.BadRequest, updateResp.StatusCode);
+    }
+
+    [Fact]
     public async Task JournalEntries_Update_UnknownId_Returns404()
     {
         var client = await AuthenticatedClientAsync();
