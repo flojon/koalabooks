@@ -7,6 +7,8 @@ namespace KoalaBooks.Application.Services;
 
 public class SupplierInvoiceService : ISupplierInvoiceService
 {
+    public const string NotFoundMessage = "Fakturan hittades inte.";
+
     private readonly AppDbContext _db;
 
     public SupplierInvoiceService(AppDbContext db)
@@ -49,7 +51,7 @@ public class SupplierInvoiceService : ISupplierInvoiceService
             .Include(s => s.FiscalYear)
             .FirstOrDefaultAsync(s => s.Id == invoice.Id).ConfigureAwait(false);
 
-        if (existing is null) return (null, "Fakturan hittades inte.");
+        if (existing is null) return (null, NotFoundMessage);
         if (existing.JournalEntryId.HasValue) return (null, "Bokförda fakturor kan inte uppdateras.");
         if (existing.IsPaid) return (null, "Betalda fakturor kan inte uppdateras.");
         if (existing.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
@@ -249,7 +251,7 @@ public class SupplierInvoiceService : ISupplierInvoiceService
         var invoice = await _db.SupplierInvoices
             .Include(s => s.FiscalYear)
             .FirstOrDefaultAsync(s => s.Id == invoiceId).ConfigureAwait(false);
-        if (invoice is null) return "Fakturan hittades inte.";
+        if (invoice is null) return NotFoundMessage;
         if (invoice.JournalEntryId.HasValue) return "Bokförda fakturor kan inte raderas.";
         if (invoice.IsPaid) return "Betalda fakturor kan inte raderas.";
         if (invoice.FiscalYear.IsClosed) return "Räkenskapsåret är stängt.";

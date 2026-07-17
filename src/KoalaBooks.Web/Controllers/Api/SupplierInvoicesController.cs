@@ -72,11 +72,11 @@ public class SupplierInvoicesController : ControllerBase
             FiscalYearId = fiscalYearId,
             SupplierName = request.SupplierName,
             InvoiceNumber = request.InvoiceNumber,
-            InvoiceDate = request.InvoiceDate,
-            DueDate = request.DueDate,
+            InvoiceDate = request.InvoiceDate!.Value,
+            DueDate = request.DueDate!.Value,
             AmountExclVat = request.AmountExclVat,
             VatAmount = request.VatAmount,
-            TotalAmount = request.TotalAmount,
+            TotalAmount = request.TotalAmount!.Value,
             Notes = request.Notes
         };
 
@@ -94,23 +94,22 @@ public class SupplierInvoicesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateSupplierInvoiceRequest request)
     {
-        var existing = await _supplierInvoiceService.GetByIdAsync(id);
-        if (existing is null) return NotFound();
-
         var invoice = new SupplierInvoice
         {
             Id = id,
             SupplierName = request.SupplierName,
             InvoiceNumber = request.InvoiceNumber,
-            InvoiceDate = request.InvoiceDate,
-            DueDate = request.DueDate,
+            InvoiceDate = request.InvoiceDate!.Value,
+            DueDate = request.DueDate!.Value,
             AmountExclVat = request.AmountExclVat,
             VatAmount = request.VatAmount,
-            TotalAmount = request.TotalAmount,
+            TotalAmount = request.TotalAmount!.Value,
             Notes = request.Notes
         };
 
         var (updated, error) = await _supplierInvoiceService.UpdateAsync(invoice);
+        if (error == SupplierInvoiceService.NotFoundMessage)
+            return NotFound();
         if (error is not null)
             return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
 
@@ -124,10 +123,9 @@ public class SupplierInvoicesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(int id)
     {
-        var invoice = await _supplierInvoiceService.GetByIdAsync(id);
-        if (invoice is null) return NotFound();
-
         var error = await _supplierInvoiceService.DeleteAsync(id);
+        if (error == SupplierInvoiceService.NotFoundMessage)
+            return NotFound();
         if (error is not null)
             return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
 
