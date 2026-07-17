@@ -240,6 +240,35 @@ public class ApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task FiscalYears_GetActive_ReturnsActiveYear()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/v1/fiscal-years/active");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(_fiscalYearId, json.GetProperty("id").GetInt32());
+        Assert.False(json.GetProperty("isClosed").GetBoolean());
+    }
+
+    [Fact]
+    public async Task FiscalYears_GetActive_NoActiveYear_Returns404()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var fy = await db.FiscalYears.IgnoreQueryFilters().FirstAsync(f => f.Id == _fiscalYearId);
+            fy.IsClosed = true;
+            await db.SaveChangesAsync();
+        }
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/active");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     // ── Account tests ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -561,6 +590,43 @@ public class ApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task JournalEntries_DraftCount_ReturnsCountOfUnpostedEntries()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-01",
+            description = "Draft entry",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 100m }
+            }
+        };
+        await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries/draft-count");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, json.GetProperty("count").GetInt32());
+    }
+
+    [Fact]
+    public async Task JournalEntries_DraftCount_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/journal-entries/draft-count");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     // ── Supplier invoice tests ──────────────────────────────────────────────────
 
     [Fact]
@@ -766,6 +832,37 @@ public class ApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task SupplierInvoices_UnpaidCount_ReturnsCountOfUnpaidInvoices()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var createBody = new
+        {
+            supplierName = "Unpaid Supplier",
+            invoiceDate = "2026-02-01",
+            dueDate = "2026-02-28",
+            amountExclVat = 400m,
+            vatAmount = 100m,
+            totalAmount = 500m
+        };
+        await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices", createBody);
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices/unpaid-count");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, json.GetProperty("count").GetInt32());
+    }
+
+    [Fact]
+    public async Task SupplierInvoices_UnpaidCount_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/supplier-invoices/unpaid-count");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     // ── Bank transaction tests ──────────────────────────────────────────────────
 
     [Fact]
@@ -878,6 +975,38 @@ public class ApiTests : IAsyncLifetime
 
         var client = await AuthenticatedClientAsync();
         var response = await client.GetAsync($"/api/v1/bank-transactions/{otherTx.Id}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task BankTransactions_UnmatchedCount_ReturnsCountOfUnmatchedTransactions()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var cashAccount = await db.Accounts.IgnoreQueryFilters()
+                .FirstAsync(a => a.FiscalYearId == _fiscalYearId && a.AccountNumber == "1910");
+            db.BankTransactions.Add(new BankTransaction
+            {
+                OrganisationId = _orgId, AccountId = cashAccount.Id,
+                Date = new DateOnly(2025, 6, 1), Amount = 500m, Description = "Deposit"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/bank-transactions/unmatched-count");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, json.GetProperty("count").GetInt32());
+    }
+
+    [Fact]
+    public async Task BankTransactions_UnmatchedCount_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/bank-transactions/unmatched-count");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }

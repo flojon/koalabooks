@@ -35,4 +35,15 @@ public class FiscalYearsController : ControllerBase
         if (fy is null) return NotFound();
         return Ok(new FiscalYearResponse(fy.Id, fy.Name, fy.StartDate, fy.EndDate, fy.IsClosed));
     }
+
+    [HttpGet("active")]
+    [ProducesResponseType<FiscalYearResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetActive()
+    {
+        var fy = await _service.GetActiveAsync();
+        if (fy is null) return NotFound();
+        return Ok(new FiscalYearResponse(fy.Id, fy.Name, fy.StartDate, fy.EndDate, fy.IsClosed));
+    }
 }
