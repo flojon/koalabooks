@@ -108,7 +108,6 @@ builder.Services.AddOpenIddict()
         options.AllowPasswordFlow()
                .AllowRefreshTokenFlow()
                .AllowAuthorizationCodeFlow();
-        options.AcceptAnonymousClients();
         // Scopes other than "openid"/"offline_access" must be registered here, or OpenIddict
         // rejects them with invalid_scope even when the client has the matching permission.
         options.RegisterScopes(
@@ -288,6 +287,12 @@ using (var scope = app.Services.CreateScope())
         // Stopgap until there's a real UI to grant roles.
         await AdminRoleSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration["AdminSeed:Email"]);
     }
+
+    // Seeded in both Testing and non-Testing environments: every OpenIddict client (this one,
+    // and any future browser/desktop client) must be registered here so WebApiFactory-based
+    // integration tests and real deployments can request tokens now that
+    // AcceptAnonymousClients() has been removed.
+    await ApiClientSeeder.SeedAsync(scope.ServiceProvider);
 }
 
 app.UseRequestLocalization(new RequestLocalizationOptions()

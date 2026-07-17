@@ -7,6 +7,8 @@ namespace KoalaBooks.Application.Services;
 
 public class SupplierInvoiceService : ISupplierInvoiceService
 {
+    public const string NotFoundMessage = "Fakturan hittades inte.";
+
     private readonly AppDbContext _db;
 
     public SupplierInvoiceService(AppDbContext db)
@@ -26,6 +28,45 @@ public class SupplierInvoiceService : ISupplierInvoiceService
             .OrderByDescending(s => s.InvoiceDate)
             .ThenByDescending(s => s.Id)
             .ToListAsync().ConfigureAwait(false);
+    }
+
+    public async Task<SupplierInvoice?> GetByIdAsync(int id)
+    {
+        return await _db.SupplierInvoices
+            .Include(s => s.JournalEntry)
+            .Include(s => s.PaymentJournalEntry)
+            .FirstOrDefaultAsync(s => s.Id == id).ConfigureAwait(false);
+    }
+
+    public async Task<(SupplierInvoice? Invoice, string? Error)> UpdateAsync(SupplierInvoice invoice)
+    {
+        if (string.IsNullOrWhiteSpace(invoice.SupplierName))
+            return (null, "Leverantörsnamn är obligatoriskt.");
+        if (invoice.TotalAmount <= 0)
+            return (null, "Totalt belopp måste vara större än noll.");
+        if (invoice.DueDate < invoice.InvoiceDate)
+            return (null, "Förfallodatum kan inte vara före fakturadatum.");
+
+        var existing = await _db.SupplierInvoices
+            .Include(s => s.FiscalYear)
+            .FirstOrDefaultAsync(s => s.Id == invoice.Id).ConfigureAwait(false);
+
+        if (existing is null) return (null, NotFoundMessage);
+        if (existing.JournalEntryId.HasValue) return (null, "Bokförda fakturor kan inte uppdateras.");
+        if (existing.IsPaid) return (null, "Betalda fakturor kan inte uppdateras.");
+        if (existing.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
+
+        existing.SupplierName = invoice.SupplierName;
+        existing.InvoiceNumber = invoice.InvoiceNumber;
+        existing.InvoiceDate = invoice.InvoiceDate;
+        existing.DueDate = invoice.DueDate;
+        existing.AmountExclVat = invoice.AmountExclVat;
+        existing.VatAmount = invoice.VatAmount;
+        existing.TotalAmount = invoice.TotalAmount;
+        existing.Notes = invoice.Notes;
+
+        await _db.SaveChangesAsync().ConfigureAwait(false);
+        return (existing, null);
     }
 
     public async Task<(SupplierInvoice? Invoice, string? Error)> CreateAsync(SupplierInvoice invoice)
@@ -207,10 +248,13 @@ public class SupplierInvoiceService : ISupplierInvoiceService
 
     public async Task<string?> DeleteAsync(int invoiceId)
     {
-        var invoice = await _db.SupplierInvoices.FirstOrDefaultAsync(s => s.Id == invoiceId).ConfigureAwait(false);
-        if (invoice is null) return "Fakturan hittades inte.";
+        var invoice = await _db.SupplierInvoices
+            .Include(s => s.FiscalYear)
+            .FirstOrDefaultAsync(s => s.Id == invoiceId).ConfigureAwait(false);
+        if (invoice is null) return NotFoundMessage;
         if (invoice.JournalEntryId.HasValue) return "Bokförda fakturor kan inte raderas.";
         if (invoice.IsPaid) return "Betalda fakturor kan inte raderas.";
+        if (invoice.FiscalYear.IsClosed) return "Räkenskapsåret är stängt.";
 
         _db.SupplierInvoices.Remove(invoice);
         await _db.SaveChangesAsync().ConfigureAwait(false);

@@ -50,6 +50,19 @@ public class JournalEntriesController : ControllerBase
         });
     }
 
+    [HttpGet("fiscal-years/{fiscalYearId:int}/journal-entries/draft-count")]
+    [ProducesResponseType<CountResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDraftCount(int fiscalYearId)
+    {
+        var fy = await _fiscalYearService.GetByIdAsync(fiscalYearId);
+        if (fy is null) return NotFound();
+
+        var count = await _journalEntryService.CountDraftsAsync(fiscalYearId);
+        return Ok(new CountResponse(count));
+    }
+
     [HttpGet("journal-entries/{id:int}")]
     [ProducesResponseType<JournalEntryResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
