@@ -60,7 +60,7 @@ Add to `tests/KoalaBooks.Tests/Api/ApiTests.cs`, in the `── Auth tests ─�
 
 ```csharp
 [Fact]
-public async Task ConnectToken_UnregisteredClientId_ReturnsBadRequest()
+public async Task ConnectToken_UnregisteredClientId_ReturnsUnauthorized()
 {
     var response = await _client.PostAsync("/connect/token", new FormUrlEncodedContent(
     [
@@ -69,7 +69,9 @@ public async Task ConnectToken_UnregisteredClientId_ReturnsBadRequest()
         new KeyValuePair<string, string>("username", TestEmail),
         new KeyValuePair<string, string>("password", TestPassword)
     ]));
-    Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    // OpenIddict treats an unrecognized client_id as a client-authentication failure
+    // (RFC 6749 §5.2 "invalid_client"), reported as 401.
+    Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
 }
 ```
 
@@ -77,8 +79,8 @@ This asserts the exact behavior issue #120 is about: today `AcceptAnonymousClien
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `dotnet test --filter "FullyQualifiedName~ApiTests.ConnectToken_UnregisteredClientId_ReturnsBadRequest"`
-Expected: FAIL — asserted `BadRequest` but got `OK` (200), because `AcceptAnonymousClients()` is still active.
+Run: `dotnet test --filter "FullyQualifiedName~ApiTests.ConnectToken_UnregisteredClientId_ReturnsUnauthorized"`
+Expected: FAIL — asserted `Unauthorized` but got `OK` (200), because `AcceptAnonymousClients()` is still active.
 
 - [ ] **Step 3: Create the seeder**
 
@@ -220,7 +222,7 @@ private async Task<string> GetBearerTokenAsync()
 - [ ] **Step 6: Run the full test suite**
 
 Run: `dotnet test`
-Expected: PASS — all existing `ApiTests` (now using `client_id=koalabooks-api`) pass, and the new `ConnectToken_UnregisteredClientId_ReturnsBadRequest` test passes because OpenIddict now rejects `not-a-real-client`.
+Expected: PASS — all existing `ApiTests` (now using `client_id=koalabooks-api`) pass, and the new `ConnectToken_UnregisteredClientId_ReturnsUnauthorized` test passes because OpenIddict now rejects `not-a-real-client`.
 
 - [ ] **Step 7: Commit**
 
