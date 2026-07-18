@@ -1,5 +1,4 @@
 using Hangfire;
-using KoalaBooks.Domain;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
@@ -22,16 +21,17 @@ public class DocumentExtractionJob(
         // This job has no HttpContext, so a DI-resolved ICurrentUser/AppDbContext would
         // always see OrganisationId == null — which, since AppDbContext's DocumentData
         // query filter follows Document.OrganisationId, would make DbDocumentStorage's
-        // FindAsync-based lookups silently return "not found" for every document. Instead,
-        // build our own AppDbContext (and DbDocumentStorage on top of it) bound to a mutable
-        // LocalCurrentUser, the same way ZipImportJob does — starting with no org (so the
-        // initial lookup, done with IgnoreQueryFilters, is unaffected either way) and then
-        // setting it to the document's own OrganisationId once known, so the rest of this
-        // context's queries — including storage's — scope correctly from that point on.
-        var tenant = new LocalCurrentUser();
+        // FindAsync-based lookups silently return "not found" for every document.
+        // JobTenantContext.CreateUnscoped gives us an AppDbContext bound to a mutable
+        // LocalCurrentUser starting with no org (so the initial lookup, done with
+        // IgnoreQueryFilters, is unaffected either way); we then set it to the document's
+        // own OrganisationId once known, so the rest of this context's queries — including
+        // storage's — scope correctly from that point on.
+        var context = JobTenantContext.CreateUnscoped(dbOptions);
 #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-        await using var db = new AppDbContext(dbOptions, tenant);
+        await using var db = context.Db;
 #pragma warning restore CA2007
+        var tenant = context.Tenant;
         var storage = new DbDocumentStorage(db);
 
         // IgnoreQueryFilters: tenant is still unset at this point (see above). Safe here
