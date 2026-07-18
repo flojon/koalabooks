@@ -325,10 +325,20 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
         modelBuilder.Entity<BackgroundJobRun>(entity =>
         {
             entity.HasQueryFilter(r => _currentUser.OrganisationId != null && r.OrganisationId == _currentUser.OrganisationId);
+            entity.Property(r => r.ClaimedByJobId).HasMaxLength(100);
             entity.HasOne<Organisation>()
                   .WithMany()
                   .HasForeignKey(r => r.OrganisationId)
                   .OnDelete(DeleteBehavior.Restrict);
+
+            // Lets LoadRunAsync detect two independently-enqueued jobs racing to claim the
+            // same Pending run: Postgres' native row-version system column, mapped as a
+            // shadow property (no migration needed) — same mechanism as Document's xmin
+            // token (see AppDbContext's Document config above).
+            entity.Property<uint>("xmin")
+                  .HasColumnType("xid")
+                  .ValueGeneratedOnAddOrUpdate()
+                  .IsConcurrencyToken();
 
             // The shape of the "open/unacknowledged runs for this org+JobType" query
             // IBackgroundJobRunService.GetOpenRunsAsync runs (filtered on Acknowledged,

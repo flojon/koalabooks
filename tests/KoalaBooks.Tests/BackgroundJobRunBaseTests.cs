@@ -97,11 +97,72 @@ public class BackgroundJobRunBaseTests : IDisposable
         Assert.False(updated.Acknowledged);
         Assert.Contains("\"ImportedCount\":3", updated.ResultJson);
     }
+
+    [Fact]
+    public async Task LoadRunAsync_RunningRunSameJobId_ResumesSuccessfully()
+    {
+        // Simulates a Hangfire automatic retry: same job id re-invoking RunAsync after a
+        // transient failure left the run Running. Must succeed so ProcessedCount resumes
+        // instead of reprocessing from zero.
+        var run = new BackgroundJobRun { OrganisationId = _fx.OrganisationId, JobType = BackgroundJobType.SieImport, Status = BackgroundJobStatus.Running, ClaimedByJobId = "job-1", ProcessedCount = 7 };
+        _fx.Db.BackgroundJobRuns.Add(run);
+        await _fx.Db.SaveChangesAsync();
+
+        var job = new TestJobRun(Options());
+        var loaded = await job.LoadAsync(run.Id, "job-1");
+        await job.DisposeAsync();
+
+        Assert.True(loaded);
+    }
+
+    [Fact]
+    public async Task LoadRunAsync_RunningRunDifferentJobId_ReturnsFalse()
+    {
+        // A second, independently-enqueued job trying to claim a run another job already
+        // owns — the exact double-processing scenario a Status-only check can't catch.
+        var run = new BackgroundJobRun { OrganisationId = _fx.OrganisationId, JobType = BackgroundJobType.SieImport, Status = BackgroundJobStatus.Running, ClaimedByJobId = "job-1" };
+        _fx.Db.BackgroundJobRuns.Add(run);
+        await _fx.Db.SaveChangesAsync();
+
+        var job = new TestJobRun(Options());
+        var loaded = await job.LoadAsync(run.Id, "job-2");
+        await job.DisposeAsync();
+
+        Assert.False(loaded);
+    }
+
+    [Fact]
+    public async Task LoadRunAsync_TwoJobsRaceAPendingRun_OnlyOneClaimsIt()
+    {
+        // Two independently-enqueued jobs (distinct Hangfire job ids) both calling
+        // LoadRunAsync for the same still-Pending run — the actual race this fix closes.
+        // Regardless of which one wins (the xmin token or the jobId check catches the
+        // loser depending on exact timing), exactly one must end up owning the run.
+        var run = new BackgroundJobRun { OrganisationId = _fx.OrganisationId, JobType = BackgroundJobType.SieImport, Status = BackgroundJobStatus.Pending };
+        _fx.Db.BackgroundJobRuns.Add(run);
+        await _fx.Db.SaveChangesAsync();
+
+        var jobA = new TestJobRun(Options());
+        var jobB = new TestJobRun(Options());
+
+        var results = await Task.WhenAll(
+            jobA.LoadAsync(run.Id, "job-A"),
+            jobB.LoadAsync(run.Id, "job-B"));
+
+        await jobA.DisposeAsync();
+        await jobB.DisposeAsync();
+
+        Assert.Single(results, true);
+        await using var verifyDb = new AppDbContext(Options(), new LocalCurrentUser());
+        var updated = await verifyDb.BackgroundJobRuns.IgnoreQueryFilters().FirstAsync(r => r.Id == run.Id);
+        Assert.Equal(BackgroundJobStatus.Running, updated.Status);
+        Assert.Contains(updated.ClaimedByJobId, new[] { "job-A", "job-B" });
+    }
 }
 
 file class TestJobRun(DbContextOptions<AppDbContext> dbOptions) : BackgroundJobRunBase(dbOptions)
 {
-    public Task<bool> LoadAsync(int runId) => LoadRunAsync(runId);
+    public Task<bool> LoadAsync(int runId, string jobId = "job-1") => LoadRunAsync(runId, jobId);
     public Task SaveProgress(int count) => SaveProgressAsync(count);
     public Task Complete(BackgroundJobStatus status, object? payload) => CompleteAsync(status, payload);
     public int? RunOrganisationId => Tenant.OrganisationId;

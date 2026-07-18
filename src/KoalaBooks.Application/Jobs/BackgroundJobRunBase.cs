@@ -28,16 +28,33 @@ public abstract class BackgroundJobRunBase : IAsyncDisposable
     // JobTenantContext.CreateUnscoped), so the tenant query filter would otherwise hide
     // every row. Safe because runId is handed to the job by trusted code that just
     // created that exact row, not arbitrary tenant-crossing input.
-    protected async Task<bool> LoadRunAsync(int runId)
+    //
+    // jobId (pass PerformContext.BackgroundJob.Id) distinguishes our own retry resuming a
+    // Running run from a second, independently-enqueued job racing for the same one —
+    // Status alone can't, since a legitimate retry also finds Running. A mismatched jobId
+    // on a Running run is rejected outright; two jobs racing a still-Pending row are
+    // resolved by the xmin token below (loser's SaveChangesAsync throws, returns false).
+    protected async Task<bool> LoadRunAsync(int runId, string jobId)
     {
         var run = await Db.BackgroundJobRuns.IgnoreQueryFilters()
             .FirstOrDefaultAsync(r => r.Id == runId).ConfigureAwait(false);
         if (run is null || run.Status is BackgroundJobStatus.Completed or BackgroundJobStatus.Failed)
             return false;
+        if (run.Status == BackgroundJobStatus.Running && run.ClaimedByJobId != jobId)
+            return false;
 
         Tenant.OrganisationId = run.OrganisationId;
         run.Status = BackgroundJobStatus.Running;
-        await Db.SaveChangesAsync().ConfigureAwait(false);
+        run.ClaimedByJobId = jobId;
+
+        try
+        {
+            await Db.SaveChangesAsync().ConfigureAwait(false);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return false;
+        }
 
         Run = run;
         return true;

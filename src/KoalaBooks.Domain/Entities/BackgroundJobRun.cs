@@ -13,4 +13,9 @@ public class BackgroundJobRun
     public string? ResultJson { get; set; }         // job-specific payload, read only by the page that knows its shape
     public bool Acknowledged { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Hangfire's own background-job id (stable across automatic retries of the same job,
+    // different for any independently-enqueued job). Lets BackgroundJobRunBase.LoadRunAsync
+    // tell "my own retry resuming a Running run" apart from "a second job racing to claim it".
+    public string? ClaimedByJobId { get; set; }
 }
