@@ -1,6 +1,5 @@
 <CascadingAuthenticationState>
-    <Router AppAssembly="typeof(Program).Assembly"
-            AdditionalAssemblies="[typeof(KoalaBooks.Components.Pages.Home).Assembly]"
+    <Router AppAssembly="typeof(Routes).Assembly"
             NotFoundPage="typeof(KoalaBooks.Components.Pages.NotFound)">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(KoalaBooks.Components.Layout.MainLayout)">

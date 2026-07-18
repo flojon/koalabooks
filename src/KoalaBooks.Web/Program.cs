@@ -181,6 +181,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddRazorPages();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
+    .AddInteractiveWebAssemblyComponents()
     .AddAuthenticationStateSerialization(options => options.SerializeAllClaims = true);
 
 builder.Services.AddAuthorization();
@@ -316,7 +317,10 @@ app.MapStaticAssets();
 app.MapRazorPages();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode()
-    .AddAdditionalAssemblies(typeof(KoalaBooks.Components.Pages.Home).Assembly);
+    .AddInteractiveWebAssemblyRenderMode()
+    .AddAdditionalAssemblies(
+        typeof(KoalaBooks.Components.Pages.Home).Assembly,
+        typeof(KoalaBooks.Client._Imports).Assembly);
 
 app.MapOpenApi();
 if (app.Environment.IsDevelopment())

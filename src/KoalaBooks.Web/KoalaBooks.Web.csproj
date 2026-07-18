@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\KoalaBooks.Application\KoalaBooks.Application.csproj" />
+    <ProjectReference Include="..\KoalaBooks.Client\KoalaBooks.Client.csproj" />
     <ProjectReference Include="..\KoalaBooks.Components\KoalaBooks.Components.csproj" />
     <ProjectReference Include="..\KoalaBooks.Infrastructure\KoalaBooks.Infrastructure.csproj" />
     <ProjectReference Include="..\KoalaBooks.ServiceDefaults\KoalaBooks.ServiceDefaults.csproj" />

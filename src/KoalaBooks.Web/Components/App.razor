@@ -21,7 +21,7 @@
     <MudPopoverProvider @rendermode="InteractiveServer" />
     <MudDialogProvider @rendermode="InteractiveServer" />
     <MudSnackbarProvider />
-    <Routes @rendermode="InteractiveServer" />
+    <Routes @rendermode="RenderModeForPage" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
     <script src="js/download.js"></script>
@@ -31,6 +31,16 @@
 </html>
 
 @code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    // Most pages still rely on the app-wide InteractiveServer default. A page opts into a
+    // different mode (e.g. InteractiveAuto for the WASM PoC on /review) via its own
+    // @rendermode directive; that shows up here as RenderModeAttribute endpoint metadata.
+    private IComponentRenderMode RenderModeForPage =>
+        HttpContext.GetEndpoint()?.Metadata.GetMetadata<RenderModeAttribute>()?.Mode
+        ?? RenderMode.InteractiveServer;
+
     private MudTheme _theme = new MudTheme
     {
         PaletteLight = new PaletteLight
