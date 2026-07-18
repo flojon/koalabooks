@@ -43,6 +43,7 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
             Substitute.For<IDocumentStorage>(),
             Substitute.For<IDocumentExtractionQueue>(),
             Substitute.For<IZipImportQueue>(),
+            Substitute.For<IBackgroundJobRunService>(),
             Substitute.For<ICurrentUser>());
 
         Services.AddSingleton<IDocumentService>(_documentService);
