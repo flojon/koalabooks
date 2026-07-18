@@ -181,7 +181,8 @@ public class DocumentServiceTests : IDisposable
             .Options;
         await using var collidingDb = new AppDbContext(options, TestFixture.MakeTenant(_fx.OrganisationId));
         var collidingSvc = new DocumentService(
-            collidingDb, new DbDocumentStorage(collidingDb), new NoOpDocumentExtractionQueue(), TestFixture.MakeTenant(_fx.OrganisationId));
+            collidingDb, new DbDocumentStorage(collidingDb), new NoOpDocumentExtractionQueue(),
+            new NoOpZipImportQueue(), TestFixture.MakeTenant(_fx.OrganisationId));
 
         var err = await collidingSvc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", new DateOnly(2026, 3, 15));
 
@@ -382,138 +383,157 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UploadZipAsync_ImportsAllValidEntries()
+    public async Task UploadZipAsync_ValidZip_CreatesBatchAndEnqueuesJob()
     {
-        var svc = _fx.MakeDocumentService();
+        var queue = new RecordingZipImportQueue();
+        var svc = _fx.MakeDocumentService(queue);
         var zip = BuildZip(("a.pdf", new byte[] { 1, 2, 3 }), ("b.png", new byte[] { 4, 5 }));
 
-        var (result, err) = await svc.UploadZipAsync(zip);
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
         Assert.Null(err);
-        Assert.NotNull(result);
-        Assert.Equal(2, result.Imported.Count);
-        Assert.Contains(result.Imported, d => d.FileName == "a.pdf");
-        Assert.Contains(result.Imported, d => d.FileName == "b.png");
-        Assert.Empty(result.Skipped);
+        Assert.NotNull(batchId);
+        Assert.Single(queue.EnqueuedBatchIds);
+        Assert.Equal(batchId, queue.EnqueuedBatchIds[0]);
+
+        var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        Assert.Equal(2, batch.TotalEntries);
+        Assert.Equal(0, batch.ProcessedEntries);
+        Assert.False(batch.Done);
+        Assert.False(batch.Acknowledged);
+        Assert.NotNull(batch.StagingOid);
     }
 
     [Fact]
-    public async Task UploadZipAsync_FlattensNestedFolderPaths()
+    public async Task UploadZipAsync_PersistsFileName_ReturnedByGetOpenZipBatchesAsync()
     {
         var svc = _fx.MakeDocumentService();
-        var zip = BuildZip(("invoices/2026/faktura.pdf", new byte[] { 1, 2, 3 }));
+        var zip = BuildZip(("a.pdf", new byte[] { 1 }));
 
-        var (result, _) = await svc.UploadZipAsync(zip);
+        var (batchId, _) = await svc.UploadZipAsync("fakturor.zip", () => new MemoryStream(zip));
 
-        Assert.Single(result!.Imported);
-        Assert.Equal("faktura.pdf", result.Imported[0].FileName);
+        var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        Assert.Equal("fakturor.zip", batch.FileName);
+
+        var open = await svc.GetOpenZipBatchesAsync();
+        Assert.Equal("fakturor.zip", Assert.Single(open).FileName);
     }
 
     [Fact]
-    public async Task UploadZipAsync_SkipsDirectoryEntries()
+    public async Task UploadZipAsync_RejectsOversizedZipContainer_NoStagingOrBatchCreated()
     {
-        var svc = _fx.MakeDocumentService();
-        var zip = BuildZipWithDirectoryEntry();
+        var queue = new RecordingZipImportQueue();
+        var svc = _fx.MakeDocumentService(queue);
+        var bigZip = new byte[501 * 1024 * 1024];
 
-        var (result, _) = await svc.UploadZipAsync(zip);
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(bigZip));
 
-        Assert.Single(result!.Imported);
-        Assert.Equal("faktura.pdf", result.Imported[0].FileName);
-    }
-
-    [Fact]
-    public async Task UploadZipAsync_SkipsInvalidEntriesAndReportsReasons()
-    {
-        var svc = _fx.MakeDocumentService();
-        var zip = BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("bad.exe", new byte[] { 1, 2, 3 }));
-
-        var (result, _) = await svc.UploadZipAsync(zip);
-
-        Assert.Single(result!.Imported);
-        Assert.Equal("good.pdf", result.Imported[0].FileName);
-        Assert.Single(result.Skipped);
-        Assert.Equal("bad.exe", result.Skipped[0].FileName);
-    }
-
-    [Fact]
-    public async Task UploadZipAsync_SkipsOversizedEntry()
-    {
-        var svc = _fx.MakeDocumentService();
-        var bigData = new byte[11 * 1024 * 1024];
-        var zip = BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("big.pdf", bigData));
-
-        var (result, _) = await svc.UploadZipAsync(zip);
-
-        Assert.Single(result!.Imported);
-        Assert.Equal("good.pdf", result.Imported[0].FileName);
-        Assert.Single(result.Skipped);
-        Assert.Equal("big.pdf", result.Skipped[0].FileName);
-    }
-
-    [Fact]
-    public async Task UploadZipAsync_SkipsEntryWhenStorageFails_RestOfBatchStillImports()
-    {
-        var svc = _fx.MakeDocumentService(new FailingStorage());
-        var zip = BuildZip(("faktura.pdf", new byte[] { 1, 2, 3 }));
-
-        var (result, _) = await svc.UploadZipAsync(zip);
-
-        Assert.Empty(result!.Imported);
-        Assert.Single(result.Skipped);
-        Assert.Equal("faktura.pdf", result.Skipped[0].FileName);
-    }
-
-    [Fact]
-    public async Task UploadZipAsync_RejectsOversizedZipContainer()
-    {
-        var svc = _fx.MakeDocumentService();
-        var bigZip = new byte[51 * 1024 * 1024];
-
-        var (result, err) = await svc.UploadZipAsync(bigZip);
-
-        Assert.Null(result);
+        Assert.Null(batchId);
         Assert.NotNull(err);
+        Assert.Empty(queue.EnqueuedBatchIds);
+        Assert.Empty(await _fx.Db.ZipImportBatches.ToListAsync());
     }
 
     [Fact]
-    public async Task UploadZipAsync_RejectsZipWithTooManyEntries()
+    public async Task UploadZipAsync_RejectsZipWithTooManyEntries_NoStagingOrBatchCreated()
     {
-        var svc = _fx.MakeDocumentService();
-        var entries = Enumerable.Range(1, 51)
+        var queue = new RecordingZipImportQueue();
+        var svc = _fx.MakeDocumentService(queue);
+        var entries = Enumerable.Range(1, 501)
             .Select(i => ($"file{i}.pdf", new byte[] { 1 }))
             .ToArray();
         var zip = BuildZip(entries);
 
-        var (result, err) = await svc.UploadZipAsync(zip);
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
-        Assert.Null(result);
+        Assert.Null(batchId);
         Assert.NotNull(err);
+        Assert.Empty(queue.EnqueuedBatchIds);
+        Assert.Empty(await _fx.Db.ZipImportBatches.ToListAsync());
+    }
+
+    [Fact]
+    public async Task UploadZipAsync_AcceptsZipAtTheBoundary_500Entries()
+    {
+        var queue = new RecordingZipImportQueue();
+        var svc = _fx.MakeDocumentService(queue);
+        var entries = Enumerable.Range(1, 500)
+            .Select(i => ($"file{i}.pdf", new byte[] { 1 }))
+            .ToArray();
+        var zip = BuildZip(entries);
+
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
+
+        Assert.Null(err);
+        Assert.NotNull(batchId);
+        var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        Assert.Equal(500, batch.TotalEntries);
     }
 
     [Fact]
     public async Task UploadZipAsync_RejectsCorruptZipFile()
     {
-        var svc = _fx.MakeDocumentService();
+        var queue = new RecordingZipImportQueue();
+        var svc = _fx.MakeDocumentService(queue);
         var corruptBytes = new byte[] { 1, 2, 3, 4, 5 };
 
-        var (result, err) = await svc.UploadZipAsync(corruptBytes);
+        var (batchId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(corruptBytes));
 
-        Assert.Null(result);
+        Assert.Null(batchId);
         Assert.NotNull(err);
+        Assert.Empty(queue.EnqueuedBatchIds);
     }
 
     [Fact]
-    public async Task UploadZipAsync_SkipsCorruptEntry_RestOfBatchStillImports()
+    public async Task GetOpenZipBatchesAsync_ReturnsUnacknowledgedBatches_ExcludesAcknowledged()
     {
         var svc = _fx.MakeDocumentService();
-        var zip = CorruptEntryData(BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("bad.pdf", new byte[500])), "bad.pdf");
+        var zip = BuildZip(("a.pdf", new byte[] { 1 }));
+        var (batchId, _) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
 
-        var (result, _) = await svc.UploadZipAsync(zip);
+        var open = await svc.GetOpenZipBatchesAsync();
+        Assert.Single(open);
+        Assert.Equal(batchId, open[0].Id);
 
-        Assert.Single(result!.Imported);
-        Assert.Equal("good.pdf", result.Imported[0].FileName);
-        Assert.Single(result.Skipped);
-        Assert.Equal("bad.pdf", result.Skipped[0].FileName);
+        await svc.AcknowledgeZipBatchAsync(batchId!.Value);
+
+        var afterAck = await svc.GetOpenZipBatchesAsync();
+        Assert.Empty(afterAck);
+    }
+
+    [Fact]
+    public async Task GetOpenZipBatchesAsync_IncludesDoneButUnacknowledgedBatches()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("a.pdf", new byte[] { 1 }));
+        var (batchId, _) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
+
+        var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        batch.Done = true;
+        batch.ImportedCount = 1;
+        await _fx.Db.SaveChangesAsync();
+
+        var open = await svc.GetOpenZipBatchesAsync();
+        Assert.Single(open);
+        Assert.True(open[0].Done);
+        Assert.Equal(1, open[0].ImportedCount);
+    }
+
+    [Fact]
+    public async Task GetOpenZipBatchesAsync_DeserializesSkippedReasons()
+    {
+        var svc = _fx.MakeDocumentService();
+        var zip = BuildZip(("a.pdf", new byte[] { 1 }));
+        var (batchId, _) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(zip));
+
+        var batch = await _fx.Db.ZipImportBatches.FirstAsync(b => b.Id == batchId);
+        batch.SkippedReasonsJson = System.Text.Json.JsonSerializer.Serialize(new[] { new SkippedEntry("bad.exe", "Otillåten filtyp.") });
+        batch.SkippedCount = 1;
+        await _fx.Db.SaveChangesAsync();
+
+        var open = await svc.GetOpenZipBatchesAsync();
+        Assert.Single(open[0].SkippedReasons);
+        Assert.Equal("bad.exe", open[0].SkippedReasons[0].FileName);
     }
 
     private static byte[] CorruptEntryData(byte[] zipBytes, string entryName)
@@ -583,4 +603,10 @@ file class RecordingExtractionQueue : IDocumentExtractionQueue
 {
     public List<int> EnqueuedDocumentIds { get; } = [];
     public void Enqueue(int documentId) => EnqueuedDocumentIds.Add(documentId);
+}
+
+file class RecordingZipImportQueue : IZipImportQueue
+{
+    public List<int> EnqueuedBatchIds { get; } = [];
+    public void Enqueue(int batchId) => EnqueuedBatchIds.Add(batchId);
 }
