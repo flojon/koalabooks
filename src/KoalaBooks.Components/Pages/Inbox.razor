@@ -1,13 +1,20 @@
 @page "/inbox"
 @implements IDisposable
 @using KoalaBooks.Application.Services
+@using KoalaBooks.Components.Shared
+@using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
 @using MudBlazor
 @using Microsoft.AspNetCore.Components.Forms
+@using System.Text.Json
 
 <PageTitle>Inkorg — KoalaBooks</PageTitle>
 
 <h1>📥 Inkorg</h1>
+
+<BackgroundJobStatusPoller JobType="BackgroundJobType.ZipImport"
+                            StaleAfter="ZipImportStaleAfter"
+                            OnRunCompleted="HandleZipImportCompletedAsync" />
 
 @if (_error is not null)
 {
@@ -124,7 +131,6 @@ else
     [Inject] private IDialogService DialogService { get; set; } = default!;
 
     private List<DocumentMeta> _docs = [];
-    private List<ZipBatchStatus> _openZipBatches = [];
     private bool _isLoading;
     private bool _uploading;
     private string? _error;
@@ -143,10 +149,10 @@ else
     // ever syncing that failure back to ExtractionStatus — stop polling for it.
     private static readonly TimeSpan PendingStaleAfter = TimeSpan.FromMinutes(10);
 
-    // A zip batch does much more work than a single document (up to 500 entries), so it
-    // gets a longer staleness allowance before the UI gives up watching an abandoned or
-    // permanently-failed background job.
-    private static readonly TimeSpan ZipBatchStaleAfter = TimeSpan.FromMinutes(30);
+    // A zip import does much more work than a single document (up to 500 entries), so it
+    // gets a longer staleness allowance before the poller gives up watching an abandoned
+    // or permanently-failed background job.
+    private static readonly TimeSpan ZipImportStaleAfter = TimeSpan.FromMinutes(30);
 
     private static readonly HashSet<string> AllowedExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".png", ".jpg", ".jpeg" };
@@ -170,42 +176,41 @@ else
         var skip = (_page - 1) * PageSize;
         _docs = await DocumentService.GetPendingAsync(_filter, skip, PageSize, _sortBy, _sortAsc);
         _totalCount = await DocumentService.GetPendingCountAsync(_filter);
-        await RefreshZipBatchesAsync();
         _isLoading = false;
         UpdatePolling();
     }
 
-    private async Task RefreshZipBatchesAsync()
+    private async Task HandleZipImportCompletedAsync(BackgroundJobRun run)
     {
-        _openZipBatches = await DocumentService.GetOpenZipBatchesAsync();
-        foreach (var batch in _openZipBatches.Where(b => b.Done).ToList())
+        var result = JsonSerializer.Deserialize<ZipImportSummary>(run.ResultJson!)!;
+        var summary = $"{result.FileName}: {result.ImportedCount} dokument importerades";
+        if (result.SkippedCount > 0)
         {
-            var summary = $"{batch.FileName}: {batch.ImportedCount} dokument importerades";
-            if (batch.SkippedCount > 0)
-            {
-                var reasons = string.Join(", ", batch.SkippedReasons.Select(s => $"{s.FileName}: {s.Reason}"));
-                summary += $", {batch.SkippedCount} hoppade över ({reasons})";
-            }
-            // The default 3s auto-dismiss (Program.cs's SnackbarConfiguration) is too short here:
-            // this toast only fires on the poll tick after the job finishes (up to 5s late), so a
-            // user not staring at the screen at that exact moment would otherwise never see the
-            // one place the imported/skipped counts are ever reported. RequireInteraction keeps it
-            // up until dismissed.
-            Snackbar.Add(summary, batch.SkippedCount > 0 ? Severity.Warning : Severity.Success,
-                config => config.RequireInteraction = true);
-            await DocumentService.AcknowledgeZipBatchAsync(batch.Id);
-            _openZipBatches.Remove(batch);
+            var reasons = string.Join(", ", result.SkippedReasons.Select(s => $"{s.FileName}: {s.Reason}"));
+            summary += $", {result.SkippedCount} hoppade över ({reasons})";
         }
+        // The default 3s auto-dismiss (Program.cs's SnackbarConfiguration) is too short here:
+        // this toast only fires on the poll tick after the job finishes (up to 5s late), so a
+        // user not staring at the screen at that exact moment would otherwise never see the
+        // one place the imported/skipped counts are ever reported. RequireInteraction keeps it
+        // up until dismissed.
+        Snackbar.Add(summary, result.SkippedCount > 0 ? Severity.Warning : Severity.Success,
+            config => config.RequireInteraction = true);
+        await LoadPageAsync(); // Newly-imported docs won't show up until the doc list is refreshed.
     }
+
+    // Deserialized from BackgroundJobRun.ResultJson by property-name matching only — see
+    // KoalaBooks.Application.Jobs.ZipImportJob.ZipImportResult, which is the shape that
+    // actually writes it. No compile-time reference between Components and Application.Jobs.
+    private record ZipImportSummary(string FileName, int ImportedCount, int SkippedCount, List<SkippedEntryDto> SkippedReasons);
+    private record SkippedEntryDto(string FileName, string Reason);
 
     private void UpdatePolling()
     {
         var hasPendingDocs = _docs.Any(d =>
             d.ExtractionStatus == ExtractionStatus.Pending &&
             DateTime.UtcNow - d.UploadedAt < PendingStaleAfter);
-        var hasOpenBatches = _openZipBatches.Any(b =>
-            DateTime.UtcNow - b.CreatedAt < ZipBatchStaleAfter);
-        if (hasPendingDocs || hasOpenBatches)
+        if (hasPendingDocs)
         {
             _pollTimer ??= new System.Threading.Timer(OnPollTick, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
         }
@@ -295,7 +300,7 @@ else
 
                 if (isZip)
                 {
-                    var (batchId, zipErr) = await DocumentService.UploadZipAsync(file.Name, () => file.OpenReadStream(fileMaxBytes));
+                    var (_, zipErr) = await DocumentService.UploadZipAsync(file.Name, () => file.OpenReadStream(fileMaxBytes));
                     if (zipErr is not null)
                     {
                         _error = $"{file.Name}: {zipErr}";
