@@ -1,0 +1,84 @@
+@* src/KoalaBooks.Components/Shared/BackgroundJobStatusPoller.razor
+   Extracted from Inbox.razor's poll-timer/staleness/acknowledge block, generalized to
+   any BackgroundJobType. Renders no markup — the host page owns all UI (toast text,
+   download link, etc.) via OnRunCompleted; this component only owns the timer
+   lifecycle, the staleness cutoff, and acknowledging a run once the host's callback
+   returns. *@
+@implements IDisposable
+@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Enums
+
+@code {
+    [Parameter, EditorRequired] public BackgroundJobType JobType { get; set; }
+    [Parameter] public TimeSpan StaleAfter { get; set; } = TimeSpan.FromMinutes(10);
+    [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(5);
+    [Parameter, EditorRequired] public EventCallback<BackgroundJobRun> OnRunCompleted { get; set; }
+
+    [Inject] private IBackgroundJobRunService BackgroundJobRunService { get; set; } = default!;
+
+    private System.Threading.Timer? _pollTimer;
+    private int _isPolling; // 0/1 guard, read/written across the timer thread and the
+                             // dispatcher thread — needs Interlocked, not a plain bool.
+    private bool _disposed;
+    private List<BackgroundJobRun> _openRuns = [];
+
+    protected override async Task OnInitializedAsync() => await PollAsync();
+
+    private async Task PollAsync()
+    {
+        _openRuns = await BackgroundJobRunService.GetOpenRunsAsync(JobType);
+
+        foreach (var run in _openRuns.Where(r => r.Status is BackgroundJobStatus.Completed or BackgroundJobStatus.Failed).ToList())
+        {
+            await OnRunCompleted.InvokeAsync(run);
+            await BackgroundJobRunService.AcknowledgeAsync(run.Id);
+            _openRuns.Remove(run);
+        }
+
+        UpdatePolling();
+    }
+
+    private void UpdatePolling()
+    {
+        var hasOpenRuns = _openRuns.Any(r => DateTime.UtcNow - r.CreatedAt < StaleAfter);
+        if (hasOpenRuns)
+        {
+            _pollTimer ??= new System.Threading.Timer(OnPollTick, null, PollInterval, PollInterval);
+        }
+        else
+        {
+            _pollTimer?.Dispose();
+            _pollTimer = null;
+        }
+    }
+
+    private void OnPollTick(object? state)
+    {
+        if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0) return;
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                if (_disposed) return;
+                await PollAsync();
+                if (!_disposed) StateHasChanged();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _isPolling, 0);
+            }
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (_pollTimer is not null)
+        {
+            using var waitHandle = new ManualResetEvent(false);
+            _pollTimer.Dispose(waitHandle);
+            waitHandle.WaitOne();
+        }
+    }
+}
