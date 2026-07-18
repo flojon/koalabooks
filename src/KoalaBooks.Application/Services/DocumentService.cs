@@ -1,4 +1,3 @@
-using KoalaBooks.Application.Jobs;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
@@ -15,6 +14,7 @@ public class DocumentService(
     IDocumentStorage storage,
     IDocumentExtractionQueue extractionQueue,
     IZipImportQueue zipImportQueue,
+    IBackgroundJobRunService backgroundJobRunService,
     ICurrentUser currentUser) : IDocumentService
 {
     private const long MaxBytes = 10 * 1024 * 1024;
@@ -187,31 +187,6 @@ public class DocumentService(
     public Task<int> GetPendingCountAsync(string? typeFilter = null) =>
         PendingQuery(typeFilter).CountAsync();
 
-    public async Task<List<ZipBatchStatus>> GetOpenZipBatchesAsync() =>
-        await db.ZipImportBatches
-            .Where(b => !b.Acknowledged)
-            .Select(b => new ZipBatchStatus
-            {
-                Id = b.Id,
-                FileName = b.FileName,
-                TotalEntries = b.TotalEntries,
-                ProcessedEntries = b.ProcessedEntries,
-                ImportedCount = b.ImportedCount,
-                SkippedCount = b.SkippedCount,
-                SkippedReasonsJson = b.SkippedReasonsJson,
-                Done = b.Done,
-                CreatedAt = b.CreatedAt,
-            })
-            .ToListAsync().ConfigureAwait(false);
-
-    public async Task AcknowledgeZipBatchAsync(int batchId)
-    {
-        var batch = await db.ZipImportBatches.FirstOrDefaultAsync(b => b.Id == batchId).ConfigureAwait(false);
-        if (batch is null) return;
-        batch.Acknowledged = true;
-        await db.SaveChangesAsync().ConfigureAwait(false);
-    }
-
     private IQueryable<Document> PendingQuery(string? typeFilter)
     {
         var query = db.Documents
@@ -326,7 +301,7 @@ public class DocumentService(
         return (doc, null);
     }
 
-    public async Task<(int? BatchId, string? Error)> UploadZipAsync(string fileName, Func<Stream> openZipData)
+    public async Task<(int? RunId, string? Error)> UploadZipAsync(string fileName, Func<Stream> openZipData)
     {
         if (currentUser.OrganisationId is null)
             return (null, "Ingen aktiv organisation.");
@@ -372,13 +347,13 @@ public class DocumentService(
                 return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
 
             var strategy = db.Database.CreateExecutionStrategy();
-            var batchId = await strategy.ExecuteAsync(async () =>
+            var (runId, stagingOid) = await strategy.ExecuteAsync(async () =>
             {
-                // A retry re-runs this whole delegate: a prior failed attempt may
-                // have left a ZipImportBatch row tracked (Added) without committing
-                // — detach it before adding a fresh one, or SaveChangesAsync would
-                // insert both and produce a duplicate row.
-                foreach (var stale in db.ChangeTracker.Entries<ZipImportBatch>().Where(e => e.State == EntityState.Added).ToList())
+                // A retry re-runs this whole delegate: a prior failed attempt may have
+                // left a BackgroundJobRun row tracked (Added) without committing —
+                // detach it before adding a fresh one, or SaveChangesAsync would insert
+                // both and produce a duplicate row.
+                foreach (var stale in db.ChangeTracker.Entries<BackgroundJobRun>().Where(e => e.State == EntityState.Added).ToList())
                     stale.State = EntityState.Detached;
 
 #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
@@ -390,23 +365,15 @@ public class DocumentService(
 #pragma warning restore CA2007
                 var (oid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, tempReadStream).ConfigureAwait(false);
 
-                var batch = new ZipImportBatch
-                {
-                    OrganisationId = currentUser.OrganisationId.Value,
-                    FileName = fileName,
-                    StagingOid = oid,
-                    TotalEntries = entryCount,
-                };
-                db.ZipImportBatches.Add(batch);
-                await db.SaveChangesAsync().ConfigureAwait(false);
+                var run = await backgroundJobRunService.CreateRunAsync(BackgroundJobType.ZipImport, entryCount).ConfigureAwait(false);
 
                 await tx.CommitAsync().ConfigureAwait(false);
-                return batch.Id;
+                return (run.Id, oid);
             }).ConfigureAwait(false);
 
-            zipImportQueue.Enqueue(batchId);
+            zipImportQueue.Enqueue(runId, fileName, stagingOid);
 
-            return (batchId, null);
+            return (runId, null);
         }
         finally
         {
@@ -474,20 +441,4 @@ public class DocumentMeta
     /// </summary>
     public static DateTime? ResolvePrefillDate(DateOnly? documentDate, DateOnly? extractedInvoiceDate) =>
         (documentDate ?? extractedInvoiceDate)?.ToDateTime(TimeOnly.MinValue);
-}
-
-public class ZipBatchStatus
-{
-    public int Id { get; set; }
-    public string FileName { get; set; } = "";
-    public int TotalEntries { get; set; }
-    public int ProcessedEntries { get; set; }
-    public int ImportedCount { get; set; }
-    public int SkippedCount { get; set; }
-    public string SkippedReasonsJson { get; set; } = "[]";
-    public bool Done { get; set; }
-    public DateTime CreatedAt { get; set; }
-
-    public List<SkippedEntry> SkippedReasons =>
-        System.Text.Json.JsonSerializer.Deserialize<List<SkippedEntry>>(SkippedReasonsJson) ?? [];
 }

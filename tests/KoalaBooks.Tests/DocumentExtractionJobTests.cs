@@ -209,9 +209,10 @@ file class ConcurrentClassifyExtractor(
     {
         var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connectionString).Options;
         using var concurrentDb = new AppDbContext(options, TestFixture.MakeTenant(organisationId));
+        var concurrentTenant = TestFixture.MakeTenant(organisationId);
         var concurrentSvc = new DocumentService(
             concurrentDb, new DbDocumentStorage(concurrentDb), new NoOpDocumentExtractionQueue(),
-            new NoOpZipImportQueue(), TestFixture.MakeTenant(organisationId));
+            new NoOpZipImportQueue(), new BackgroundJobRunService(concurrentDb, concurrentTenant), concurrentTenant);
         await concurrentSvc.UpdateMetadataAsync(documentId, "SupplierInvoice", userChosenDate);
         return result;
     }
@@ -224,9 +225,10 @@ file class ConcurrentDeleteExtractor(string connectionString, int organisationId
     {
         var options = new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(connectionString).Options;
         using var concurrentDb = new AppDbContext(options, TestFixture.MakeTenant(organisationId));
+        var concurrentTenant = TestFixture.MakeTenant(organisationId);
         var concurrentSvc = new DocumentService(
             concurrentDb, new DbDocumentStorage(concurrentDb), new NoOpDocumentExtractionQueue(),
-            new NoOpZipImportQueue(), TestFixture.MakeTenant(organisationId));
+            new NoOpZipImportQueue(), new BackgroundJobRunService(concurrentDb, concurrentTenant), concurrentTenant);
         await concurrentSvc.DeleteAsync(documentId);
         return result;
     }

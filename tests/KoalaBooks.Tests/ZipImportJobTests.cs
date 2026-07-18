@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using KoalaBooks.Application.Jobs;
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,7 +16,7 @@ public class ZipImportJobTests : IDisposable
 
     public void Dispose() => _fx.Dispose();
 
-    private async Task<int> StageZipAsync(byte[] zipBytes, int entryCount)
+    private async Task<(int RunId, uint StagingOid)> StageZipAsync(byte[] zipBytes, int entryCount)
     {
         uint oid;
         await using (var tx = await _fx.Db.Database.BeginTransactionAsync())
@@ -25,38 +26,34 @@ public class ZipImportJobTests : IDisposable
             await tx.CommitAsync();
         }
 
-        var batch = new ZipImportBatch
-        {
-            OrganisationId = _fx.OrganisationId,
-            StagingOid = oid,
-            TotalEntries = entryCount,
-        };
-        _fx.Db.ZipImportBatches.Add(batch);
-        await _fx.Db.SaveChangesAsync();
-        return batch.Id;
+        var run = await _fx.MakeBackgroundJobRunService().CreateRunAsync(BackgroundJobType.ZipImport, entryCount);
+        return (run.Id, oid);
     }
 
     private ZipImportJob MakeJob() =>
         new ZipImportJob(_fx.Options, new DbDocumentStorage(_fx.Db), new NoOpDocumentExtractionQueue(),
             new NoOpZipImportQueue(), NullLogger<ZipImportJob>.Instance);
 
+    private async Task<BackgroundJobRun> ReloadRunAsync(int runId) =>
+        await _fx.Db.BackgroundJobRuns.IgnoreQueryFilters().AsNoTracking().FirstAsync(r => r.Id == runId);
+
+    private static ZipImportResult ParseResult(BackgroundJobRun run) =>
+        JsonSerializer.Deserialize<ZipImportResult>(run.ResultJson!)!;
+
     [Fact]
     public async Task RunAsync_ImportsAllValidEntries()
     {
         var zip = BuildZip(("a.pdf", new byte[] { 1, 2, 3 }), ("b.png", new byte[] { 4, 5 }));
-        var batchId = await StageZipAsync(zip, 2);
+        var (runId, stagingOid) = await StageZipAsync(zip, 2);
 
-        await MakeJob().RunAsync(batchId);
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid);
 
-        // AsNoTracking: RunAsync updates the batch through its own AppDbContext, not
-        // _fx.Db — without this, _fx.Db's change tracker returns the stale pre-run
-        // instance it's held onto since StageZipAsync's Add, not the persisted row.
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
-        Assert.True(batch.Done);
-        Assert.Equal(2, batch.ProcessedEntries);
-        Assert.Equal(2, batch.ImportedCount);
-        Assert.Equal(0, batch.SkippedCount);
-        Assert.Null(batch.StagingOid);
+        var run = await ReloadRunAsync(runId);
+        Assert.Equal(BackgroundJobStatus.Completed, run.Status);
+        Assert.Equal(2, run.ProcessedCount);
+        var result = ParseResult(run);
+        Assert.Equal(2, result.ImportedCount);
+        Assert.Equal(0, result.SkippedCount);
 
         var docs = await _fx.Db.Documents.IgnoreQueryFilters().Where(d => d.OrganisationId == _fx.OrganisationId).ToListAsync();
         Assert.Equal(2, docs.Count);
@@ -68,9 +65,9 @@ public class ZipImportJobTests : IDisposable
     public async Task RunAsync_FlattensNestedFolderPaths()
     {
         var zip = BuildZip(("invoices/2026/faktura.pdf", new byte[] { 1, 2, 3 }));
-        var batchId = await StageZipAsync(zip, 1);
+        var (runId, stagingOid) = await StageZipAsync(zip, 1);
 
-        await MakeJob().RunAsync(batchId);
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid);
 
         var docs = await _fx.Db.Documents.IgnoreQueryFilters().Where(d => d.OrganisationId == _fx.OrganisationId).ToListAsync();
         Assert.Single(docs);
@@ -81,9 +78,9 @@ public class ZipImportJobTests : IDisposable
     public async Task RunAsync_SkipsDirectoryEntries()
     {
         var zip = BuildZipWithDirectoryEntry();
-        var batchId = await StageZipAsync(zip, 1);
+        var (runId, stagingOid) = await StageZipAsync(zip, 1);
 
-        await MakeJob().RunAsync(batchId);
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid);
 
         var docs = await _fx.Db.Documents.IgnoreQueryFilters().Where(d => d.OrganisationId == _fx.OrganisationId).ToListAsync();
         Assert.Single(docs);
@@ -94,16 +91,15 @@ public class ZipImportJobTests : IDisposable
     public async Task RunAsync_SkipsInvalidEntryType_ReportsReason()
     {
         var zip = BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("bad.exe", new byte[] { 1, 2, 3 }));
-        var batchId = await StageZipAsync(zip, 2);
+        var (runId, stagingOid) = await StageZipAsync(zip, 2);
 
-        await MakeJob().RunAsync(batchId);
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
-        Assert.Equal(1, batch.ImportedCount);
-        Assert.Equal(1, batch.SkippedCount);
-        var skipped = JsonSerializer.Deserialize<List<SkippedEntry>>(batch.SkippedReasonsJson)!;
-        Assert.Single(skipped);
-        Assert.Equal("bad.exe", skipped[0].FileName);
+        var result = ParseResult(await ReloadRunAsync(runId));
+        Assert.Equal(1, result.ImportedCount);
+        Assert.Equal(1, result.SkippedCount);
+        Assert.Single(result.SkippedReasons);
+        Assert.Equal("bad.exe", result.SkippedReasons[0].FileName);
     }
 
     [Fact]
@@ -111,65 +107,72 @@ public class ZipImportJobTests : IDisposable
     {
         var bigData = new byte[11 * 1024 * 1024];
         var zip = BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("big.pdf", bigData));
-        var batchId = await StageZipAsync(zip, 2);
+        var (runId, stagingOid) = await StageZipAsync(zip, 2);
 
-        await MakeJob().RunAsync(batchId);
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
-        Assert.Equal(1, batch.ImportedCount);
-        Assert.Equal(1, batch.SkippedCount);
+        var result = ParseResult(await ReloadRunAsync(runId));
+        Assert.Equal(1, result.ImportedCount);
+        Assert.Equal(1, result.SkippedCount);
     }
 
     [Fact]
-    public async Task RunAsync_CorruptZipContainer_MarksDoneImmediately_NoEntriesProcessed()
+    public async Task RunAsync_CorruptZipContainer_CompletesImmediately_NoEntriesProcessed()
     {
         var corruptBytes = new byte[] { 1, 2, 3, 4, 5 };
-        var batchId = await StageZipAsync(corruptBytes, 0);
+        var (runId, stagingOid) = await StageZipAsync(corruptBytes, 0);
 
-        await MakeJob().RunAsync(batchId);
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
-        Assert.True(batch.Done);
-        Assert.Equal(0, batch.ProcessedEntries);
-        var skipped = JsonSerializer.Deserialize<List<SkippedEntry>>(batch.SkippedReasonsJson)!;
-        Assert.Single(skipped);
+        var run = await ReloadRunAsync(runId);
+        Assert.Equal(BackgroundJobStatus.Completed, run.Status);
+        Assert.Equal(0, run.ProcessedCount);
+        var result = ParseResult(run);
+        Assert.Single(result.SkippedReasons);
     }
 
     [Fact]
     public async Task RunAsync_SkipsCorruptEntry_RestOfBatchStillImports()
     {
         var zip = CorruptEntryData(BuildZip(("good.pdf", new byte[] { 1, 2, 3 }), ("bad.pdf", new byte[500])), "bad.pdf");
-        var batchId = await StageZipAsync(zip, 2);
+        var (runId, stagingOid) = await StageZipAsync(zip, 2);
 
-        await MakeJob().RunAsync(batchId);
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid);
 
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
-        Assert.Equal(1, batch.ImportedCount);
-        Assert.Equal(1, batch.SkippedCount);
+        var result = ParseResult(await ReloadRunAsync(runId));
+        Assert.Equal(1, result.ImportedCount);
+        Assert.Equal(1, result.SkippedCount);
     }
 
     [Fact]
     public async Task RunAsync_ResumesFromProcessedEntries_DoesNotReimportOnRetry()
     {
         var zip = BuildZip(("a.pdf", new byte[] { 1 }), ("b.pdf", new byte[] { 2 }), ("c.pdf", new byte[] { 3 }));
-        var batchId = await StageZipAsync(zip, 3);
+        var (runId, stagingOid) = await StageZipAsync(zip, 3);
 
-        // Simulate a first attempt that processed the first entry then crashed
-        // (e.g. a transient storage failure) before saving further progress.
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().FirstAsync(b => b.Id == batchId);
+        // Simulate a first attempt that processed the first entry then crashed (e.g. a
+        // transient storage failure) before the job's process could move past it — the
+        // run is left Pending (LoadRunAsync never got the chance to flip it to Running
+        // and record a ClaimedByJobId), with ProcessedCount/ResultJson already reflecting
+        // that one entry, exactly what SaveProgressAsync/Run.ResultJson would have
+        // persisted mid-loop.
         var svc = _fx.MakeDocumentService();
         await svc.UploadAsync("a.pdf", "application/pdf", () => new MemoryStream(new byte[] { 1 }));
-        batch.ProcessedEntries = 1;
-        batch.ImportedCount = 1;
+        var run = await _fx.Db.BackgroundJobRuns.IgnoreQueryFilters().FirstAsync(r => r.Id == runId);
+        run.ProcessedCount = 1;
+        run.ResultJson = JsonSerializer.Serialize(new ZipImportResult("test.zip", 1, 0, []));
         await _fx.Db.SaveChangesAsync();
 
-        // Retry: RunAsync should resume from entry index 1, not reprocess "a.pdf".
-        await MakeJob().RunAsync(batchId);
+        // Retry: RunAsync should resume from entry index 1, not reprocess "a.pdf", and the
+        // final ImportedCount must include the entry the simulated first attempt already
+        // imported.
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid);
 
-        var finalBatch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batchId);
-        Assert.True(finalBatch.Done);
-        Assert.Equal(3, finalBatch.ProcessedEntries);
-        Assert.Equal(3, finalBatch.ImportedCount);
+        var finalRun = await ReloadRunAsync(runId);
+        Assert.Equal(BackgroundJobStatus.Completed, finalRun.Status);
+        Assert.Equal(3, finalRun.ProcessedCount);
+        var result = ParseResult(finalRun);
+        Assert.Equal(3, result.ImportedCount);
 
         var docs = await _fx.Db.Documents.IgnoreQueryFilters().Where(d => d.OrganisationId == _fx.OrganisationId).ToListAsync();
         Assert.Single(docs, d => d.FileName == "a.pdf"); // exactly one, not duplicated
@@ -178,21 +181,21 @@ public class ZipImportJobTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_UnknownBatchId_NoOpsWithoutThrowing()
+    public async Task RunAsync_UnknownRunId_NoOpsWithoutThrowing()
     {
-        await MakeJob().RunAsync(999_999);
+        await MakeJob().RunAsync(999_999, "test.zip", 0);
     }
 
     [Fact]
-    public async Task RunAsync_AlreadyDoneBatch_NoOpsWithoutThrowing()
+    public async Task RunAsync_AlreadyCompletedRun_NoOpsWithoutThrowing()
     {
         var zip = BuildZip(("a.pdf", new byte[] { 1 }));
-        var batchId = await StageZipAsync(zip, 1);
-        var batch = await _fx.Db.ZipImportBatches.IgnoreQueryFilters().FirstAsync(b => b.Id == batchId);
-        batch.Done = true;
+        var (runId, stagingOid) = await StageZipAsync(zip, 1);
+        var run = await _fx.Db.BackgroundJobRuns.IgnoreQueryFilters().FirstAsync(r => r.Id == runId);
+        run.Status = BackgroundJobStatus.Completed;
         await _fx.Db.SaveChangesAsync();
 
-        await MakeJob().RunAsync(batchId); // must not throw even though StagingOid still points at a valid LO
+        await MakeJob().RunAsync(runId, "test.zip", stagingOid); // must not throw even though stagingOid still points at a valid LO
 
         var docs = await _fx.Db.Documents.IgnoreQueryFilters().Where(d => d.OrganisationId == _fx.OrganisationId).ToListAsync();
         Assert.Empty(docs); // confirms it didn't reprocess

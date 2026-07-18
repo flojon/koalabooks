@@ -5,6 +5,6 @@ namespace KoalaBooks.Application.Jobs;
 
 public class HangfireZipImportQueue(IBackgroundJobClient jobClient) : IZipImportQueue
 {
-    public void Enqueue(int batchId) =>
-        jobClient.Enqueue<ZipImportJob>(job => job.RunAsync(batchId));
+    public void Enqueue(int runId, string fileName, uint stagingOid) =>
+        jobClient.Enqueue<ZipImportJob>(job => job.RunAsync(runId, fileName, stagingOid, null));
 }

@@ -1,7 +1,7 @@
 using Hangfire;
+using Hangfire.Server;
 using KoalaBooks.Application.Services;
-using KoalaBooks.Domain;
-using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
@@ -15,12 +15,20 @@ namespace KoalaBooks.Application.Jobs;
 
 public record SkippedEntry(string FileName, string Reason);
 
+// The ResultJson payload for a BackgroundJobRun with JobType == ZipImport. Written after
+// every processed entry (not just at CompleteAsync) so a Hangfire retry that resumes
+// mid-zip can recover the tally from entries an earlier attempt already accounted for —
+// Run.ProcessedCount alone tells RunAsync *where* to resume, but not what the running
+// import/skip counts were. Read directly by Inbox.razor via plain JSON property-name
+// matching — no shared type reference between Components and Application.Jobs needed.
+public record ZipImportResult(string FileName, int ImportedCount, int SkippedCount, List<SkippedEntry> SkippedReasons);
+
 public class ZipImportJob(
     DbContextOptions<AppDbContext> dbOptions,
     IDocumentStorage storage,
     IDocumentExtractionQueue extractionQueue,
     IZipImportQueue zipImportQueue,
-    ILogger<ZipImportJob> logger)
+    ILogger<ZipImportJob> logger) : BackgroundJobRunBase(dbOptions)
 {
     private static readonly Dictionary<string, string> ZipEntryContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -30,30 +38,34 @@ public class ZipImportJob(
         [".jpeg"] = "image/jpeg",
     };
 
-    // A batch left un-Done after all 3 retries are exhausted is not specially recovered
-    // here — it simply stays Done=false forever, the same way DocumentExtractionJob
-    // leaves a Document stuck at ExtractionStatus.Pending if its own retries run out.
-    // Inbox.razor's poll-timer already has a staleness cutoff for exactly this class of
-    // problem (see PendingStaleAfter) and gets an equivalent one for batches in Task 7.
+    // A run left un-Completed after all 3 retries are exhausted is caught by
+    // BackgroundJobRunFailureFilter (PR #285), which marks it Failed so
+    // BackgroundJobStatusPoller/Inbox.razor can surface that instead of polling forever.
+    //
+    // fileName/stagingOid arrive as ordinary Hangfire job arguments (serialized once at
+    // Enqueue time, replayed unchanged on every automatic retry) rather than being looked
+    // up from a persisted row — BackgroundJobRun has no room for job-specific input
+    // columns by design (see the design doc's Architecture §1).
+    //
+    // context is Hangfire's special PerformContext parameter: real callers (see
+    // HangfireZipImportQueue) pass null at enqueue time and Hangfire substitutes the real
+    // context at execution time, giving BackgroundJob.Id — the same id across every
+    // automatic retry of this job, which is what LoadRunAsync's double-claim protection
+    // keys on. Unit tests call RunAsync directly with no context, falling back to a fresh
+    // random id; no test depends on jobId being stable across two separate RunAsync calls
+    // (retry-resume tests simulate the earlier attempt by writing directly to the row).
     [AutomaticRetry(Attempts = 3)]
-    public async Task RunAsync(int batchId)
+    public async Task RunAsync(int runId, string fileName, uint stagingOid, PerformContext? context = null)
     {
-        // This job has no HttpContext, so a DI-resolved ICurrentUser/AppDbContext/DocumentService
-        // would always see OrganisationId == null (DocumentService.UploadAsync would reject every
-        // entry with "Ingen aktiv organisation."). Instead, build our own AppDbContext bound to a
-        // mutable LocalCurrentUser, the same way DemoDataSeeder does — starting with no org (so the
-        // initial batch lookup, done with IgnoreQueryFilters, is unaffected either way) and then
-        // setting it to the batch's own OrganisationId once known, so DocumentService's writes and
-        // this context's own tenant query filter both scope correctly from that point on.
-        var tenant = new LocalCurrentUser();
-#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-        await using var db = new AppDbContext(dbOptions, tenant);
-#pragma warning restore CA2007
-        var documentService = new DocumentService(db, storage, extractionQueue, zipImportQueue, tenant);
+        var jobId = context?.BackgroundJob.Id ?? Guid.NewGuid().ToString();
+        if (!await LoadRunAsync(runId, jobId).ConfigureAwait(false)) return;
 
-        var batch = await db.ZipImportBatches.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == batchId).ConfigureAwait(false);
-        if (batch is null || batch.Done) return;
-        tenant.OrganisationId = batch.OrganisationId;
+        var documentService = new DocumentService(
+            Db, storage, extractionQueue, zipImportQueue, new BackgroundJobRunService(Db, Tenant), Tenant);
+
+        var (importedCount, skippedCount, skipped) = Run.ResultJson is null
+            ? (0, 0, new List<SkippedEntry>())
+            : ToTuple(JsonSerializer.Deserialize<ZipImportResult>(Run.ResultJson)!);
 
         var tempPath = Path.GetTempFileName();
         try
@@ -62,7 +74,7 @@ public class ZipImportJob(
             await using (var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite))
 #pragma warning restore CA2007
             {
-                var readStrategy = db.Database.CreateExecutionStrategy();
+                var readStrategy = Db.Database.CreateExecutionStrategy();
                 await readStrategy.ExecuteAsync(async () =>
                 {
                     // A retry re-invokes this whole delegate: reset the temp file so a
@@ -71,10 +83,10 @@ public class ZipImportJob(
                     tempStream.Position = 0;
                     tempStream.SetLength(0);
 #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-                    await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+                    await using var tx = await Db.Database.BeginTransactionAsync().ConfigureAwait(false);
 #pragma warning restore CA2007
-                    var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-                    await PostgresLargeObjects.CopyLargeObjectIntoStreamAsync(conn, batch.StagingOid!.Value, tempStream).ConfigureAwait(false);
+                    var conn = (NpgsqlConnection)Db.Database.GetDbConnection();
+                    await PostgresLargeObjects.CopyLargeObjectIntoStreamAsync(conn, stagingOid, tempStream).ConfigureAwait(false);
                     await tx.CommitAsync().ConfigureAwait(false);
                 }).ConfigureAwait(false);
                 tempStream.Position = 0;
@@ -88,20 +100,22 @@ public class ZipImportJob(
                     }
                     catch (InvalidDataException)
                     {
-                        await AppendSkippedAsync(batch, "(zip-fil)", "Ogiltig zip-fil.").ConfigureAwait(false);
-                        batch.Done = true;
-                        await db.SaveChangesAsync().ConfigureAwait(false);
-                        await DeleteStagingAsync(db, batch).ConfigureAwait(false);
+                        skipped.Add(new SkippedEntry("(zip-fil)", "Ogiltig zip-fil."));
+                        skippedCount++;
+                        await CompleteAsync(BackgroundJobStatus.Completed,
+                            new ZipImportResult(fileName, importedCount, skippedCount, skipped)).ConfigureAwait(false);
+                        await DeleteStagingAsync(stagingOid, runId).ConfigureAwait(false);
                         return;
                     }
 
                     var fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
 
-                    foreach (var entry in fileEntries.Skip(batch.ProcessedEntries))
+                    foreach (var entry in fileEntries.Skip(Run.ProcessedCount))
                     {
                         if (!ZipEntryContentTypes.TryGetValue(Path.GetExtension(entry.Name), out var contentType))
                         {
-                            await AppendSkippedAsync(batch, entry.Name, "Otillåten filtyp.").ConfigureAwait(false);
+                            skipped.Add(new SkippedEntry(entry.Name, "Otillåten filtyp."));
+                            skippedCount++;
                         }
                         else
                         {
@@ -111,18 +125,27 @@ public class ZipImportJob(
                                 var (doc, err) = await documentService.UploadAsync(
                                     entry.Name, contentType, () => archive.GetEntry(entryFullName)!.Open()).ConfigureAwait(false);
                                 if (doc is not null)
-                                    batch.ImportedCount++;
+                                {
+                                    importedCount++;
+                                }
                                 else
-                                    await AppendSkippedAsync(batch, entry.Name, err ?? "Okänt fel.").ConfigureAwait(false);
+                                {
+                                    skipped.Add(new SkippedEntry(entry.Name, err ?? "Okänt fel."));
+                                    skippedCount++;
+                                }
                             }
                             catch (InvalidDataException)
                             {
-                                await AppendSkippedAsync(batch, entry.Name, "Skadad fil.").ConfigureAwait(false);
+                                skipped.Add(new SkippedEntry(entry.Name, "Skadad fil."));
+                                skippedCount++;
                             }
                         }
 
-                        batch.ProcessedEntries++;
-                        await db.SaveChangesAsync().ConfigureAwait(false);
+                        // Written before SaveProgressAsync's own SaveChangesAsync so both
+                        // land in the same round trip — see the ZipImportResult doc
+                        // comment on why this interim write matters for retry-resume.
+                        Run.ResultJson = JsonSerializer.Serialize(new ZipImportResult(fileName, importedCount, skippedCount, skipped));
+                        await SaveProgressAsync(Run.ProcessedCount + 1).ConfigureAwait(false);
                     }
                 }
                 finally
@@ -131,9 +154,9 @@ public class ZipImportJob(
                 }
             }
 
-            batch.Done = true;
-            await db.SaveChangesAsync().ConfigureAwait(false);
-            await DeleteStagingAsync(db, batch).ConfigureAwait(false);
+            await CompleteAsync(BackgroundJobStatus.Completed,
+                new ZipImportResult(fileName, importedCount, skippedCount, skipped)).ConfigureAwait(false);
+            await DeleteStagingAsync(stagingOid, runId).ConfigureAwait(false);
         }
         finally
         {
@@ -141,40 +164,29 @@ public class ZipImportJob(
         }
     }
 
-    private async Task AppendSkippedAsync(ZipImportBatch batch, string fileName, string reason)
-    {
-        var skipped = JsonSerializer.Deserialize<List<SkippedEntry>>(batch.SkippedReasonsJson) ?? [];
-        skipped.Add(new SkippedEntry(fileName, reason));
-        batch.SkippedReasonsJson = JsonSerializer.Serialize(skipped);
-        batch.SkippedCount++;
-        await Task.CompletedTask.ConfigureAwait(false);
-    }
+    private static (int, int, List<SkippedEntry>) ToTuple(ZipImportResult r) => (r.ImportedCount, r.SkippedCount, r.SkippedReasons);
 
-    private async Task DeleteStagingAsync(AppDbContext db, ZipImportBatch batch)
+    private async Task DeleteStagingAsync(uint stagingOid, int runId)
     {
-        if (batch.StagingOid is null) return;
-
         try
         {
-            var strategy = db.Database.CreateExecutionStrategy();
+            var strategy = Db.Database.CreateExecutionStrategy();
             await strategy.ExecuteAsync(async () =>
             {
 #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-                await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+                await using var tx = await Db.Database.BeginTransactionAsync().ConfigureAwait(false);
 #pragma warning restore CA2007
-                var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-                await PostgresLargeObjects.DeleteLargeObjectAsync(conn, batch.StagingOid!.Value).ConfigureAwait(false);
-                batch.StagingOid = null;
-                await db.SaveChangesAsync().ConfigureAwait(false);
+                var conn = (NpgsqlConnection)Db.Database.GetDbConnection();
+                await PostgresLargeObjects.DeleteLargeObjectAsync(conn, stagingOid).ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            // The batch has already been marked Done and the local temp file cleaned up —
-            // a leaked LO here is a minor storage-cleanup miss, not a correctness issue for
-            // the batch itself, so log and move on rather than failing the whole run.
-            logger.LogWarning(ex, "Failed to delete staging large object {Oid} for batch {BatchId}", batch.StagingOid, batch.Id);
+            // The run has already been marked Completed and the local temp file cleaned
+            // up — a leaked LO here is a minor storage-cleanup miss, not a correctness
+            // issue for the run itself, so log and move on rather than failing the job.
+            logger.LogWarning(ex, "Failed to delete staging large object {Oid} for run {RunId}", stagingOid, runId);
         }
     }
 }

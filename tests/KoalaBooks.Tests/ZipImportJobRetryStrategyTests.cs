@@ -1,6 +1,9 @@
+using System.Text.Json;
 using KoalaBooks.Application.Jobs;
+using KoalaBooks.Application.Services;
 using KoalaBooks.Domain;
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +16,7 @@ public class ZipImportJobRetryStrategyTests : IDisposable
 {
     private readonly string _dbName;
     private readonly DbContextOptions<AppDbContext> _dbOptions;
-    // Only used to seed the org and stage the zip, and to re-read the batch afterwards —
+    // Only used to seed the org, stage the zip, and re-read the run afterwards —
     // ZipImportJob builds its own AppDbContext from _dbOptions internally, the same way
     // it does in production (see ZipImportJob.RunAsync's comment on why).
     private readonly AppDbContext _db;
@@ -44,7 +47,7 @@ public class ZipImportJobRetryStrategyTests : IDisposable
     }
 
     [Fact]
-    public async Task RunAsync_ProcessesStagedBatch_UnderRetryingExecutionStrategy()
+    public async Task RunAsync_ProcessesStagedRun_UnderRetryingExecutionStrategy()
     {
         using var ms = new MemoryStream();
         using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
@@ -62,22 +65,21 @@ public class ZipImportJobRetryStrategyTests : IDisposable
             await tx.CommitAsync();
         }
 
-        var batch = new ZipImportBatch { OrganisationId = _organisationId, StagingOid = stagingOid, TotalEntries = 1 };
-        _db.ZipImportBatches.Add(batch);
-        await _db.SaveChangesAsync();
+        var runService = new BackgroundJobRunService(_db, new LocalCurrentUser(_organisationId));
+        var run = await runService.CreateRunAsync(BackgroundJobType.ZipImport, totalCount: 1);
 
         var job = new ZipImportJob(_dbOptions, new DbDocumentStorage(_db), new NoOpDocumentExtractionQueue(),
             new NoOpZipImportQueue(), NullLogger<ZipImportJob>.Instance);
 
-        await job.RunAsync(batch.Id);
+        await job.RunAsync(run.Id, "test.zip", stagingOid);
 
-        // AsNoTracking: batch is already tracked from the setup above, so a tracking
-        // query would return the identity-mapped in-memory instance rather than
-        // re-reading the actual persisted row — masking a failed SaveChangesAsync
-        // that never reached Postgres.
-        var updated = await _db.ZipImportBatches.IgnoreQueryFilters().AsNoTracking().FirstAsync(b => b.Id == batch.Id);
-        Assert.True(updated.Done);
-        Assert.Equal(1, updated.ImportedCount);
-        Assert.Null(updated.StagingOid);
+        // AsNoTracking: run is already tracked from the setup above, so a tracking query
+        // would return the identity-mapped in-memory instance rather than re-reading the
+        // actual persisted row — masking a failed SaveChangesAsync that never reached
+        // Postgres.
+        var updated = await _db.BackgroundJobRuns.IgnoreQueryFilters().AsNoTracking().FirstAsync(r => r.Id == run.Id);
+        Assert.Equal(BackgroundJobStatus.Completed, updated.Status);
+        var result = JsonSerializer.Deserialize<ZipImportResult>(updated.ResultJson!)!;
+        Assert.Equal(1, result.ImportedCount);
     }
 }
