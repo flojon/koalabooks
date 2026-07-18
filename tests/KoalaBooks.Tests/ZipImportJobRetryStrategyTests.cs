@@ -65,7 +65,7 @@ public class ZipImportJobRetryStrategyTests : IDisposable
             await tx.CommitAsync();
         }
 
-        var runService = new BackgroundJobRunService(_db, new LocalCurrentUser(_organisationId));
+        var runService = new BackgroundJobRunService(_db, _dbOptions, new LocalCurrentUser(_organisationId));
         var run = await runService.CreateRunAsync(BackgroundJobType.ZipImport, totalCount: 1);
 
         var job = new ZipImportJob(_dbOptions, new DbDocumentStorage(_db), new NoOpDocumentExtractionQueue(),

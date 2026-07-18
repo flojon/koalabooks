@@ -61,7 +61,7 @@ public class ZipImportJob(
         if (!await LoadRunAsync(runId, jobId).ConfigureAwait(false)) return;
 
         var documentService = new DocumentService(
-            Db, storage, extractionQueue, zipImportQueue, new BackgroundJobRunService(Db, Tenant), Tenant);
+            Db, storage, extractionQueue, zipImportQueue, new BackgroundJobRunService(Db, dbOptions, Tenant), Tenant);
 
         var (importedCount, skippedCount, skipped) = Run.ResultJson is null
             ? (0, 0, new List<SkippedEntry>())

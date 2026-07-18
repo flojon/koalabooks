@@ -183,7 +183,7 @@ public class DocumentServiceTests : IDisposable
         var collidingTenant = TestFixture.MakeTenant(_fx.OrganisationId);
         var collidingSvc = new DocumentService(
             collidingDb, new DbDocumentStorage(collidingDb), new NoOpDocumentExtractionQueue(),
-            new NoOpZipImportQueue(), new BackgroundJobRunService(collidingDb, collidingTenant), collidingTenant);
+            new NoOpZipImportQueue(), new BackgroundJobRunService(collidingDb, options, collidingTenant), collidingTenant);
 
         var err = await collidingSvc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", new DateOnly(2026, 3, 15));
 

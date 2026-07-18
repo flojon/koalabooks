@@ -13,6 +13,7 @@ namespace KoalaBooks.Tests;
 public class DocumentServiceZipRetryStrategyTests : IDisposable
 {
     private readonly string _dbName;
+    private readonly DbContextOptions<AppDbContext> _dbOptions;
     private readonly AppDbContext _db;
     private readonly int _organisationId;
 
@@ -24,11 +25,11 @@ public class DocumentServiceZipRetryStrategyTests : IDisposable
         // Mirrors Program.cs's EnrichNpgsqlDbContext, which enables a
         // retrying execution strategy in the real app — this is what
         // UploadZipAsync's manual staging transaction must be compatible with.
-        var options = new DbContextOptionsBuilder<AppDbContext>()
+        _dbOptions = new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(connStr, o => o.EnableRetryOnFailure())
             .Options;
 
-        _db = new AppDbContext(options, new LocalCurrentUser());
+        _db = new AppDbContext(_dbOptions, new LocalCurrentUser());
         _db.Database.EnsureCreated();
 
         var org = new Organisation { Name = "Test Org", Slug = "test-org" };
@@ -50,7 +51,7 @@ public class DocumentServiceZipRetryStrategyTests : IDisposable
         var queue = new RecordingZipImportQueue();
         var svc = new DocumentService(_db, new DbDocumentStorage(_db),
             new NoOpDocumentExtractionQueue(), queue,
-            new BackgroundJobRunService(_db, currentUser), currentUser);
+            new BackgroundJobRunService(_db, _dbOptions, currentUser), currentUser);
 
         using var ms = new MemoryStream();
         using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))

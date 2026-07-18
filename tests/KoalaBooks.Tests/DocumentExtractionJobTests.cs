@@ -212,7 +212,7 @@ file class ConcurrentClassifyExtractor(
         var concurrentTenant = TestFixture.MakeTenant(organisationId);
         var concurrentSvc = new DocumentService(
             concurrentDb, new DbDocumentStorage(concurrentDb), new NoOpDocumentExtractionQueue(),
-            new NoOpZipImportQueue(), new BackgroundJobRunService(concurrentDb, concurrentTenant), concurrentTenant);
+            new NoOpZipImportQueue(), new BackgroundJobRunService(concurrentDb, options, concurrentTenant), concurrentTenant);
         await concurrentSvc.UpdateMetadataAsync(documentId, "SupplierInvoice", userChosenDate);
         return result;
     }
@@ -228,7 +228,7 @@ file class ConcurrentDeleteExtractor(string connectionString, int organisationId
         var concurrentTenant = TestFixture.MakeTenant(organisationId);
         var concurrentSvc = new DocumentService(
             concurrentDb, new DbDocumentStorage(concurrentDb), new NoOpDocumentExtractionQueue(),
-            new NoOpZipImportQueue(), new BackgroundJobRunService(concurrentDb, concurrentTenant), concurrentTenant);
+            new NoOpZipImportQueue(), new BackgroundJobRunService(concurrentDb, options, concurrentTenant), concurrentTenant);
         await concurrentSvc.DeleteAsync(documentId);
         return result;
     }

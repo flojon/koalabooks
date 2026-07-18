@@ -203,5 +203,5 @@ public class TestFixture : IDisposable
         new DocumentService(Db, new DbDocumentStorage(Db), new NoOpDocumentExtractionQueue(), zipImportQueue, MakeBackgroundJobRunService(), _currentUser);
 
     public BackgroundJobRunService MakeBackgroundJobRunService() =>
-        new BackgroundJobRunService(Db, _currentUser);
+        new BackgroundJobRunService(Db, Options, _currentUser);
 }

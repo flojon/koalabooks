@@ -180,7 +180,15 @@ else
         UpdatePolling();
     }
 
-    private async Task HandleZipImportCompletedAsync(BackgroundJobRun run)
+    // Synchronous (no DB access): OnRunCompleted can fire from BackgroundJobStatusPoller's
+    // own OnInitializedAsync, which runs concurrently with this page's own
+    // OnInitializedAsync (LoadPageAsync) — both would otherwise touch the same
+    // Blazor-circuit-scoped AppDbContext at once (EF Core's "second operation was started
+    // on this context instance" crash, reproduced while manually verifying this retrofit).
+    // Newly-imported docs still show up without a manual reload: they're created with
+    // ExtractionStatus.Pending, which keeps this page's own _pollTimer running (see
+    // UpdatePolling) and picks them up on its next tick.
+    private Task HandleZipImportCompletedAsync(BackgroundJobRun run)
     {
         var result = JsonSerializer.Deserialize<ZipImportSummary>(run.ResultJson!)!;
         var summary = $"{result.FileName}: {result.ImportedCount} dokument importerades";
@@ -196,7 +204,7 @@ else
         // up until dismissed.
         Snackbar.Add(summary, result.SkippedCount > 0 ? Severity.Warning : Severity.Success,
             config => config.RequireInteraction = true);
-        await LoadPageAsync(); // Newly-imported docs won't show up until the doc list is refreshed.
+        return Task.CompletedTask;
     }
 
     // Deserialized from BackgroundJobRun.ResultJson by property-name matching only — see
