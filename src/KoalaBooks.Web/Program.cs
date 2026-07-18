@@ -163,6 +163,7 @@ builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractor>(sp =
 builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentStorage,
     KoalaBooks.Infrastructure.Services.DbDocumentStorage>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<IBackgroundJobRunService, BackgroundJobRunService>();
 builder.Services.AddScoped<IDocumentProvider, WebDocumentProvider>();
 builder.Services.AddSingleton<IVatReportCsvExporter, VatReportCsvExporter>();
 
