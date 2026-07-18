@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using OpenIddict.Abstractions;
 using Microsoft.AspNetCore;
 using OpenIddict.Server.AspNetCore;
-using System.Security.Claims;
+using Microsoft.Extensions.Primitives;
 
 namespace KoalaBooks.Web.Pages.Connect;
 
@@ -82,13 +82,22 @@ public class TokenModel : PageModel
 
     private async Task<IActionResult> HandleCookieGrantAsync(OpenIddictRequest request)
     {
-        if (Request.Headers[WasmCookieBridge.CsrfHeaderName] != WasmCookieBridge.CsrfHeaderValue)
+        var csrfHeader = Request.Headers[WasmCookieBridge.CsrfHeaderName];
+        if (StringValues.IsNullOrEmpty(csrfHeader))
             return Forbid(
                 authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
                 properties: new AuthenticationProperties(new Dictionary<string, string?>
                 {
                     [OpenIddictServerAspNetCoreConstants.Properties.Error] = OpenIddictConstants.Errors.InvalidRequest,
                     [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "Missing required header."
+                }));
+        if (csrfHeader != WasmCookieBridge.CsrfHeaderValue)
+            return Forbid(
+                authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
+                properties: new AuthenticationProperties(new Dictionary<string, string?>
+                {
+                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = OpenIddictConstants.Errors.InvalidRequest,
+                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "Invalid header value."
                 }));
 
         var cookieResult = await HttpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
