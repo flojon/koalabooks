@@ -4,6 +4,7 @@ using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NSubstitute.ReceivedExtensions;
 
 namespace KoalaBooks.ComponentTests;
@@ -15,6 +16,7 @@ public class BackgroundJobStatusPollerTests : BunitContext
     public BackgroundJobStatusPollerTests()
     {
         Services.AddSingleton(_service);
+        Services.AddSingleton(Substitute.For<ILogger<BackgroundJobStatusPoller>>());
     }
 
     [Fact]
@@ -92,5 +94,40 @@ public class BackgroundJobStatusPollerTests : BunitContext
             .Add(p => p.OnRunCompleted, EventCallback.Factory.Create<BackgroundJobRun>(this, _ => { })));
 
         _ = _service.Received(1).GetOpenRunsAsync(BackgroundJobType.SieImport);
+    }
+
+    [Fact]
+    public void PollTickThrows_DoesNotCrashAndPollingContinues()
+    {
+        // First call is the initial PollAsync from OnInitializedAsync (unguarded, outside
+        // OnPollTick) and must succeed so a timer gets scheduled. The second call happens
+        // on the first timer tick, inside OnPollTick's try/catch, and throws — this is the
+        // exact path the finding is about. If OnPollTick's catch were missing, the
+        // exception would escape the discarded InvokeAsync task, and _isPolling would never
+        // be observed to reset from a test's perspective in a way that lets us assert
+        // recovery. Subsequent calls succeed again, proving a single bad tick doesn't kill
+        // polling or leave the guard stuck.
+        var run = new BackgroundJobRun { Id = 4, JobType = BackgroundJobType.SieImport, Status = BackgroundJobStatus.Running, CreatedAt = DateTime.UtcNow };
+        var callCount = 0;
+        _service.GetOpenRunsAsync(BackgroundJobType.SieImport).Returns(_ =>
+        {
+            callCount++;
+            if (callCount == 2) throw new InvalidOperationException("transient DB failure");
+            return [run];
+        });
+
+        var invoked = false;
+        var cut = Render<BackgroundJobStatusPoller>(parameters => parameters
+            .Add(p => p.JobType, BackgroundJobType.SieImport)
+            .Add(p => p.PollInterval, TimeSpan.FromMilliseconds(20))
+            .Add(p => p.OnRunCompleted, EventCallback.Factory.Create<BackgroundJobRun>(this, _ => invoked = true)));
+
+        // Waiting for a third call proves polling survived the second call's exception:
+        // the timer kept firing and _isPolling was reset in the finally block despite the
+        // catch (or lack thereof) in the try.
+        cut.WaitForAssertion(
+            () => _service.Received(Quantity.Within(3, int.MaxValue)).GetOpenRunsAsync(BackgroundJobType.SieImport),
+            TimeSpan.FromSeconds(2));
+        Assert.False(invoked);
     }
 }
