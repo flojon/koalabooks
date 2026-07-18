@@ -163,6 +163,7 @@ builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractor>(sp =
 builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentStorage,
     KoalaBooks.Infrastructure.Services.DbDocumentStorage>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<IBackgroundJobRunService, BackgroundJobRunService>();
 builder.Services.AddScoped<IDocumentProvider, WebDocumentProvider>();
 builder.Services.AddSingleton<IVatReportCsvExporter, VatReportCsvExporter>();
 
@@ -234,6 +235,8 @@ if (!app.Environment.IsEnvironment("Testing"))
     {
         Authorization = [new HangfireDashboardAuthorizationFilter()]
     });
+    GlobalJobFilters.Filters.Add(new KoalaBooks.Application.Jobs.BackgroundJobRunFailureFilter(
+        app.Services.GetRequiredService<IServiceScopeFactory>()));
 }
 
 app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, ICustomerInvoiceService svc) =>

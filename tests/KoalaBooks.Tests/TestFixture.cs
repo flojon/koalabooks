@@ -198,4 +198,7 @@ public class TestFixture : IDisposable
 
     public DocumentService MakeDocumentService(IDocumentExtractionQueue extractionQueue) =>
         new DocumentService(Db, new DbDocumentStorage(Db), extractionQueue, _currentUser);
+
+    public BackgroundJobRunService MakeBackgroundJobRunService() =>
+        new BackgroundJobRunService(Db, _currentUser);
 }
