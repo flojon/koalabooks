@@ -246,6 +246,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                   .WithMany(i => i.Lines)
                   .HasForeignKey(l => l.CustomerInvoiceId)
                   .OnDelete(DeleteBehavior.Cascade);
+            entity.HasQueryFilter(l => _currentUser.OrganisationId != null && l.CustomerInvoice.FiscalYear.OrganisationId == _currentUser.OrganisationId);
         });
 
         modelBuilder.Entity<Document>(entity =>
@@ -297,6 +298,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>, IDataProtectionK
                   .WithOne()
                   .HasForeignKey<DocumentData>(d => d.DocumentId)
                   .OnDelete(DeleteBehavior.Cascade);
+            entity.HasQueryFilter(d => _currentUser.OrganisationId != null && d.Document.OrganisationId == _currentUser.OrganisationId);
         });
 
         modelBuilder.Entity<BankTransaction>(entity =>

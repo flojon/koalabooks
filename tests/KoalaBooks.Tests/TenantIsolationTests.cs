@@ -221,6 +221,48 @@ public class TenantIsolationTests : IDisposable
         Assert.Null(doc);
     }
 
+    [Fact]
+    public async Task GetDocumentData_AsOtherTenant_ReturnsNull()
+    {
+        using var dbA = DbFor(_orgAId);
+        var documentA = new Document
+        {
+            OrganisationId = _orgAId,
+            FileName = "receipt.pdf",
+            ContentType = "application/pdf",
+            FileSize = 1024,
+            UploadedAt = DateTime.UtcNow,
+            StorageKey = Guid.NewGuid().ToString()
+        };
+        dbA.Documents.Add(documentA);
+        dbA.SaveChanges();
+        dbA.DocumentData.Add(new DocumentData { DocumentId = documentA.Id, Oid = 1 });
+        dbA.SaveChanges();
+
+        // DocumentData has no OrganisationId of its own; isolation relies on the
+        // query filter following the required Document navigation.
+        using var dbB = DbFor(_orgBId);
+        var data = await dbB.DocumentData.FirstOrDefaultAsync(d => d.DocumentId == documentA.Id);
+
+        Assert.Null(data);
+    }
+
+    // ── CustomerInvoiceLine ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetCustomerInvoiceLines_AsOtherTenant_ReturnsEmpty()
+    {
+        var fyA = SeedFiscalYear(_orgAId, "2026");
+        SeedCustomerInvoice(fyA.Id);
+
+        // CustomerInvoiceLine has no OrganisationId of its own; isolation relies on
+        // the query filter following the required CustomerInvoice navigation.
+        using var dbB = DbFor(_orgBId);
+        var results = await dbB.CustomerInvoiceLines.ToListAsync();
+
+        Assert.Empty(results);
+    }
+
     // ── OwnTenant can still read its own data ──────────────────────
 
     [Fact]
@@ -371,6 +413,36 @@ public class TenantIsolationTests : IDisposable
             TotalAmount = 1000m
         };
         db.SupplierInvoices.Add(invoice);
+        db.SaveChanges();
+        return invoice;
+    }
+
+    private CustomerInvoice SeedCustomerInvoice(int fiscalYearId)
+    {
+        using var bootstrap = new AppDbContext(_options, NoTenant());
+        var orgId = bootstrap.FiscalYears
+            .IgnoreQueryFilters()
+            .Where(f => f.Id == fiscalYearId)
+            .Select(f => f.OrganisationId)
+            .First();
+
+        using var db = DbFor(orgId);
+        var invoice = new CustomerInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            CustomerName = "Test Customer",
+            InvoiceNumber = 1,
+            InvoiceDate = new DateOnly(2026, 6, 1),
+            DueDate = new DateOnly(2026, 7, 1),
+            Lines =
+            [
+                new CustomerInvoiceLine { Description = "Item", Quantity = 1, UnitPrice = 100, AmountExclVat = 100, VatAmount = 25, TotalAmount = 125 }
+            ],
+            AmountExclVat = 100m,
+            VatAmount = 25m,
+            TotalAmount = 125m
+        };
+        db.CustomerInvoices.Add(invoice);
         db.SaveChanges();
         return invoice;
     }

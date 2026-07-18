@@ -16,6 +16,7 @@ public class TestFixture : IDisposable
     private readonly string _dbName;
 
     public AppDbContext Db { get; }
+    public DbContextOptions<AppDbContext> Options { get; }
     public JournalEntryService JournalEntryService { get; }
     public FiscalYearService FiscalYearService { get; }
     public VoucherGapService VoucherGapService { get; }
@@ -32,7 +33,7 @@ public class TestFixture : IDisposable
         var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
         _dbName = dbName;
 
-        var options = new DbContextOptionsBuilder<AppDbContext>()
+        Options = new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(connStr)
             .Options;
 
@@ -40,7 +41,7 @@ public class TestFixture : IDisposable
         // After the org is created, SetActiveTenant sets the real id so all
         // subsequent service calls and query filters see the correct organisation.
         _currentUser = new LocalCurrentUser();
-        Db = new AppDbContext(options, _currentUser);
+        Db = new AppDbContext(Options, _currentUser);
         Db.Database.EnsureCreated();
 
         var org = new Organisation { Name = "Test Org", Slug = "test-org" };

@@ -24,15 +24,41 @@ public class DocumentExtractionJobTests : IDisposable
 
         var extractor = new StubExtractor(new ExtractionResult(
             "SupplierInvoice", "ACME AB", 1000m, 250m, new DateOnly(2026, 3, 15), null, "INV-001"));
-        var job = new DocumentExtractionJob(_fx.Db, storage, extractor, NullLogger<DocumentExtractionJob>.Instance);
+        var job = new DocumentExtractionJob(_fx.Options, extractor, NullLogger<DocumentExtractionJob>.Instance);
 
         await job.RunAsync(doc!.Id);
 
-        var updated = await _fx.Db.Documents.IgnoreQueryFilters().FirstAsync(d => d.Id == doc.Id);
+        var updated = await _fx.Db.Documents.IgnoreQueryFilters().AsNoTracking().FirstAsync(d => d.Id == doc.Id);
         Assert.Equal("SupplierInvoice", updated.SuggestedType);
         Assert.Equal(new DateOnly(2026, 3, 15), updated.DocumentDate);
         Assert.NotNull(updated.ExtractedDataJson);
         Assert.Equal(ExtractionStatus.Completed, updated.ExtractionStatus);
+    }
+
+    [Fact]
+    public async Task RunAsync_LoadsActualDocumentContent_NotEmptyBytes()
+    {
+        // Regression test: the job builds its own AppDbContext/DbDocumentStorage bound to a
+        // LocalCurrentUser that starts with OrganisationId == null (see DocumentExtractionJob's
+        // comment) — exactly mirroring the real Hangfire execution environment, unlike passing
+        // in _fx.Db/_fx's storage, whose ambient tenant is already set by TestFixture's own
+        // setup and would mask a regression here. If the job's tenant isn't set to the
+        // document's own OrganisationId before storage.LoadAsync runs, AppDbContext's
+        // DocumentData query filter makes FindAsync return null and LoadAsync silently returns
+        // an empty byte array instead of throwing — so this asserts on the actual bytes seen by
+        // the extractor, not just that the job completed without error.
+        var storage = new DbDocumentStorage(_fx.Db);
+        var svc = _fx.MakeDocumentService(storage);
+        var content = new byte[] { 1, 2, 3, 4, 5 };
+        var (doc, _) = await svc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream(content));
+
+        var extractor = new CapturingExtractor(new ExtractionResult(
+            "SupplierInvoice", "ACME AB", 1000m, 250m, new DateOnly(2026, 3, 15), null, "INV-001"));
+        var job = new DocumentExtractionJob(_fx.Options, extractor, NullLogger<DocumentExtractionJob>.Instance);
+
+        await job.RunAsync(doc!.Id);
+
+        Assert.Equal(content, extractor.ReceivedData);
     }
 
     [Fact]
@@ -49,11 +75,11 @@ public class DocumentExtractionJobTests : IDisposable
         // The already-enqueued job completes afterwards with a different extracted date.
         var extractor = new StubExtractor(new ExtractionResult(
             "SupplierInvoice", "ACME AB", 1000m, 250m, new DateOnly(2026, 3, 15), null, "INV-001"));
-        var job = new DocumentExtractionJob(_fx.Db, storage, extractor, NullLogger<DocumentExtractionJob>.Instance);
+        var job = new DocumentExtractionJob(_fx.Options, extractor, NullLogger<DocumentExtractionJob>.Instance);
 
         await job.RunAsync(doc.Id);
 
-        var updated = await _fx.Db.Documents.IgnoreQueryFilters().FirstAsync(d => d.Id == doc.Id);
+        var updated = await _fx.Db.Documents.IgnoreQueryFilters().AsNoTracking().FirstAsync(d => d.Id == doc.Id);
         Assert.Equal(userChosenDate, updated.DocumentDate);
         Assert.Equal(ExtractionStatus.Completed, updated.ExtractionStatus);
     }
@@ -76,11 +102,11 @@ public class DocumentExtractionJobTests : IDisposable
         var extractor = new ConcurrentClassifyExtractor(
             _fx.Db.Database.GetConnectionString()!, _fx.OrganisationId, doc!.Id, userChosenDate,
             new ExtractionResult("SupplierInvoice", "ACME AB", 1000m, 250m, extractedDate, null, "INV-001"));
-        var job = new DocumentExtractionJob(_fx.Db, storage, extractor, NullLogger<DocumentExtractionJob>.Instance);
+        var job = new DocumentExtractionJob(_fx.Options, extractor, NullLogger<DocumentExtractionJob>.Instance);
 
         await job.RunAsync(doc.Id);
 
-        var updated = await _fx.Db.Documents.IgnoreQueryFilters().FirstAsync(d => d.Id == doc.Id);
+        var updated = await _fx.Db.Documents.IgnoreQueryFilters().AsNoTracking().FirstAsync(d => d.Id == doc.Id);
         Assert.Equal(userChosenDate, updated.DocumentDate);
         Assert.Equal("SupplierInvoice", updated.SuggestedType);
         Assert.Equal(ExtractionStatus.Completed, updated.ExtractionStatus);
@@ -96,11 +122,11 @@ public class DocumentExtractionJobTests : IDisposable
         var extractor = new ConcurrentDeleteExtractor(
             _fx.Db.Database.GetConnectionString()!, _fx.OrganisationId, doc!.Id,
             new ExtractionResult("SupplierInvoice", "ACME AB", 1000m, 250m, new DateOnly(2026, 3, 15), null, "INV-001"));
-        var job = new DocumentExtractionJob(_fx.Db, storage, extractor, NullLogger<DocumentExtractionJob>.Instance);
+        var job = new DocumentExtractionJob(_fx.Options, extractor, NullLogger<DocumentExtractionJob>.Instance);
 
         await job.RunAsync(doc.Id);
 
-        var stillThere = await _fx.Db.Documents.IgnoreQueryFilters().FirstOrDefaultAsync(d => d.Id == doc.Id);
+        var stillThere = await _fx.Db.Documents.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(d => d.Id == doc.Id);
         Assert.Null(stillThere);
     }
 
@@ -111,11 +137,11 @@ public class DocumentExtractionJobTests : IDisposable
         var svc = _fx.MakeDocumentService(storage);
         var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", () => new MemoryStream([1, 2, 3]));
 
-        var job = new DocumentExtractionJob(_fx.Db, storage, new ThrowingExtractor(), NullLogger<DocumentExtractionJob>.Instance);
+        var job = new DocumentExtractionJob(_fx.Options, new ThrowingExtractor(), NullLogger<DocumentExtractionJob>.Instance);
 
         await job.RunAsync(doc!.Id);
 
-        var updated = await _fx.Db.Documents.IgnoreQueryFilters().FirstAsync(d => d.Id == doc.Id);
+        var updated = await _fx.Db.Documents.IgnoreQueryFilters().AsNoTracking().FirstAsync(d => d.Id == doc.Id);
         Assert.Equal(ExtractionStatus.Failed, updated.ExtractionStatus);
         Assert.Null(updated.SuggestedType);
     }
@@ -123,9 +149,8 @@ public class DocumentExtractionJobTests : IDisposable
     [Fact]
     public async Task RunAsync_UnknownDocumentId_NoOpsWithoutThrowing()
     {
-        var storage = new DbDocumentStorage(_fx.Db);
         var extractor = new StubExtractor(new ExtractionResult(null, null, null, null, null, null, null));
-        var job = new DocumentExtractionJob(_fx.Db, storage, extractor, NullLogger<DocumentExtractionJob>.Instance);
+        var job = new DocumentExtractionJob(_fx.Options, extractor, NullLogger<DocumentExtractionJob>.Instance);
 
         await job.RunAsync(999_999);
     }
@@ -138,11 +163,11 @@ public class DocumentExtractionJobTests : IDisposable
         var (doc, _) = await svc.UploadAsync("leverantörsfaktura.pdf", "application/pdf", () => new MemoryStream());
 
         var extractor = new CompositeExtractor(new FilenameExtractor(), new PdfTextExtractor(NullLogger<PdfTextExtractor>.Instance));
-        var job = new DocumentExtractionJob(_fx.Db, storage, extractor, NullLogger<DocumentExtractionJob>.Instance);
+        var job = new DocumentExtractionJob(_fx.Options, extractor, NullLogger<DocumentExtractionJob>.Instance);
 
         await job.RunAsync(doc!.Id);
 
-        var updated = await _fx.Db.Documents.IgnoreQueryFilters().FirstAsync(d => d.Id == doc.Id);
+        var updated = await _fx.Db.Documents.IgnoreQueryFilters().AsNoTracking().FirstAsync(d => d.Id == doc.Id);
         Assert.Equal("SupplierInvoice", updated.SuggestedType);
         Assert.Null(updated.ClassifiedType);
         Assert.Equal(ExtractionStatus.Completed, updated.ExtractionStatus);
@@ -153,6 +178,17 @@ file class StubExtractor(ExtractionResult result) : IDocumentExtractor
 {
     public Task<ExtractionResult> ExtractAsync(string fileName, string contentType, byte[] data) =>
         Task.FromResult(result);
+}
+
+file class CapturingExtractor(ExtractionResult result) : IDocumentExtractor
+{
+    public byte[]? ReceivedData { get; private set; }
+
+    public Task<ExtractionResult> ExtractAsync(string fileName, string contentType, byte[] data)
+    {
+        ReceivedData = data;
+        return Task.FromResult(result);
+    }
 }
 
 file class ThrowingExtractor : IDocumentExtractor
