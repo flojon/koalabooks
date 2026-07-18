@@ -1,3 +1,4 @@
+using KoalaBooks.Domain.Auth;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -39,6 +40,13 @@ public class TokenModel : PageModel
             return SignIn(codeResult.Principal!, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
+        // #292: bridges the WASM client's ambient Identity cookie session to a bearer token,
+        // without going through AddOidcAuthentication()'s RemoteAuthenticationService (which
+        // conflicts with AddAuthenticationStateDeserialization() over the AuthenticationStateProvider
+        // DI slot).
+        if (request.GrantType == WasmCookieBridge.GrantType)
+            return await HandleCookieGrantAsync(request);
+
         if (request.GrantType != OpenIddictConstants.GrantTypes.Password)
             return Forbid(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
 
@@ -65,6 +73,36 @@ public class TokenModel : PageModel
                             ? "The account is not confirmed."
                             : "The credentials are invalid."
                 }));
+
+        var principal = OpenIddictIdentityBuilder.BuildPrincipal(
+            user, await _userManager.GetUserIdAsync(user), request.GetScopes());
+
+        return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    private async Task<IActionResult> HandleCookieGrantAsync(OpenIddictRequest request)
+    {
+        if (Request.Headers[WasmCookieBridge.CsrfHeaderName] != WasmCookieBridge.CsrfHeaderValue)
+            return Forbid(
+                authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
+                properties: new AuthenticationProperties(new Dictionary<string, string?>
+                {
+                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = OpenIddictConstants.Errors.InvalidRequest,
+                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "Missing required header."
+                }));
+
+        var cookieResult = await HttpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+        if (!cookieResult.Succeeded)
+            return Forbid(
+                authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
+                properties: new AuthenticationProperties(new Dictionary<string, string?>
+                {
+                    [OpenIddictServerAspNetCoreConstants.Properties.Error] = OpenIddictConstants.Errors.InvalidGrant,
+                    [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "No active session."
+                }));
+
+        var user = await _userManager.GetUserAsync(cookieResult.Principal)
+            ?? throw new InvalidOperationException("The authenticated user could not be found.");
 
         var principal = OpenIddictIdentityBuilder.BuildPrincipal(
             user, await _userManager.GetUserIdAsync(user), request.GetScopes());
