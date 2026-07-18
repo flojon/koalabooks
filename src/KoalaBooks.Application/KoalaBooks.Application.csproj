@@ -6,6 +6,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="KoalaBooks.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Hangfire.Core" Version="1.8.23" />
   </ItemGroup>
 

@@ -235,6 +235,8 @@ if (!app.Environment.IsEnvironment("Testing"))
     {
         Authorization = [new HangfireDashboardAuthorizationFilter()]
     });
+    GlobalJobFilters.Filters.Add(new KoalaBooks.Application.Jobs.BackgroundJobRunFailureFilter(
+        app.Services.GetRequiredService<IServiceScopeFactory>()));
 }
 
 app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, ICustomerInvoiceService svc) =>
