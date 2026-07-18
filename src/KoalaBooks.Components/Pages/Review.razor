@@ -1,5 +1,7 @@
 @page "/review"
-@rendermode InteractiveAuto
+@* SPIKE (#292): prerender:false so there's no server-rendered auth state to hydrate from -
+   the client must establish auth entirely on its own via RemoteAuthenticationService. *@
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
 @using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
 @inject IJournalEntryService JournalEntryService

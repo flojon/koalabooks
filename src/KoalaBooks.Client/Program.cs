@@ -1,6 +1,5 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Client.Services;
-using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Services;
@@ -9,7 +8,11 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
 builder.Services.AddAuthorizationCore();
 builder.Services.AddCascadingAuthenticationState();
-builder.Services.AddAuthenticationStateDeserialization();
+
+// SPIKE (#292): AddAuthenticationStateDeserialization() removed so AddOidcAuthentication()'s
+// RemoteAuthenticationService is the sole AuthenticationStateProvider - no DI slot conflict.
+// Only valid once nothing needs the server-prerendered auth state anymore (see /review's
+// rendermode below).
 
 // MainLayout and the WASM-rendered pages use MudBlazor components (MudDrawer, MudSnackbar,
 // etc.) that depend on services this registers (IBrowserViewportService, popover/dialog
