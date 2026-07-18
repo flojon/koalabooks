@@ -11,6 +11,7 @@ public class DbDocumentStorageRetryStrategyTests : IDisposable
 {
     private readonly string _dbName;
     private readonly AppDbContext _db;
+    private readonly LocalCurrentUser _currentUser;
     private readonly int _organisationId;
 
     public DbDocumentStorageRetryStrategyTests()
@@ -25,13 +26,15 @@ public class DbDocumentStorageRetryStrategyTests : IDisposable
             .UseNpgsql(connStr, o => o.EnableRetryOnFailure())
             .Options;
 
-        _db = new AppDbContext(options, new LocalCurrentUser());
+        _currentUser = new LocalCurrentUser();
+        _db = new AppDbContext(options, _currentUser);
         _db.Database.EnsureCreated();
 
         var org = new Organisation { Name = "Test Org", Slug = "test-org" };
         _db.Organisations.Add(org);
         _db.SaveChanges();
         _organisationId = org.Id;
+        _currentUser.OrganisationId = _organisationId;
     }
 
     public void Dispose()

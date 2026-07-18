@@ -269,6 +269,21 @@ public class ApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task FiscalYears_GetActive_CrossTenant_ReturnsOwnActiveYear()
+    {
+        // Seeds another org's fiscal year, which is active (not closed) by default — if the
+        // tenant query filter didn't apply to GetActiveAsync, this could leak into the result.
+        await SeedSecondTenantAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/active");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(_fiscalYearId, json.GetProperty("id").GetInt32());
+    }
+
     // ── Account tests ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -506,6 +521,64 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task JournalEntries_Update_CrossTenant_Returns404()
+    {
+        var (_, otherFiscalYearId, otherAccountId) = await SeedSecondTenantAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherEntry = new JournalEntry
+        {
+            FiscalYearId = otherFiscalYearId,
+            Date = new DateOnly(2025, 1, 15),
+            Description = "Other tenant entry",
+            Lines =
+            [
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 100, CreditAmount = 0 },
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 0, CreditAmount = 100 }
+            ]
+        };
+        db.JournalEntries.Add(otherEntry);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var updateBody = new
+        {
+            date = "2025-01-16",
+            description = "Hijacked",
+            lines = new[] { new { accountId = otherAccountId, debitAmount = 200m, creditAmount = 0m } }
+        };
+        var response = await client.PutAsJsonAsync($"/api/v1/journal-entries/{otherEntry.Id}", updateBody);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Post_CrossTenant_Returns404()
+    {
+        var (_, otherFiscalYearId, otherAccountId) = await SeedSecondTenantAsync();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var otherEntry = new JournalEntry
+        {
+            FiscalYearId = otherFiscalYearId,
+            Date = new DateOnly(2025, 1, 15),
+            Description = "Other tenant entry",
+            Lines =
+            [
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 100, CreditAmount = 0 },
+                new JournalEntryLine { AccountId = otherAccountId, DebitAmount = 0, CreditAmount = 100 }
+            ]
+        };
+        db.JournalEntries.Add(otherEntry);
+        await db.SaveChangesAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.PostAsync($"/api/v1/journal-entries/{otherEntry.Id}/post", null);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task JournalEntries_Reverse_PostedEntry_ReturnsReversalLinkedToOriginal()
     {
         var client = await AuthenticatedClientAsync();
@@ -590,6 +663,258 @@ public class ApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task JournalEntries_Update_DraftEntry_ReturnsUpdatedValues()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-01",
+            description = "Original",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 300m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 300m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var updateBody = new
+        {
+            date = "2025-10-02",
+            description = "Updated",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 400m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 400m }
+            }
+        };
+        var updateResp = await client.PutAsJsonAsync($"/api/v1/journal-entries/{entryId}", updateBody);
+        Assert.Equal(HttpStatusCode.OK, updateResp.StatusCode);
+
+        var updated = await updateResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Updated", updated.GetProperty("description").GetString());
+        Assert.Equal("2025-10-02", updated.GetProperty("date").GetString());
+        Assert.Equal(400m, updated.GetProperty("lines")[0].GetProperty("debitAmount").GetDecimal());
+    }
+
+    [Fact]
+    public async Task JournalEntries_Update_UnbalancedLines_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-03",
+            description = "To be broken",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 100m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var updateBody = new
+        {
+            date = "2025-10-03",
+            description = "Unbalanced now",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 50m }
+            }
+        };
+        var updateResp = await client.PutAsJsonAsync($"/api/v1/journal-entries/{entryId}", updateBody);
+        Assert.Equal(HttpStatusCode.BadRequest, updateResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Update_PostedEntry_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-07",
+            description = "Already posted",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 150m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 150m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var postResp = await client.PostAsync($"/api/v1/journal-entries/{entryId}/post", null);
+        Assert.Equal(HttpStatusCode.OK, postResp.StatusCode);
+
+        var updateBody = new
+        {
+            date = "2025-10-07",
+            description = "Trying to edit a posted entry",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 150m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 150m }
+            }
+        };
+        var updateResp = await client.PutAsJsonAsync($"/api/v1/journal-entries/{entryId}", updateBody);
+        Assert.Equal(HttpStatusCode.BadRequest, updateResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Update_ClosedFiscalYear_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-08",
+            description = "Before the year closes",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 200m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 200m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var fy = await db.FiscalYears.IgnoreQueryFilters().FirstAsync(f => f.Id == _fiscalYearId);
+            fy.IsClosed = true;
+            await db.SaveChangesAsync();
+        }
+
+        var updateBody = new
+        {
+            date = "2025-10-08",
+            description = "Trying to edit after close",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 200m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 200m }
+            }
+        };
+        var updateResp = await client.PutAsJsonAsync($"/api/v1/journal-entries/{entryId}", updateBody);
+        Assert.Equal(HttpStatusCode.BadRequest, updateResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Update_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var updateBody = new
+        {
+            date = "2025-10-04",
+            description = "Nope",
+            lines = new[] { new { accountId = 1, debitAmount = 10m, creditAmount = 0m } }
+        };
+        var response = await client.PutAsJsonAsync("/api/v1/journal-entries/999999", updateBody);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Post_DraftEntry_MarksPosted()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-05",
+            description = "To be posted",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 700m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 700m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var postResp = await client.PostAsync($"/api/v1/journal-entries/{entryId}/post", null);
+        Assert.Equal(HttpStatusCode.OK, postResp.StatusCode);
+
+        var posted = await postResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(posted.GetProperty("isPosted").GetBoolean());
+        Assert.Equal("Posted", posted.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task JournalEntries_Post_AlreadyPosted_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-10-06",
+            description = "Double post",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 800m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 800m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var firstPost = await client.PostAsync($"/api/v1/journal-entries/{entryId}/post", null);
+        Assert.Equal(HttpStatusCode.OK, firstPost.StatusCode);
+
+        var secondPost = await client.PostAsync($"/api/v1/journal-entries/{entryId}/post", null);
+        Assert.Equal(HttpStatusCode.BadRequest, secondPost.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_Post_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.PostAsync("/api/v1/journal-entries/999999/post", null);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
     [Fact]
     public async Task JournalEntries_DraftCount_ReturnsCountOfUnpostedEntries()
     {
