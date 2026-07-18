@@ -1,5 +1,6 @@
 using Hangfire.Common;
 using KoalaBooks.Application.Jobs;
+using KoalaBooks.Domain;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Infrastructure.Data;
@@ -45,6 +46,29 @@ public class BackgroundJobRunFailureFilterTests : IDisposable
     public void MarkFailedIfOpen_UnknownRunId_NoOpsWithoutThrowing()
     {
         BackgroundJobRunFailureFilter.MarkFailedIfOpen(_fx.Db, 999_999);
+    }
+
+    [Fact]
+    public async Task MarkFailedIfOpen_NullOrgDbContext_StillFindsAndMarksRun()
+    {
+        // Reproduces the actual production shape: Hangfire's IApplyStateFilter resolves
+        // AppDbContext via DI with no HttpContext, so ICurrentUser.OrganisationId is null.
+        // Without IgnoreQueryFilters(), BackgroundJobRun's tenant filter
+        // (_currentUser.OrganisationId != null && ...) would hide every row and this
+        // would silently no-op instead of marking the run Failed.
+        var run = new BackgroundJobRun { OrganisationId = _fx.OrganisationId, JobType = BackgroundJobType.SieImport, Status = BackgroundJobStatus.Running, Acknowledged = true };
+        _fx.Db.BackgroundJobRuns.Add(run);
+        await _fx.Db.SaveChangesAsync();
+
+        await using var nullOrgDb = new AppDbContext(_fx.Options, new LocalCurrentUser());
+        BackgroundJobRunFailureFilter.MarkFailedIfOpen(nullOrgDb, run.Id);
+
+        // Verify through a fresh DbContext — _fx.Db still has the stale tracked instance
+        // from the Add/SaveChangesAsync above.
+        await using var verifyDb = new AppDbContext(_fx.Options, new LocalCurrentUser());
+        var updated = await verifyDb.BackgroundJobRuns.IgnoreQueryFilters().FirstAsync(r => r.Id == run.Id);
+        Assert.Equal(BackgroundJobStatus.Failed, updated.Status);
+        Assert.False(updated.Acknowledged);
     }
 
     [Fact]
