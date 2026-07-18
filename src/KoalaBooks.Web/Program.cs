@@ -1,4 +1,5 @@
 using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Auth;
 using Scalar.AspNetCore;
 using Hangfire;
 using Hangfire.PostgreSql;
@@ -107,7 +108,8 @@ builder.Services.AddOpenIddict()
         options.SetTokenEndpointUris("/connect/token");
         options.AllowPasswordFlow()
                .AllowRefreshTokenFlow()
-               .AllowAuthorizationCodeFlow();
+               .AllowAuthorizationCodeFlow()
+               .AllowCustomFlow(WasmCookieBridge.GrantType);
         // Scopes other than "openid"/"offline_access" must be registered here, or OpenIddict
         // rejects them with invalid_scope even when the client has the matching permission.
         options.RegisterScopes(
@@ -281,9 +283,7 @@ using (var scope = app.Services.CreateScope())
             ?? "aspire-dashboard-dev-secret";
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);
 
-        var wasmClientRedirectUri = builder.Configuration["WasmClient:RedirectUri"]
-            ?? "https://localhost:7154/authentication/login-callback";
-        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri(wasmClientRedirectUri));
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
 
         // Stopgap until there's a real UI to grant roles.
         await AdminRoleSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration["AdminSeed:Email"]);
