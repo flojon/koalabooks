@@ -35,6 +35,11 @@ public class YearEndClosingService : IYearEndClosingService
             errors.Add("Fiscal year is already closed.");
         }
 
+        if (fiscalYear.EndDate > DateOnly.FromDateTime(DateTime.Today))
+        {
+            errors.Add($"Räkenskapsåret har inte tagit slut än (slutar {fiscalYear.EndDate}). Bokslut kan inte göras förrän räkenskapsåret är slut.");
+        }
+
         var draftCount = await _db.JournalEntries
             .CountAsync(j => j.FiscalYearId == fiscalYearId && !j.IsPosted).ConfigureAwait(false);
         if (draftCount > 0)
