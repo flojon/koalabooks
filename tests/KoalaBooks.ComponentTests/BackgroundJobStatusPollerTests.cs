@@ -195,4 +195,31 @@ public class BackgroundJobStatusPollerTests : BunitContext
 
         _ = _service.Received(1).GetOpenRunsAsync(BackgroundJobType.SieImport);
     }
+
+    [Fact]
+    public async Task PollNowAsync_CalledDirectlyWhenPollThrows_DoesNotPropagateAndGuardRecovers()
+    {
+        // Regression test for the direct-caller path used by Inbox.razor's upload handler
+        // (PollNowAsync right after enqueuing a zip job), which has no try/catch of its
+        // own. A poll failure here must not escape as an unhandled exception — that would
+        // crash the Blazor circuit on a transient DB hiccup — and the guard must still be
+        // released so the next call can succeed.
+        var callCount = 0;
+        _service.GetOpenRunsAsync(BackgroundJobType.SieImport).Returns(_ =>
+        {
+            callCount++;
+            if (callCount == 1) throw new InvalidOperationException("transient DB failure");
+            return Task.FromResult(new List<BackgroundJobRun>());
+        });
+
+        var cut = Render<BackgroundJobStatusPoller>(parameters => parameters
+            .Add(p => p.JobType, BackgroundJobType.SieImport)
+            .Add(p => p.OnRunCompleted, EventCallback.Factory.Create<BackgroundJobRun>(this, _ => { })));
+
+        // OnInitializedAsync's own poll already hit and swallowed the first (throwing)
+        // call; this direct call must succeed cleanly, proving the guard recovered.
+        await cut.Instance.PollNowAsync();
+
+        _ = _service.Received(2).GetOpenRunsAsync(BackgroundJobType.SieImport);
+    }
 }

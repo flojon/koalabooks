@@ -20,8 +20,10 @@
     [Inject] private ILogger<BackgroundJobStatusPoller> Logger { get; set; } = default!;
 
     private System.Threading.Timer? _pollTimer;
-    private int _isPolling; // 0/1 guard, read/written across the timer thread and the
-                             // dispatcher thread — needs Interlocked, not a plain bool.
+    private int _isPolling; // 0/1 guard. All access now funnels through PollNowAsync on
+                             // the render sync context (OnPollTick dispatches via
+                             // InvokeAsync before touching it), so nothing here is truly
+                             // concurrent — Interlocked is defensive, not load-bearing.
     private volatile bool _repollRequested;
     private bool _disposed;
     private List<BackgroundJobRun> _openRuns = [];
@@ -51,7 +53,19 @@
             {
                 _repollRequested = false;
                 if (_disposed) return;
-                await PollAsync();
+                try
+                {
+                    await PollAsync();
+                }
+                catch (Exception ex)
+                {
+                    // Swallowed (not rethrown) so a failed poll can't escape to a direct
+                    // caller like Inbox.razor's upload handler, which has no catch of its
+                    // own, and so a repoll coalesced during this attempt isn't dropped —
+                    // the while check below still runs instead of being bypassed by an
+                    // unwinding exception.
+                    Logger.LogError(ex, "Poll failed for job type {JobType}", JobType);
+                }
             } while (_repollRequested && !_disposed);
         }
         finally
