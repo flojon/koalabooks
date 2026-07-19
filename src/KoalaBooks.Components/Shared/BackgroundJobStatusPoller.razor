@@ -22,20 +22,37 @@
     private System.Threading.Timer? _pollTimer;
     private int _isPolling; // 0/1 guard, read/written across the timer thread and the
                              // dispatcher thread — needs Interlocked, not a plain bool.
+    private volatile bool _repollRequested;
     private bool _disposed;
     private List<BackgroundJobRun> _openRuns = [];
 
-    protected override async Task OnInitializedAsync() => await PollAsync();
+    // Routed through PollNowAsync (not a bare PollAsync call) so init shares the same
+    // guard as every other poll trigger — otherwise a PollNowAsync racing the unguarded
+    // init poll could run concurrently with it and tear the shared _openRuns field.
+    protected override async Task OnInitializedAsync() => await PollNowAsync();
 
-    // Call right after enqueuing a job: UpdatePolling only arms the timer from the last
-    // poll's state, so a job created after that poll would otherwise stay invisible.
+    // Safe to call from anywhere (a host page right after enqueuing a job, a timer tick,
+    // or component init) — all three funnel through this one guarded entry point. If a
+    // poll is already in flight, this doesn't start a redundant one; it instead asks the
+    // in-flight poll to loop once more before releasing the guard, so state at least as
+    // fresh as this call is still guaranteed to be observed — just not necessarily by the
+    // time this call itself returns.
     public async Task PollNowAsync()
     {
-        if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0) return;
+        if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0)
+        {
+            _repollRequested = true;
+            return;
+        }
+
         try
         {
-            if (_disposed) return;
-            await PollAsync();
+            do
+            {
+                _repollRequested = false;
+                if (_disposed) return;
+                await PollAsync();
+            } while (_repollRequested && !_disposed);
         }
         finally
         {
@@ -73,22 +90,16 @@
 
     private void OnPollTick(object? state)
     {
-        if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0) return;
         _ = InvokeAsync(async () =>
         {
             try
             {
-                if (_disposed) return;
-                await PollAsync();
+                await PollNowAsync();
                 if (!_disposed) StateHasChanged();
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Poll tick failed for job type {JobType}", JobType);
-            }
-            finally
-            {
-                Interlocked.Exchange(ref _isPolling, 0);
             }
         });
     }

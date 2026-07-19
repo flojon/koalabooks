@@ -130,4 +130,69 @@ public class BackgroundJobStatusPollerTests : BunitContext
             TimeSpan.FromSeconds(2));
         Assert.False(invoked);
     }
+
+    [Fact]
+    public async Task PollNowAsync_CalledDirectly_PollsImmediately()
+    {
+        _service.GetOpenRunsAsync(BackgroundJobType.SieImport).Returns([]);
+
+        var cut = Render<BackgroundJobStatusPoller>(parameters => parameters
+            .Add(p => p.JobType, BackgroundJobType.SieImport)
+            .Add(p => p.OnRunCompleted, EventCallback.Factory.Create<BackgroundJobRun>(this, _ => { })));
+
+        _ = _service.Received(1).GetOpenRunsAsync(BackgroundJobType.SieImport);
+
+        await cut.Instance.PollNowAsync();
+
+        _ = _service.Received(2).GetOpenRunsAsync(BackgroundJobType.SieImport);
+    }
+
+    [Fact]
+    public async Task PollNowAsync_WhileAPollIsInFlight_CoalescesIntoOneMoreGuaranteedPoll()
+    {
+        // Simulates a host page's PollNowAsync racing an already-in-flight poll (e.g. the
+        // timer's tick straddling the moment a host calls PollNowAsync right after
+        // enqueuing a job). The guard means this must not start a second, concurrent
+        // GetOpenRunsAsync of its own — but the in-flight poll must still be guaranteed to
+        // loop once more before releasing the guard, so the caller's trigger isn't
+        // silently dropped (the exact "best-effort" gap the guard alone would leave open).
+        var callCount = 0;
+        var firstCallGate = new TaskCompletionSource<List<BackgroundJobRun>>();
+        _service.GetOpenRunsAsync(BackgroundJobType.SieImport).Returns(_ =>
+        {
+            callCount++;
+            return callCount == 1 ? firstCallGate.Task : Task.FromResult(new List<BackgroundJobRun>());
+        });
+
+        var cut = Render<BackgroundJobStatusPoller>(parameters => parameters
+            .Add(p => p.JobType, BackgroundJobType.SieImport)
+            .Add(p => p.OnRunCompleted, EventCallback.Factory.Create<BackgroundJobRun>(this, _ => { })));
+
+        // OnInitializedAsync's poll is suspended awaiting firstCallGate, still holding the
+        // guard — this call must not issue its own GetOpenRunsAsync round-trip.
+        await cut.Instance.PollNowAsync();
+        Assert.Equal(1, callCount);
+
+        firstCallGate.SetResult([]);
+
+        // The still-in-flight initial poll must observe the coalesced request and loop
+        // once more instead of releasing the guard with it unserviced.
+        cut.WaitForAssertion(() => Assert.Equal(2, callCount), TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task PollNowAsync_AfterDisposal_DoesNotPollAgain()
+    {
+        _service.GetOpenRunsAsync(BackgroundJobType.SieImport).Returns([]);
+
+        var cut = Render<BackgroundJobStatusPoller>(parameters => parameters
+            .Add(p => p.JobType, BackgroundJobType.SieImport)
+            .Add(p => p.OnRunCompleted, EventCallback.Factory.Create<BackgroundJobRun>(this, _ => { })));
+
+        ((IDisposable)cut.Instance).Dispose();
+
+        await cut.Instance.PollNowAsync();
+
+        _ = _service.Received(1).GetOpenRunsAsync(BackgroundJobType.SieImport);
+    }
 }
