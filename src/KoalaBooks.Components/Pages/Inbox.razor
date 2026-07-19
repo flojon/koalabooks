@@ -12,7 +12,8 @@
 
 <h1>📥 Inkorg</h1>
 
-<BackgroundJobStatusPoller JobType="BackgroundJobType.ZipImport"
+<BackgroundJobStatusPoller @ref="_zipImportPoller"
+                            JobType="BackgroundJobType.ZipImport"
                             StaleAfter="ZipImportStaleAfter"
                             OnRunCompleted="HandleZipImportCompletedAsync" />
 
@@ -144,6 +145,12 @@ else
     private int _isPolling; // 0/1 guard, read/written across the timer thread and the
                              // dispatcher thread — needs Interlocked, not a plain bool.
     private bool _disposed;
+    private BackgroundJobStatusPoller? _zipImportPoller;
+
+    // Zip imports create no Document rows until processed, so _docs has nothing Pending
+    // right after upload. Counts zip imports in flight, keeping _pollTimer alive until
+    // HandleZipImportCompletedAsync reports them done.
+    private int _pendingZipImports;
 
     // A doc pending this long has exhausted its storage-load retries without the job
     // ever syncing that failure back to ExtractionStatus — stop polling for it.
@@ -180,16 +187,14 @@ else
         UpdatePolling();
     }
 
-    // Synchronous (no DB access): OnRunCompleted can fire from BackgroundJobStatusPoller's
-    // own OnInitializedAsync, which runs concurrently with this page's own
-    // OnInitializedAsync (LoadPageAsync) — both would otherwise touch the same
-    // Blazor-circuit-scoped AppDbContext at once (EF Core's "second operation was started
-    // on this context instance" crash, reproduced while manually verifying this retrofit).
-    // Newly-imported docs still show up without a manual reload: they're created with
-    // ExtractionStatus.Pending, which keeps this page's own _pollTimer running (see
-    // UpdatePolling) and picks them up on its next tick.
+    // Synchronous (no DB access): can fire from BackgroundJobStatusPoller's own
+    // OnInitializedAsync, which runs concurrently with this page's (EF Core "second
+    // operation" crash otherwise). The counter decrement is a plain field write, so it's
+    // safe here; the next _pollTimer tick (kept alive by it) picks up the imported docs.
     private Task HandleZipImportCompletedAsync(BackgroundJobRun run)
     {
+        if (_pendingZipImports > 0) _pendingZipImports--;
+
         // A run that exhausts all retries before ever reaching an entry (e.g. the staging
         // large object couldn't be read) never gets a ResultJson written —
         // BackgroundJobRunFailureFilter (#285) only flips Status to Failed, it doesn't
@@ -229,7 +234,7 @@ else
 
     private void UpdatePolling()
     {
-        var hasPendingDocs = _docs.Any(d =>
+        var hasPendingDocs = _pendingZipImports > 0 || _docs.Any(d =>
             d.ExtractionStatus == ExtractionStatus.Pending &&
             DateTime.UtcNow - d.UploadedAt < PendingStaleAfter);
         if (hasPendingDocs)
@@ -330,6 +335,10 @@ else
                     else
                     {
                         Snackbar.Add($"{file.Name}: zip accepterad, bearbetas i bakgrunden…", Severity.Info);
+                        _pendingZipImports++;
+                        // Kick the poller now — its last poll ran before this job existed,
+                        // so without this its timer would never arm to notice completion.
+                        if (_zipImportPoller is not null) await _zipImportPoller.PollNowAsync();
                     }
                     continue;
                 }

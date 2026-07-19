@@ -3,6 +3,7 @@ using KoalaBooks.Application.Services;
 using KoalaBooks.Components.Pages;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MudBlazor;
@@ -87,5 +88,31 @@ public class InboxZipImportToastTests : BunitContext
         snackbarProvider.WaitForAssertion(() =>
             Assert.Contains("Zip-import misslyckades.", snackbarProvider.Markup));
         _ = _backgroundJobRunService.Received(1).AcknowledgeAsync(1);
+    }
+
+    // The poller's one poll at page load runs before the zip job exists, so it finds zero
+    // open runs and never arms its timer (see
+    // BackgroundJobStatusPollerTests.NoOpenRuns_CallsGetOpenRunsOnceOnInit). Without a kick
+    // after upload, completion stays invisible until a full page reload.
+    [Fact]
+    public async Task ZipAccepted_ImmediatelyPollsSoCompletionIsNoticedWithoutAReload()
+    {
+        _backgroundJobRunService.GetOpenRunsAsync(BackgroundJobType.ZipImport).Returns([]);
+        _documentService.UploadZipAsync("fakturor.zip", Arg.Any<Func<Stream>>())
+            .Returns((1, (string?)null));
+
+        var file = Substitute.For<IBrowserFile>();
+        file.Name.Returns("fakturor.zip");
+        file.Size.Returns(1024L);
+
+        var snackbarProvider = Render<MudSnackbarProvider>();
+        var cut = await snackbarProvider.InvokeAsync(() => Render<Inbox>());
+
+        _ = _backgroundJobRunService.Received(1).GetOpenRunsAsync(BackgroundJobType.ZipImport);
+
+        var upload = cut.FindComponent<MudFileUpload<IReadOnlyList<IBrowserFile>>>();
+        await cut.InvokeAsync(() => upload.Instance.FilesChanged.InvokeAsync(new List<IBrowserFile> { file }));
+
+        _ = _backgroundJobRunService.Received(2).GetOpenRunsAsync(BackgroundJobType.ZipImport);
     }
 }

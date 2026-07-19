@@ -27,6 +27,22 @@
 
     protected override async Task OnInitializedAsync() => await PollAsync();
 
+    // Call right after enqueuing a job: UpdatePolling only arms the timer from the last
+    // poll's state, so a job created after that poll would otherwise stay invisible.
+    public async Task PollNowAsync()
+    {
+        if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0) return;
+        try
+        {
+            if (_disposed) return;
+            await PollAsync();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isPolling, 0);
+        }
+    }
+
     private async Task PollAsync()
     {
         _openRuns = await BackgroundJobRunService.GetOpenRunsAsync(JobType);
