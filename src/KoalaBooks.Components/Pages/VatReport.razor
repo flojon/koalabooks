@@ -157,6 +157,7 @@ else
 @code {
     [Inject] private IJournalEntryReportingService JournalReportingService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private FiscalYearSelectionContext SelectionContext { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
     private VatReportData? _data;
@@ -170,16 +171,22 @@ else
     protected override async Task OnInitializedAsync()
     {
         _fiscalYears = await FiscalYearService.GetAllAsync();
-        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
-        if (active is not null)
+
+        FiscalYear? seed = null;
+        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
+            seed = _fiscalYears.FirstOrDefault(f => f.Id == lastId);
+        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync() ?? _fiscalYears.FirstOrDefault();
+
+        if (seed is not null)
         {
-            SelectedFiscalYearId = active.Id;
+            SelectedFiscalYearId = seed.Id;
             await LoadReport();
         }
     }
 
     private async Task OnFiscalYearChanged()
     {
+        SelectionContext.Set(SelectedFiscalYearId);
         _data = null;
         FromDate = null;
         ToDate = null;

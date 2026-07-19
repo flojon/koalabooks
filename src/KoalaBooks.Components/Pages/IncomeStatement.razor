@@ -10,7 +10,7 @@
 {
     <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
         <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
-        <select @bind="SelectedFiscalYearId" style="width:200px;">
+        <select @bind="SelectedFiscalYearId" @bind:after="OnFiscalYearChanged" style="width:200px;">
             @foreach (var fy in _fiscalYears)
             {
                 <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
@@ -87,6 +87,7 @@ else
 @code {
     [Inject] private IJournalEntryReportingService JournalReportingService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private FiscalYearSelectionContext SelectionContext { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
     private List<IncomeStatementSection>? _sections;
@@ -98,12 +99,22 @@ else
     protected override async Task OnInitializedAsync()
     {
         _fiscalYears = await FiscalYearService.GetAllAsync();
-        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
-        if (active is not null)
+
+        FiscalYear? seed = null;
+        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
+            seed = _fiscalYears.FirstOrDefault(f => f.Id == lastId);
+        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync() ?? _fiscalYears.FirstOrDefault();
+
+        if (seed is not null)
         {
-            SelectedFiscalYearId = active.Id;
+            SelectedFiscalYearId = seed.Id;
             await LoadReport();
         }
+    }
+
+    private void OnFiscalYearChanged()
+    {
+        SelectionContext.Set(SelectedFiscalYearId);
     }
 
     private async Task LoadReport()
