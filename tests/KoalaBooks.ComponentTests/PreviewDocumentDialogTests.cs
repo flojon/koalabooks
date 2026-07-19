@@ -57,7 +57,7 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
         Services.AddSingleton<IAccountService>(new AccountService(db));
         Services.AddSingleton<ICustomerService>(new CustomerService(db));
         var fiscalYearService = Substitute.For<IFiscalYearService>();
-        fiscalYearService.GetActiveAsync().Returns((FiscalYear?)null);
+        fiscalYearService.GetForDateAsync(Arg.Any<DateOnly>()).Returns((FiscalYear?)null);
         Services.AddSingleton(fiscalYearService);
         Services.AddSingleton(Substitute.For<IJournalEntryService>());
     }
