@@ -1,4 +1,4 @@
-using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Client.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
@@ -37,5 +37,9 @@ builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().Cre
 builder.Services.AddScoped<IFiscalYearService, FiscalYearApiService>();
 builder.Services.AddScoped<IAccountService, AccountApiService>();
 builder.Services.AddScoped<IJournalEntryService, JournalEntryApiService>();
+// MainLayout's nav badge counts resolve these via ScopeFactory regardless of which page
+// is rendering, so they're needed even though no WASM page injects them directly.
+builder.Services.AddScoped<IBankImportService, BankImportApiService>();
+builder.Services.AddScoped<ISupplierInvoiceService, SupplierInvoiceApiService>();
 
 await builder.Build().RunAsync();
