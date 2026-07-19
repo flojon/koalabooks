@@ -12,7 +12,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\KoalaBooks.Application\KoalaBooks.Application.csproj" />
-    <ProjectReference Include="..\KoalaBooks.Infrastructure\KoalaBooks.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
