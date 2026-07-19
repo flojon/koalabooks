@@ -664,6 +664,98 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task JournalEntries_PreviewReversal_PostedEntry_ReturnsPreviewWithoutPersisting()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-09-03",
+            description = "To be previewed",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 250m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 250m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        // Mark posted via raw DB write — see comment on JournalEntries_Reverse_PostedEntry_ReturnsReversalLinkedToOriginal
+        // for why the service can't be called directly from a test-created scope.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entryToPost = await db.JournalEntries.IgnoreQueryFilters().FirstAsync(j => j.Id == entryId);
+        entryToPost.IsPosted = true;
+        entryToPost.Status = JournalEntryStatus.Posted;
+        await db.SaveChangesAsync();
+
+        var previewResp = await client.PostAsJsonAsync($"/api/v1/journal-entries/{entryId}/preview-reversal", new { reason = "Wrong account" });
+        Assert.Equal(HttpStatusCode.OK, previewResp.StatusCode);
+
+        var preview = await previewResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Correction", preview.GetProperty("status").GetString());
+        Assert.Equal(entryId, preview.GetProperty("sourceJournalEntryId").GetInt32());
+        var lines = preview.GetProperty("lines").EnumerateArray().ToList();
+        var cashLine = lines.Single(l => l.GetProperty("accountId").GetInt32() == cashId);
+        Assert.Equal(250m, cashLine.GetProperty("creditAmount").GetDecimal());
+        Assert.Equal(0m, cashLine.GetProperty("debitAmount").GetDecimal());
+
+        // Original entry must be untouched — preview must not persist anything.
+        var originalResp = await client.GetAsync($"/api/v1/journal-entries/{entryId}");
+        var original = await originalResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Posted", original.GetProperty("status").GetString());
+
+        var listResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries");
+        var list = await listResp.Content.ReadFromJsonAsync<JsonElement>();
+        var items = list.GetProperty("items").EnumerateArray();
+        Assert.DoesNotContain(items, i => i.GetProperty("sourceJournalEntryId").ValueKind != JsonValueKind.Null
+            && i.GetProperty("sourceJournalEntryId").GetInt32() == entryId);
+    }
+
+    [Fact]
+    public async Task JournalEntries_PreviewReversal_DraftEntry_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-09-04",
+            description = "Still a draft",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 100m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var previewResp = await client.PostAsJsonAsync($"/api/v1/journal-entries/{entryId}/preview-reversal", new { reason = "Nope" });
+        Assert.Equal(HttpStatusCode.BadRequest, previewResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_PreviewReversal_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.PostAsJsonAsync("/api/v1/journal-entries/999999/preview-reversal", new { reason = "Nope" });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task JournalEntries_Update_DraftEntry_ReturnsUpdatedValues()
     {
         var client = await AuthenticatedClientAsync();
