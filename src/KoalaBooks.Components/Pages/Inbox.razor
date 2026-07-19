@@ -1,13 +1,20 @@
 @page "/inbox"
 @implements IDisposable
 @using KoalaBooks.Domain.Interfaces
+@using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
 @using MudBlazor
 @using Microsoft.AspNetCore.Components.Forms
+@using System.Text.Json
 
 <PageTitle>Inkorg — KoalaBooks</PageTitle>
 
 <h1>📥 Inkorg</h1>
+
+<BackgroundJobStatusPoller @ref="_zipImportPoller"
+                            JobType="BackgroundJobType.ZipImport"
+                            StaleAfter="ZipImportStaleAfter"
+                            OnRunCompleted="HandleZipImportCompletedAsync" />
 
 @if (_error is not null)
 {
@@ -28,7 +35,7 @@
         </SelectedTemplate>
     </MudFileUpload>
     <div style="font-size:0.78rem; color:#94a3b8; margin-top:0.3rem;">
-        Dra och släpp filer här eller klicka — PDF, PNG, JPG eller ZIP · max 10 MB per fil (50 MB för ZIP) · upp till 10 filer
+        Dra och släpp filer här eller klicka — PDF, PNG, JPG eller ZIP · max 10 MB per fil (500 MB för ZIP, upp till 500 dokument) · upp till 10 filer
     </div>
 </div>
 
@@ -137,10 +144,21 @@ else
     private int _isPolling; // 0/1 guard, read/written across the timer thread and the
                              // dispatcher thread — needs Interlocked, not a plain bool.
     private bool _disposed;
+    private BackgroundJobStatusPoller? _zipImportPoller;
+
+    // Zip imports create no Document rows until processed, so _docs has nothing Pending
+    // right after upload. Counts zip imports in flight, keeping _pollTimer alive until
+    // HandleZipImportCompletedAsync reports them done.
+    private int _pendingZipImports;
 
     // A doc pending this long has exhausted its storage-load retries without the job
     // ever syncing that failure back to ExtractionStatus — stop polling for it.
     private static readonly TimeSpan PendingStaleAfter = TimeSpan.FromMinutes(10);
+
+    // A zip import does much more work than a single document (up to 500 entries), so it
+    // gets a longer staleness allowance before the poller gives up watching an abandoned
+    // or permanently-failed background job.
+    private static readonly TimeSpan ZipImportStaleAfter = TimeSpan.FromMinutes(30);
 
     private static readonly HashSet<string> AllowedExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".png", ".jpg", ".jpeg" };
@@ -168,12 +186,57 @@ else
         UpdatePolling();
     }
 
+    // Synchronous (no DB access): can fire from BackgroundJobStatusPoller's own
+    // OnInitializedAsync, which runs concurrently with this page's (EF Core "second
+    // operation" crash otherwise). The counter decrement is a plain field write, so it's
+    // safe here; the next _pollTimer tick (kept alive by it) picks up the imported docs.
+    private Task HandleZipImportCompletedAsync(BackgroundJobRun run)
+    {
+        if (_pendingZipImports > 0) _pendingZipImports--;
+
+        // A run that exhausts all retries before ever reaching an entry (e.g. the staging
+        // large object couldn't be read) never gets a ResultJson written —
+        // BackgroundJobRunFailureFilter (#285) only flips Status to Failed, it doesn't
+        // synthesize one. Fall back to a generic failure toast instead of deserializing null.
+        if (run.ResultJson is null)
+        {
+            Snackbar.Add("Zip-import misslyckades.", Severity.Error, config => config.RequireInteraction = true);
+            return Task.CompletedTask;
+        }
+
+        var result = JsonSerializer.Deserialize<ZipImportSummary>(run.ResultJson)!;
+        var summary = $"{result.FileName}: {result.ImportedCount} dokument importerades";
+        if (result.SkippedCount > 0)
+        {
+            var reasons = string.Join(", ", result.SkippedReasons.Select(s => $"{s.FileName}: {s.Reason}"));
+            summary += $", {result.SkippedCount} hoppade över ({reasons})";
+        }
+        if (run.Status == BackgroundJobStatus.Failed)
+            summary += " (importen misslyckades innan den slutfördes)";
+        // The default 3s auto-dismiss (Program.cs's SnackbarConfiguration) is too short here:
+        // this toast only fires on the poll tick after the job finishes (up to 5s late), so a
+        // user not staring at the screen at that exact moment would otherwise never see the
+        // one place the imported/skipped counts are ever reported. RequireInteraction keeps it
+        // up until dismissed.
+        var severity = run.Status == BackgroundJobStatus.Failed
+            ? Severity.Error
+            : result.SkippedCount > 0 ? Severity.Warning : Severity.Success;
+        Snackbar.Add(summary, severity, config => config.RequireInteraction = true);
+        return Task.CompletedTask;
+    }
+
+    // Deserialized from BackgroundJobRun.ResultJson by property-name matching only — see
+    // KoalaBooks.Application.Jobs.ZipImportJob.ZipImportResult, which is the shape that
+    // actually writes it. No compile-time reference between Components and Application.Jobs.
+    private record ZipImportSummary(string FileName, int ImportedCount, int SkippedCount, List<SkippedEntryDto> SkippedReasons);
+    private record SkippedEntryDto(string FileName, string Reason);
+
     private void UpdatePolling()
     {
-        var hasPending = _docs.Any(d =>
+        var hasPendingDocs = _pendingZipImports > 0 || _docs.Any(d =>
             d.ExtractionStatus == ExtractionStatus.Pending &&
             DateTime.UtcNow - d.UploadedAt < PendingStaleAfter);
-        if (hasPending)
+        if (hasPendingDocs)
         {
             _pollTimer ??= new System.Threading.Timer(OnPollTick, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
         }
@@ -244,7 +307,7 @@ else
             foreach (var file in files)
             {
                 const long maxBytes = 10 * 1024 * 1024;
-                const long zipMaxBytes = 50 * 1024 * 1024;
+                const long zipMaxBytes = 500 * 1024 * 1024;
                 var ext = Path.GetExtension(file.Name);
                 var isZip = ext.Equals(".zip", StringComparison.OrdinalIgnoreCase);
                 var fileMaxBytes = isZip ? zipMaxBytes : maxBytes;
@@ -257,28 +320,24 @@ else
 
                 if (file.Size > fileMaxBytes)
                 {
-                    _error = isZip ? "Zip-filen är för stor (max 50 MB)." : "Filen är för stor (max 10 MB).";
+                    _error = isZip ? "Zip-filen är för stor (max 500 MB)." : "Filen är för stor (max 10 MB).";
                     continue;
                 }
 
                 if (isZip)
                 {
-                    using var ms = new MemoryStream();
-                    await file.OpenReadStream(fileMaxBytes).CopyToAsync(ms);
-                    var (result, zipErr) = await DocumentService.UploadZipAsync(ms.ToArray());
+                    var (_, zipErr) = await DocumentService.UploadZipAsync(file.Name, () => file.OpenReadStream(fileMaxBytes));
                     if (zipErr is not null)
                     {
                         _error = $"{file.Name}: {zipErr}";
                     }
                     else
                     {
-                        var summary = $"{file.Name}: {result!.Imported.Count} dokument importerade";
-                        if (result.Skipped.Count > 0)
-                        {
-                            var reasons = string.Join(", ", result.Skipped.Select(s => $"{s.FileName}: {s.Reason}"));
-                            summary += $", {result.Skipped.Count} hoppade över ({reasons})";
-                        }
-                        Snackbar.Add(summary, result.Skipped.Count > 0 ? Severity.Warning : Severity.Success);
+                        Snackbar.Add($"{file.Name}: zip accepterad, bearbetas i bakgrunden…", Severity.Info);
+                        _pendingZipImports++;
+                        // Kick the poller now — its last poll ran before this job existed,
+                        // so without this its timer would never arm to notice completion.
+                        if (_zipImportPoller is not null) await _zipImportPoller.PollNowAsync();
                     }
                     continue;
                 }

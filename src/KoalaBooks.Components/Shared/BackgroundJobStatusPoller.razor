@@ -1,0 +1,131 @@
+@* src/KoalaBooks.Components/Shared/BackgroundJobStatusPoller.razor
+   Extracted from Inbox.razor's poll-timer/staleness/acknowledge block, generalized to
+   any BackgroundJobType. Renders no markup — the host page owns all UI (toast text,
+   download link, etc.) via OnRunCompleted; this component only owns the timer
+   lifecycle, the staleness cutoff, and acknowledging a run once the host's callback
+   returns. *@
+@implements IDisposable
+@using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Interfaces
+@using KoalaBooks.Domain.Enums
+@using Microsoft.Extensions.Logging
+
+@code {
+    [Parameter, EditorRequired] public BackgroundJobType JobType { get; set; }
+    [Parameter] public TimeSpan StaleAfter { get; set; } = TimeSpan.FromMinutes(10);
+    [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(5);
+    [Parameter, EditorRequired] public EventCallback<BackgroundJobRun> OnRunCompleted { get; set; }
+
+    [Inject] private IBackgroundJobRunService BackgroundJobRunService { get; set; } = default!;
+    [Inject] private ILogger<BackgroundJobStatusPoller> Logger { get; set; } = default!;
+
+    private System.Threading.Timer? _pollTimer;
+    private int _isPolling; // 0/1 guard. All access now funnels through PollNowAsync on
+                             // the render sync context (OnPollTick dispatches via
+                             // InvokeAsync before touching it), so nothing here is truly
+                             // concurrent — Interlocked is defensive, not load-bearing.
+    private volatile bool _repollRequested;
+    private bool _disposed;
+    private List<BackgroundJobRun> _openRuns = [];
+
+    // Routed through PollNowAsync (not a bare PollAsync call) so init shares the same
+    // guard as every other poll trigger — otherwise a PollNowAsync racing the unguarded
+    // init poll could run concurrently with it and tear the shared _openRuns field.
+    protected override async Task OnInitializedAsync() => await PollNowAsync();
+
+    // Safe to call from anywhere (a host page right after enqueuing a job, a timer tick,
+    // or component init) — all three funnel through this one guarded entry point. If a
+    // poll is already in flight, this doesn't start a redundant one; it instead asks the
+    // in-flight poll to loop once more before releasing the guard, so state at least as
+    // fresh as this call is still guaranteed to be observed — just not necessarily by the
+    // time this call itself returns.
+    public async Task PollNowAsync()
+    {
+        if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0)
+        {
+            _repollRequested = true;
+            return;
+        }
+
+        try
+        {
+            do
+            {
+                _repollRequested = false;
+                if (_disposed) return;
+                try
+                {
+                    await PollAsync();
+                }
+                catch (Exception ex)
+                {
+                    // Swallowed (not rethrown) so a failed poll can't escape to a direct
+                    // caller like Inbox.razor's upload handler, which has no catch of its
+                    // own, and so a repoll coalesced during this attempt isn't dropped —
+                    // the while check below still runs instead of being bypassed by an
+                    // unwinding exception.
+                    Logger.LogError(ex, "Poll failed for job type {JobType}", JobType);
+                }
+            } while (_repollRequested && !_disposed);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _isPolling, 0);
+        }
+    }
+
+    private async Task PollAsync()
+    {
+        _openRuns = await BackgroundJobRunService.GetOpenRunsAsync(JobType);
+
+        foreach (var run in _openRuns.Where(r => r.Status is BackgroundJobStatus.Completed or BackgroundJobStatus.Failed).ToList())
+        {
+            await OnRunCompleted.InvokeAsync(run);
+            await BackgroundJobRunService.AcknowledgeAsync(run.Id);
+            _openRuns.Remove(run);
+        }
+
+        UpdatePolling();
+    }
+
+    private void UpdatePolling()
+    {
+        var hasOpenRuns = _openRuns.Any(r => DateTime.UtcNow - r.CreatedAt < StaleAfter);
+        if (hasOpenRuns)
+        {
+            _pollTimer ??= new System.Threading.Timer(OnPollTick, null, PollInterval, PollInterval);
+        }
+        else
+        {
+            _pollTimer?.Dispose();
+            _pollTimer = null;
+        }
+    }
+
+    private void OnPollTick(object? state)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await PollNowAsync();
+                if (!_disposed) StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Poll tick failed for job type {JobType}", JobType);
+            }
+        });
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (_pollTimer is not null)
+        {
+            using var waitHandle = new ManualResetEvent(false);
+            _pollTimer.Dispose(waitHandle);
+            waitHandle.WaitOne();
+        }
+    }
+}

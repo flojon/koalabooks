@@ -186,6 +186,23 @@ public class JournalEntriesController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = reversal!.Id }, MapEntry(reversal));
     }
 
+    [HttpPost("journal-entries/{id:int}/preview-reversal")]
+    [ProducesResponseType<JournalEntryResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> PreviewReversal(int id, [FromBody] ReverseJournalEntryRequest request)
+    {
+        var entry = await _journalEntryService.GetByIdAsync(id);
+        if (entry is null) return NotFound();
+
+        var (preview, error) = await _journalEntryService.PreviewReversalAsync(id, request.Reason);
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return Ok(MapEntry(preview!));
+    }
+
     private static JournalEntryResponse MapEntry(JournalEntry e) =>
         new(e.Id, e.EntryNumber, e.Date, e.Description, e.IsPosted, e.Status, e.SourceJournalEntryId, e.CreatedAt,
             e.Lines.Select(l => new JournalEntryLineResponse(

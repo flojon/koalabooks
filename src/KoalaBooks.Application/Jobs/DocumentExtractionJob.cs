@@ -3,6 +3,7 @@ using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
+using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -10,20 +11,35 @@ using System.Text.Json;
 namespace KoalaBooks.Application.Jobs;
 
 public class DocumentExtractionJob(
-    AppDbContext db,
-    IDocumentStorage storage,
+    DbContextOptions<AppDbContext> dbOptions,
     IDocumentExtractor extractor,
     ILogger<DocumentExtractionJob> logger)
 {
     [AutomaticRetry(Attempts = 3)]
     public async Task RunAsync(int documentId)
     {
-        // IgnoreQueryFilters: this job has no HttpContext, so ICurrentUser.OrganisationId
-        // is always null and the tenant query filter would hide every document. Safe here
+        // This job has no HttpContext, so a DI-resolved ICurrentUser/AppDbContext would
+        // always see OrganisationId == null — which, since AppDbContext's DocumentData
+        // query filter follows Document.OrganisationId, would make DbDocumentStorage's
+        // FindAsync-based lookups silently return "not found" for every document.
+        // JobTenantContext.CreateUnscoped gives us an AppDbContext bound to a mutable
+        // LocalCurrentUser starting with no org (so the initial lookup, done with
+        // IgnoreQueryFilters, is unaffected either way); we then set it to the document's
+        // own OrganisationId once known, so the rest of this context's queries — including
+        // storage's — scope correctly from that point on.
+        var context = JobTenantContext.CreateUnscoped(dbOptions);
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+        await using var db = context.Db;
+#pragma warning restore CA2007
+        var tenant = context.Tenant;
+        var storage = new DbDocumentStorage(db);
+
+        // IgnoreQueryFilters: tenant is still unset at this point (see above). Safe here
         // because the job only ever acts on a documentId handed to it by trusted code that
         // just created that exact row — not arbitrary tenant-crossing input.
         var doc = await db.Documents.IgnoreQueryFilters().FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
         if (doc is null) return;
+        tenant.OrganisationId = doc.OrganisationId;
 
         var data = await storage.LoadAsync(doc.StorageKey).ConfigureAwait(false); // storage/DB failures bubble → Hangfire retries (Attempts = 3)
 
@@ -50,7 +66,7 @@ public class DocumentExtractionJob(
             doc.ExtractionStatus = ExtractionStatus.Failed;
         }
 
-        await SaveChangesResolvingConcurrencyAsync(doc).ConfigureAwait(false);
+        await SaveChangesResolvingConcurrencyAsync(db, doc).ConfigureAwait(false);
     }
 
     // Document.Xmin (Postgres' native row-version column) is a concurrency token, so a
@@ -59,7 +75,7 @@ public class DocumentExtractionJob(
     // raises DbUpdateConcurrencyException instead of being silently overwritten. Resolve
     // it by deferring to whatever DocumentDate is in the database now (if any), then retry
     // once against the current row version.
-    private async Task SaveChangesResolvingConcurrencyAsync(Document doc)
+    private static async Task SaveChangesResolvingConcurrencyAsync(AppDbContext db, Document doc)
     {
         try
         {

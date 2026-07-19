@@ -32,8 +32,6 @@ public class DocumentMeta
         (documentDate ?? extractedInvoiceDate)?.ToDateTime(TimeOnly.MinValue);
 }
 
-public record ZipImportResult(IReadOnlyList<Document> Imported, IReadOnlyList<(string FileName, string Reason)> Skipped);
-
 public interface IDocumentService
 {
     Task<(Document? Doc, string? Error)> UploadAsync(string fileName, string contentType, Func<Stream> openData);
@@ -52,5 +50,5 @@ public interface IDocumentService
     Task LinkAsync(int documentId, DocumentEntityType entityType, int entityId);
     Task<(Document? Doc, string? Error)> UploadAndLinkAsync(
         string fileName, string contentType, Func<Stream> openData, DocumentEntityType entityType, int entityId);
-    Task<(ZipImportResult? Result, string? Error)> UploadZipAsync(byte[] zipData);
+    Task<(int? RunId, string? Error)> UploadZipAsync(string fileName, Func<Stream> openZipData);
 }
