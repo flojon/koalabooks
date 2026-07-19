@@ -78,7 +78,7 @@
                     {
                         var notEnded = fy.EndDate > DateOnly.FromDateTime(DateTime.Today);
                         <button class="btn btn-sm btn-warning" disabled="@notEnded" @onclick="() => StartClosing(fy.Id)"
-                                title="@(notEnded ? $"Räkenskapsåret har inte tagit slut än (slutar {fy.EndDate})." : null)">Stäng bokslut</button>
+                                title="@(notEnded ? $"Räkenskapsåret har inte tagit slut ännu." : null)">Stäng bokslut</button>
                     }
                 </td>
             </tr>
