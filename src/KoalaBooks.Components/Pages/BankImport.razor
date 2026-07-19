@@ -15,13 +15,26 @@
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
 }
-else if (_fiscalYear is null)
+else if (!_openFiscalYears.Any())
 {
     <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår hittades. <a href="/fiscal-years">Skapa ett</a> för att fortsätta.</MudAlert>
 }
-else if (!_bankAccounts.Any())
+else
 {
-    <MudAlert Severity="Severity.Info">Inga konton (@AccountPrefix&#42;&#42;) hittades för räkenskapsåret <strong>@_fiscalYear.Name</strong>. <a href="/accounts">Lägg till konton</a> eller importera en kontoplan.</MudAlert>
+
+<div class="toolbar" style="margin-bottom:1rem;">
+    <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
+    <select @bind="_fiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:220px;">
+        @foreach (var fy in _openFiscalYears)
+        {
+            <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+        }
+    </select>
+</div>
+
+@if (!_bankAccounts.Any())
+{
+    <MudAlert Severity="Severity.Info">Inga konton (@AccountPrefix&#42;&#42;) hittades för räkenskapsåret <strong>@_fiscalYear?.Name</strong>. <a href="/accounts">Lägg till konton</a> eller importera en kontoplan.</MudAlert>
 }
 else
 {
@@ -385,9 +398,11 @@ else
 </div>
 
 }
+}
 
 @code {
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private FiscalYearSelectionContext SelectionContext { get; set; } = default!;
     [Inject] private IBankImportService BankImportService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
@@ -401,6 +416,8 @@ else
     private string NoAccountsHint => IsTaxMode ? "skattekonton (16xx)" : "bankkonton (19xx)";
 
     private FiscalYear? _fiscalYear;
+    private List<FiscalYear> _openFiscalYears = [];
+    private int _fiscalYearId;
     private List<Account> _bankAccounts = [];
     private List<Account> _allAccounts = [];
     private List<BankTransaction> _transactions = [];
@@ -462,18 +479,40 @@ else
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        _fiscalYear = await FiscalYearService.GetActiveAsync();
-        if (_fiscalYear is not null)
+        _openFiscalYears = await FiscalYearService.GetOpenFiscalYearsAsync();
+
+        FiscalYear? seed = null;
+        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
+            seed = _openFiscalYears.FirstOrDefault(f => f.Id == lastId);
+        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync();
+
+        if (seed is not null)
         {
-            _bankAccounts = await BankImportService.GetImportableAccountsAsync(_fiscalYear.Id, AccountPrefix);
-            _allAccounts = await AccountService.GetAllAsync(_fiscalYear.Id);
-            if (_bankAccounts.Any())
-            {
-                _selectedAccountId = AutoSelectAccount();
-                await LoadTransactions();
-            }
+            _fiscalYearId = seed.Id;
+            await LoadForSelectedYearAsync();
         }
         _isLoading = false;
+    }
+
+    private async Task OnFiscalYearChangedAsync()
+    {
+        SelectionContext.Set(_fiscalYearId);
+        await LoadForSelectedYearAsync();
+    }
+
+    private async Task LoadForSelectedYearAsync()
+    {
+        _fiscalYear = _openFiscalYears.FirstOrDefault(f => f.Id == _fiscalYearId)
+            ?? await FiscalYearService.GetByIdAsync(_fiscalYearId);
+        if (_fiscalYear is null) return;
+
+        _bankAccounts = await BankImportService.GetImportableAccountsAsync(_fiscalYear.Id, AccountPrefix);
+        _allAccounts = await AccountService.GetAllAsync(_fiscalYear.Id);
+        if (_bankAccounts.Any())
+        {
+            _selectedAccountId = AutoSelectAccount();
+            await LoadTransactions();
+        }
     }
 
     private async Task OnAccountChanged()
