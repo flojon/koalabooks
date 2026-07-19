@@ -1,4 +1,4 @@
-namespace KoalaBooks.Application.Services;
+namespace KoalaBooks.Domain.Interfaces;
 
 public interface IDocumentProvider
 {
