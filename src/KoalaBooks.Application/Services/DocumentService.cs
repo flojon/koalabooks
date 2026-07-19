@@ -159,9 +159,12 @@ public class DocumentService(
         int skip = 0,
         int? take = null,
         string sortBy = "uploadedAt",
-        bool sortAsc = false)
+        bool sortAsc = false,
+        DateOnly? fiscalYearStart = null,
+        DateOnly? fiscalYearEnd = null,
+        bool undatedOnly = false)
     {
-        var base2 = PendingQuery(typeFilter);
+        var base2 = PendingQuery(typeFilter, fiscalYearStart, fiscalYearEnd, undatedOnly);
         IQueryable<Document> ordered = (sortBy, sortAsc) switch
         {
             ("fileName",     true)  => base2.OrderBy(d => d.FileName),
@@ -176,20 +179,36 @@ public class DocumentService(
         return SelectMetaAsync(q);
     }
 
-    public Task<int> GetPendingCountAsync(string? typeFilter = null) =>
-        PendingQuery(typeFilter).CountAsync();
+    public Task<int> GetPendingCountAsync(
+        string? typeFilter = null,
+        DateOnly? fiscalYearStart = null,
+        DateOnly? fiscalYearEnd = null,
+        bool undatedOnly = false) =>
+        PendingQuery(typeFilter, fiscalYearStart, fiscalYearEnd, undatedOnly).CountAsync();
 
-    private IQueryable<Document> PendingQuery(string? typeFilter)
+    private IQueryable<Document> PendingQuery(
+        string? typeFilter,
+        DateOnly? fiscalYearStart = null,
+        DateOnly? fiscalYearEnd = null,
+        bool undatedOnly = false)
     {
         var query = db.Documents
             .Where(d => !d.JournalEntries.Any() && !d.SupplierInvoices.Any() && !d.CustomerInvoices.Any());
 
-        return typeFilter switch
+        query = typeFilter switch
         {
             "unclassified" => query.Where(d => d.ClassifiedType == null),
             null or "all"  => query,
             var t          => query.Where(d => d.ClassifiedType == t)
         };
+
+        if (undatedOnly)
+            return query.Where(d => d.DocumentDate == null);
+
+        if (fiscalYearStart.HasValue && fiscalYearEnd.HasValue)
+            return query.Where(d => d.DocumentDate >= fiscalYearStart && d.DocumentDate <= fiscalYearEnd);
+
+        return query;
     }
 
     public Task<List<DocumentMeta>> GetLinkedAsync(DocumentEntityType entityType, int entityId)

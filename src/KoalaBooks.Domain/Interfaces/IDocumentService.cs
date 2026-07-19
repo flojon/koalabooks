@@ -41,8 +41,15 @@ public interface IDocumentService
         int skip = 0,
         int? take = null,
         string sortBy = "uploadedAt",
-        bool sortAsc = false);
-    Task<int> GetPendingCountAsync(string? typeFilter = null);
+        bool sortAsc = false,
+        DateOnly? fiscalYearStart = null,
+        DateOnly? fiscalYearEnd = null,
+        bool undatedOnly = false);
+    Task<int> GetPendingCountAsync(
+        string? typeFilter = null,
+        DateOnly? fiscalYearStart = null,
+        DateOnly? fiscalYearEnd = null,
+        bool undatedOnly = false);
     Task<List<DocumentMeta>> GetLinkedAsync(DocumentEntityType entityType, int entityId);
     Task<Dictionary<int, int>> GetCountsForJournalEntriesAsync(IEnumerable<int> entryIds);
     Task<(string ContentType, byte[] Data, string FileName)?> GetDownloadAsync(int documentId);
