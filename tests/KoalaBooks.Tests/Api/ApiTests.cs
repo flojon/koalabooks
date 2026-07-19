@@ -664,6 +664,133 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task JournalEntries_PreviewReversal_PostedEntry_ReturnsPreviewWithoutPersisting()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-09-03",
+            description = "To be previewed",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 250m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 250m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        // Mark posted via raw DB write — see comment on JournalEntries_Reverse_PostedEntry_ReturnsReversalLinkedToOriginal
+        // for why the service can't be called directly from a test-created scope.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entryToPost = await db.JournalEntries.IgnoreQueryFilters().FirstAsync(j => j.Id == entryId);
+        entryToPost.IsPosted = true;
+        entryToPost.Status = JournalEntryStatus.Posted;
+        await db.SaveChangesAsync();
+
+        var previewResp = await client.PostAsJsonAsync($"/api/v1/journal-entries/{entryId}/preview-reversal", new { reason = "Wrong account" });
+        Assert.Equal(HttpStatusCode.OK, previewResp.StatusCode);
+
+        var preview = await previewResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Correction", preview.GetProperty("status").GetString());
+        Assert.Equal(entryId, preview.GetProperty("sourceJournalEntryId").GetInt32());
+        var lines = preview.GetProperty("lines").EnumerateArray().ToList();
+        var cashLine = lines.Single(l => l.GetProperty("accountId").GetInt32() == cashId);
+        Assert.Equal(250m, cashLine.GetProperty("creditAmount").GetDecimal());
+        Assert.Equal(0m, cashLine.GetProperty("debitAmount").GetDecimal());
+
+        // Original entry must be untouched — preview must not persist anything.
+        var originalResp = await client.GetAsync($"/api/v1/journal-entries/{entryId}");
+        var original = await originalResp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("Posted", original.GetProperty("status").GetString());
+
+        var listResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries");
+        var list = await listResp.Content.ReadFromJsonAsync<JsonElement>();
+        var items = list.GetProperty("items").EnumerateArray();
+        Assert.DoesNotContain(items, i => i.GetProperty("sourceJournalEntryId").ValueKind != JsonValueKind.Null
+            && i.GetProperty("sourceJournalEntryId").GetInt32() == entryId);
+    }
+
+    [Fact]
+    public async Task JournalEntries_PreviewReversal_DraftEntry_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-09-04",
+            description = "Still a draft",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 100m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var previewResp = await client.PostAsJsonAsync($"/api/v1/journal-entries/{entryId}/preview-reversal", new { reason = "Nope" });
+        Assert.Equal(HttpStatusCode.BadRequest, previewResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_PreviewReversal_UnknownId_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.PostAsJsonAsync("/api/v1/journal-entries/999999/preview-reversal", new { reason = "Nope" });
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_PreviewReversal_EmptyReason_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-09-05",
+            description = "Posted, but empty reason",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 100m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entryToPost = await db.JournalEntries.IgnoreQueryFilters().FirstAsync(j => j.Id == entryId);
+        entryToPost.IsPosted = true;
+        entryToPost.Status = JournalEntryStatus.Posted;
+        await db.SaveChangesAsync();
+
+        var previewResp = await client.PostAsJsonAsync($"/api/v1/journal-entries/{entryId}/preview-reversal", new { reason = "" });
+        Assert.Equal(HttpStatusCode.BadRequest, previewResp.StatusCode);
+    }
+
+    [Fact]
     public async Task JournalEntries_Update_DraftEntry_ReturnsUpdatedValues()
     {
         var client = await AuthenticatedClientAsync();
@@ -1333,5 +1460,301 @@ public class ApiTests : IAsyncLifetime
         var client = await AuthenticatedClientAsync();
         var response = await client.GetAsync("/api/v1/fiscal-years/999999/bank-transactions/unmatched-count");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // ── Report tests ─────────────────────────────────────────────────────────────
+
+    private async Task<int> CreateAndPostEntryAsync(
+        HttpClient client, DateOnly date, int debitAccountId, int creditAccountId, decimal amount, string description)
+    {
+        var createBody = new
+        {
+            date = date.ToString("yyyy-MM-dd"),
+            description,
+            lines = new[]
+            {
+                new { accountId = debitAccountId, debitAmount = amount, creditAmount = 0m },
+                new { accountId = creditAccountId, debitAmount = 0m, creditAmount = amount }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        var postResp = await client.PostAsync($"/api/v1/journal-entries/{entryId}/post", null);
+        Assert.Equal(HttpStatusCode.OK, postResp.StatusCode);
+        return entryId;
+    }
+
+    [Fact]
+    public async Task Reports_DashboardStats_ReturnsEntryCountAndPostedTotals()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        await CreateAndPostEntryAsync(client, new DateOnly(2025, 3, 1), cashId, revenueId, 1000m, "Sale");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/dashboard-stats");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, json.GetProperty("entryCount").GetInt32());
+        Assert.Equal(1000m, json.GetProperty("totalDebit").GetDecimal());
+        Assert.Equal(1000m, json.GetProperty("totalCredit").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Reports_DashboardStats_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/reports/dashboard-stats");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_DashboardStats_CrossTenant_Returns404()
+    {
+        var (_, otherFiscalYearId, _) = await SeedSecondTenantAsync();
+
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{otherFiscalYearId}/reports/dashboard-stats");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_TrialBalance_ReturnsRowsForPostedEntries()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        await CreateAndPostEntryAsync(client, new DateOnly(2025, 3, 1), cashId, revenueId, 1500m, "Sale");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/trial-balance");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var cashRow = json.EnumerateArray().First(r => r.GetProperty("accountNumber").GetString() == "1910");
+        Assert.Equal(1500m, cashRow.GetProperty("totalDebit").GetDecimal());
+        Assert.Equal(1500m, cashRow.GetProperty("balance").GetDecimal());
+        Assert.Equal("Asset", cashRow.GetProperty("accountClass").GetString());
+    }
+
+    [Fact]
+    public async Task Reports_TrialBalance_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/reports/trial-balance");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_BalanceSheet_GroupsAccountsUnderAssetLiabilityEquitySections()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        await CreateAndPostEntryAsync(client, new DateOnly(2025, 3, 1), cashId, revenueId, 2000m, "Sale");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/balance-sheet");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var assets = json.EnumerateArray().First(s => s.GetProperty("title").GetString() == "Tillgångar");
+        var cashRow = assets.GetProperty("rows").EnumerateArray().First(r => r.GetProperty("accountNumber").GetString() == "1910");
+        Assert.Equal(2000m, cashRow.GetProperty("closingBalance").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Reports_BalanceSheet_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/reports/balance-sheet");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_IncomeStatement_ReturnsSectionsAndNetResult()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        await CreateAndPostEntryAsync(client, new DateOnly(2025, 3, 1), cashId, revenueId, 2500m, "Sale");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/income-statement");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(2500m, json.GetProperty("netResult").GetDecimal());
+        var revenueSection = json.GetProperty("sections").EnumerateArray().First(s => s.GetProperty("title").GetString() == "Intäkter");
+        Assert.Equal(2500m, revenueSection.GetProperty("total").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Reports_IncomeStatement_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/reports/income-statement");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_VatReport_ReturnsEmptySectionsWhenNoVatAccounts()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/vat-report");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(0, json.GetProperty("outputVat").GetProperty("rows").GetArrayLength());
+        Assert.Equal(0m, json.GetProperty("netPayable").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Reports_VatReport_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/reports/vat-report");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_GeneralLedger_ReturnsAccountSectionsWithRunningBalance()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        await CreateAndPostEntryAsync(client, new DateOnly(2025, 3, 1), cashId, revenueId, 900m, "Sale");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/general-ledger");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var cashSection = json.EnumerateArray().First(s => s.GetProperty("accountNumber").GetString() == "1910");
+        Assert.Equal(900m, cashSection.GetProperty("closingBalance").GetDecimal());
+        Assert.Equal(1, cashSection.GetProperty("rows").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Reports_GeneralLedger_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/reports/general-ledger");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_AccountLedger_ReturnsSingleAccountSection()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        await CreateAndPostEntryAsync(client, new DateOnly(2025, 3, 1), cashId, revenueId, 1200m, "Sale");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/general-ledger/accounts/{cashId}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("1910", json.GetProperty("accountNumber").GetString());
+        Assert.Equal(1200m, json.GetProperty("closingBalance").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Reports_AccountLedger_UnknownAccount_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/general-ledger/accounts/999999");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_AccountLedger_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/999999/reports/general-ledger/accounts/{cashId}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_ComputedBalances_ReturnsIncomingAndClosingPerAccount()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        await CreateAndPostEntryAsync(client, new DateOnly(2025, 3, 1), cashId, revenueId, 600m, "Sale");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/general-ledger/computed-balances");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var cashBalance = json.EnumerateArray().First(b => b.GetProperty("accountId").GetInt32() == cashId);
+        Assert.Equal(600m, cashBalance.GetProperty("closingBalance").GetDecimal());
+    }
+
+    [Fact]
+    public async Task Reports_ComputedBalances_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/reports/general-ledger/computed-balances");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_AccountIdsWithTransactions_ReturnsOnlyAccountsWithPostedActivity()
+    {
+        var client = await AuthenticatedClientAsync();
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        await CreateAndPostEntryAsync(client, new DateOnly(2025, 3, 1), cashId, revenueId, 300m, "Sale");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/general-ledger/account-ids-with-transactions");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var ids = json.EnumerateArray().Select(e => e.GetInt32()).ToList();
+        Assert.Contains(cashId, ids);
+        Assert.Contains(revenueId, ids);
+    }
+
+    [Fact]
+    public async Task Reports_AccountIdsWithTransactions_UnknownFiscalYear_Returns404()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync("/api/v1/fiscal-years/999999/reports/general-ledger/account-ids-with-transactions");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reports_WithoutToken_Returns401()
+    {
+        var response = await _client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/reports/dashboard-stats");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

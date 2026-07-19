@@ -1,17 +1,10 @@
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
-
-public record MappingRow(
-    string SourceAccountNumber,
-    string SourceAccountName,
-    decimal Ub,
-    string? TargetAccountNumber);
-
-public record ApplyMappingResult(int Mapped, int Skipped);
 
 public class AccountMappingService : IAccountMappingService
 {

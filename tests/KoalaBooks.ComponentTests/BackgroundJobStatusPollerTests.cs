@@ -1,7 +1,7 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Components.Shared;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

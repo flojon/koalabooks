@@ -1,7 +1,7 @@
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 
-namespace KoalaBooks.Application.Services;
+namespace KoalaBooks.Domain.Interfaces;
 
 public interface IBackgroundJobRunService
 {

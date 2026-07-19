@@ -1,9 +1,8 @@
 @page "/accounts"
-@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
 @using KoalaBooks.Domain.Interfaces
-@using KoalaBooks.Infrastructure.Services
 @using MudBlazor
 
 <PageTitle>Kontoplan — KoalaBooks</PageTitle>
@@ -22,7 +21,15 @@ else if (_activeFiscalYear is null)
 else
 {
 
-<p style="color:#64748b; margin-bottom:1rem;">Räkenskapsår: <strong>@_activeFiscalYear.Name</strong></p>
+<div class="toolbar" style="margin-bottom:1rem;">
+    <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
+    <select @bind="_fiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:220px;">
+        @foreach (var fy in _openFiscalYears)
+        {
+            <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+        }
+    </select>
+</div>
 
 <div class="toolbar" style="flex-wrap:wrap; gap:0.5rem;">
     <button class="btn btn-primary" @onclick="ToggleAddForm">
@@ -207,10 +214,13 @@ else
 @code {
     [Inject] private IAccountService AccountService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private FiscalYearSelectionContext SelectionContext { get; set; } = default!;
     [Inject] private IBasImportService BasImportService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
+    private List<FiscalYear> _openFiscalYears = [];
+    private int _fiscalYearId;
     private List<FiscalYear> _otherFiscalYears = [];
     private List<Account> _accounts = [];
     private bool _showForm;
@@ -240,15 +250,35 @@ else
     {
         _isLoading = true;
         var allYears = await FiscalYearService.GetAllAsync();
-        _activeFiscalYear = allYears.FirstOrDefault(f => !f.IsClosed)
-                         ?? allYears.OrderByDescending(f => f.StartDate).FirstOrDefault();
+        _openFiscalYears = allYears.Where(f => !f.IsClosed).OrderByDescending(f => f.StartDate).ToList();
+
+        FiscalYear? seed = null;
+        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
+            seed = _openFiscalYears.FirstOrDefault(f => f.Id == lastId);
+        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync();
+
+        _activeFiscalYear = seed;
         _otherFiscalYears = allYears
             .Where(f => f.Id != _activeFiscalYear?.Id)
             .OrderByDescending(f => f.StartDate)
             .ToList();
         if (_activeFiscalYear is not null)
+        {
+            _fiscalYearId = _activeFiscalYear.Id;
             await LoadAccounts();
+        }
         _isLoading = false;
+    }
+
+    private async Task OnFiscalYearChangedAsync()
+    {
+        SelectionContext.Set(_fiscalYearId);
+        _activeFiscalYear = _openFiscalYears.FirstOrDefault(f => f.Id == _fiscalYearId);
+        _otherFiscalYears = (await FiscalYearService.GetAllAsync())
+            .Where(f => f.Id != _fiscalYearId)
+            .OrderByDescending(f => f.StartDate)
+            .ToList();
+        await LoadAccounts();
     }
 
     private async Task LoadAccounts()

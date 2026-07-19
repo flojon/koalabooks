@@ -1,4 +1,4 @@
-using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Web.Models.Api;
 using Microsoft.AspNetCore.Authorization;
@@ -184,6 +184,23 @@ public class JournalEntriesController : ControllerBase
             return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
 
         return CreatedAtAction(nameof(GetById), new { id = reversal!.Id }, MapEntry(reversal));
+    }
+
+    [HttpPost("journal-entries/{id:int}/preview-reversal")]
+    [ProducesResponseType<JournalEntryResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> PreviewReversal(int id, [FromBody] ReverseJournalEntryRequest request)
+    {
+        var entry = await _journalEntryService.GetByIdAsync(id);
+        if (entry is null) return NotFound();
+
+        var (preview, error) = await _journalEntryService.PreviewReversalAsync(id, request.Reason);
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return Ok(MapEntry(preview!));
     }
 
     private static JournalEntryResponse MapEntry(JournalEntry e) =>

@@ -38,6 +38,31 @@ public class FiscalYearService : IFiscalYearService
             .FirstOrDefaultAsync().ConfigureAwait(false);
     }
 
+    public async Task<FiscalYear?> GetForDateAsync(DateOnly date)
+    {
+        return await _db.FiscalYears
+            .Where(f => f.StartDate <= date && f.EndDate >= date)
+            .FirstOrDefaultAsync().ConfigureAwait(false);
+    }
+
+    public async Task<FiscalYear?> GetDefaultFiscalYearAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return await GetForDateAsync(today).ConfigureAwait(false)
+            ?? await _db.FiscalYears
+                .Where(f => !f.IsClosed)
+                .OrderByDescending(f => f.StartDate)
+                .FirstOrDefaultAsync().ConfigureAwait(false);
+    }
+
+    public async Task<List<FiscalYear>> GetOpenFiscalYearsAsync()
+    {
+        return await _db.FiscalYears
+            .Where(f => !f.IsClosed)
+            .OrderByDescending(f => f.StartDate)
+            .ToListAsync().ConfigureAwait(false);
+    }
+
     public async Task<FiscalYear> CreateAsync(FiscalYear fiscalYear)
     {
         fiscalYear.OrganisationId = _currentUser.OrganisationId

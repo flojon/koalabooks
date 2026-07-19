@@ -1,3 +1,4 @@
+using KoalaBooks.Domain.Auth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenIddict.Abstractions;
@@ -8,7 +9,7 @@ public static class WasmClientSeeder
 {
     public const string ClientId = "koalabooks-wasm";
 
-    public static async Task SeedAsync(IServiceProvider services, Uri redirectUri)
+    public static async Task SeedAsync(IServiceProvider services)
     {
         var manager = services.GetRequiredService<IOpenIddictApplicationManager>();
         var logger = services.GetRequiredService<ILoggerFactory>()
@@ -21,31 +22,23 @@ public static class WasmClientSeeder
             DisplayName = "KoalaBooks WASM client",
             Permissions =
             {
-                OpenIddictConstants.Permissions.Endpoints.Authorization,
                 OpenIddictConstants.Permissions.Endpoints.Token,
-                OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
-                OpenIddictConstants.Permissions.ResponseTypes.Code,
+                OpenIddictConstants.Permissions.Prefixes.GrantType + WasmCookieBridge.GrantType,
                 OpenIddictConstants.Permissions.Scopes.Email,
                 OpenIddictConstants.Permissions.Scopes.Profile,
-            },
-            Requirements =
-            {
-                OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange
             }
         };
-
-        descriptor.RedirectUris.Add(redirectUri);
 
         var existing = await manager.FindByClientIdAsync(ClientId).ConfigureAwait(false);
         if (existing is null)
         {
             await manager.CreateAsync(descriptor).ConfigureAwait(false);
-            logger.LogInformation("Created OpenIddict client '{ClientId}' with redirect URI {RedirectUri}", ClientId, redirectUri);
+            logger.LogInformation("Created OpenIddict client '{ClientId}'", ClientId);
         }
         else
         {
             await manager.UpdateAsync(existing, descriptor).ConfigureAwait(false);
-            logger.LogInformation("Updated OpenIddict client '{ClientId}' with redirect URI {RedirectUri}", ClientId, redirectUri);
+            logger.LogInformation("Updated OpenIddict client '{ClientId}'", ClientId);
         }
     }
 }

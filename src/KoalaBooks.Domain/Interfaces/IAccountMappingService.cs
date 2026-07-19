@@ -1,4 +1,12 @@
-namespace KoalaBooks.Application.Services;
+namespace KoalaBooks.Domain.Interfaces;
+
+public record MappingRow(
+    string SourceAccountNumber,
+    string SourceAccountName,
+    decimal Ub,
+    string? TargetAccountNumber);
+
+public record ApplyMappingResult(int Mapped, int Skipped);
 
 public interface IAccountMappingService
 {
