@@ -266,12 +266,10 @@ public class CustomerInvoiceService : ICustomerInvoiceService
             .FirstOrDefaultAsync().ConfigureAwait(false);
     }
 
-    public static void RecalcLine(CustomerInvoiceLine line)
-    {
-        line.AmountExclVat = Math.Round(line.Quantity * line.UnitPrice, 2);
-        line.VatAmount = Math.Round(line.AmountExclVat * line.VatRate / 100m, 2);
-        line.TotalAmount = line.AmountExclVat + line.VatAmount;
-    }
+    // Kept here so existing call sites don't need to change; the actual implementation
+    // lives in Domain so Components/WASM can reach it without a ProjectReference to
+    // Application. See CustomerInvoiceLineHelper.
+    public static void RecalcLine(CustomerInvoiceLine line) => CustomerInvoiceLineHelper.RecalcLine(line);
 
     private static void RecalcTotals(CustomerInvoice invoice)
     {

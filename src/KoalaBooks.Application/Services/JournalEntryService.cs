@@ -8,10 +8,11 @@ namespace KoalaBooks.Application.Services;
 
 public class JournalEntryService : IJournalEntryService, IJournalEntryReportingService
 {
-    // Single source of truth for the reversal entry's description text, so the live
-    // dialog preview, the persisted entry, and tests all stay in sync on wording/format.
+    // Kept here so existing call sites (this class, tests) don't need to change;
+    // the actual implementation lives in Domain so Components/WASM can reach it
+    // without a ProjectReference to Application. See JournalEntryReversalHelper.
     public static string BuildReversalDescription(int originalEntryNumber, string reason) =>
-        $"Återföring av #{originalEntryNumber}: {reason}";
+        JournalEntryReversalHelper.BuildReversalDescription(originalEntryNumber, reason);
 
     private readonly AppDbContext _db;
 

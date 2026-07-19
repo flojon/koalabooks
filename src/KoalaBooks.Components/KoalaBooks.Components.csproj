@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\KoalaBooks.Application\KoalaBooks.Application.csproj" />
+    <ProjectReference Include="..\KoalaBooks.Domain\KoalaBooks.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>
