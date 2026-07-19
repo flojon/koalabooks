@@ -224,7 +224,7 @@ Agent A and Agent I are advisory/review roles, not implementation streams — th
 
 ## 5. Sub-agent Assignment Plan
 
-Each entry: scope, exact files, services consumed (all confirmed to exist unless flagged), and open questions that must be resolved with the user before that stream starts coding.
+Each entry: scope, exact files, services consumed (all confirmed to exist unless flagged), and — where the stream had an open question — the resolution reached with the user on 2026-07-19.
 
 ### Agent A — API conventions, DTO consistency, OpenAPI review
 **Role:** Review-only, continuous. No files of its own. Checklist per incoming PR: routes under `/api/v1/`, `[ProducesResponseType]` present including error codes, DTO naming (`{Noun}Response`/`Create{Noun}Request`) matches section 1.2, manual-mapping-only (no AutoMapper sneaking in), tenant-check present for any entity without a query filter, no named auth policies introduced.
@@ -261,7 +261,7 @@ Each entry: scope, exact files, services consumed (all confirmed to exist unless
 
 ### Agent H — SIE import/export, account mapping, year-end closing, voucher gaps, bulk journal import
 **Files:** new `SieController.cs` (or split import/export), `AccountMappingController.cs`, `YearEndClosingController.cs`, `VoucherGapsController.cs`; a new `IBulkJournalImportService`/`BulkJournalImportService` pair in `src/KoalaBooks.Application/Services/` plus a controller action for it; tests for each.
-**Services:** `IAccountMappingService`, `IYearEndClosingService`, `IVoucherGapService` — all fully implemented, no gaps, safe to build immediately. `ISieImportService`/`ISieExportService` exist but see open question below. `IBulkJournalImportService` doesn't exist at all.
+**Services:** `IAccountMappingService`, `IYearEndClosingService`, `IVoucherGapService` — all fully implemented, no gaps, safe to build immediately. `ISieImportService`/`ISieExportService` exist; see 5.H-1 for the async wrapper Agent H builds around `ISieImportService`. `IBulkJournalImportService` doesn't exist at all — see 5.H-2.
 **Resolved (5.H-1, SIE):** #279 (Hangfire-based async SIE import) has no branch or PR yet — unstarted. PR #285's shared background-job infra already reserves `BackgroundJobType.SieImport` for exactly this. **Do not build a synchronous "upload, wait, get result" SIE import endpoint** — instead, build the async wrapper now, subsuming #279:
 - Add `SieImportJob` + `HangfireSieImportQueue` under `src/KoalaBooks.Application/Jobs/`, mirroring `ZipImportJob`/`HangfireZipImportQueue` exactly (wrap `ISieImportService.ImportAllAsync`/`ImportFiscalYearAsync`, drive it through `BackgroundJobRunBase`, DI-register in `Program.cs` next to the zip-import registrations).
 - Add `IBackgroundJobRunService.GetByIdAsync(int runId)` (doesn't exist yet — see 1.9), tenant-scoped, needed for the status-poll endpoint below and shared with Agent F's upload-zip.
