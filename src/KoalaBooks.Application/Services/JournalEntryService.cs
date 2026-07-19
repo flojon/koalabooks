@@ -38,6 +38,18 @@ public class JournalEntryService : IJournalEntryService, IJournalEntryReportingS
     public Task<int> CountDraftsAsync(int fiscalYearId) =>
         _db.JournalEntries.CountAsync(j => j.FiscalYearId == fiscalYearId && !j.IsPosted);
 
+    public async Task<List<JournalEntry>> GetDraftsForOrganisationAsync(int organisationId)
+    {
+        return await _db.JournalEntries
+            .Include(j => j.Lines).ThenInclude(l => l.Account)
+            .Where(j => j.FiscalYear.OrganisationId == organisationId && !j.IsPosted)
+            .OrderBy(j => j.Date)
+            .ToListAsync().ConfigureAwait(false);
+    }
+
+    public Task<int> CountDraftsForOrganisationAsync(int organisationId) =>
+        _db.JournalEntries.CountAsync(j => j.FiscalYear.OrganisationId == organisationId && !j.IsPosted);
+
     public async Task<JournalEntry?> GetByIdAsync(int id)
     {
         return await _db.JournalEntries

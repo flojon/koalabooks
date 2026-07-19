@@ -6,6 +6,8 @@ public interface IJournalEntryService
 {
     Task<List<JournalEntry>> GetByFiscalYearAsync(int fiscalYearId, DateOnly? from = null, DateOnly? to = null);
     Task<int> CountDraftsAsync(int fiscalYearId);
+    Task<List<JournalEntry>> GetDraftsForOrganisationAsync(int organisationId);
+    Task<int> CountDraftsForOrganisationAsync(int organisationId);
     Task<JournalEntry?> GetByIdAsync(int id);
     Task<(JournalEntry? Entry, string? Error)> CreateAsync(JournalEntry entry);
     Task<(JournalEntry? Entry, string? Error)> UpdateAsync(JournalEntry entry);

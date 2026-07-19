@@ -262,6 +262,21 @@ public class BankImportService : IBankImportService
             .ToListAsync().ConfigureAwait(false);
     }
 
+    public Task<int> CountUnmatchedForOrganisationAsync(int organisationId) =>
+        _db.BankTransactions.CountAsync(b =>
+            b.OrganisationId == organisationId &&
+            b.Status == BankTransactionStatus.Unmatched);
+
+    public async Task<List<BankTransaction>> GetUnmatchedForOrganisationAsync(int organisationId)
+    {
+        return await _db.BankTransactions
+            .Include(b => b.Account)
+            .Where(b => b.OrganisationId == organisationId && b.Status == BankTransactionStatus.Unmatched)
+            .OrderBy(b => b.Date)
+            .ThenBy(b => b.Id)
+            .ToListAsync().ConfigureAwait(false);
+    }
+
     public async Task<List<BankTransaction>> GetByAccountAsync(int accountId)
     {
         return await _db.BankTransactions

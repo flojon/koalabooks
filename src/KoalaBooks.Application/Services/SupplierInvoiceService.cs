@@ -31,6 +31,20 @@ public class SupplierInvoiceService : ISupplierInvoiceService
             .ToListAsync().ConfigureAwait(false);
     }
 
+    public Task<int> CountUnpaidForOrganisationAsync(int organisationId) =>
+        _db.SupplierInvoices.CountAsync(s => s.FiscalYear.OrganisationId == organisationId && !s.IsPaid);
+
+    public async Task<List<SupplierInvoice>> GetAllForOrganisationAsync(int organisationId)
+    {
+        return await _db.SupplierInvoices
+            .Include(s => s.JournalEntry)
+            .Include(s => s.PaymentJournalEntry)
+            .Where(s => s.FiscalYear.OrganisationId == organisationId)
+            .OrderByDescending(s => s.InvoiceDate)
+            .ThenByDescending(s => s.Id)
+            .ToListAsync().ConfigureAwait(false);
+    }
+
     public async Task<SupplierInvoice?> GetByIdAsync(int id)
     {
         return await _db.SupplierInvoices
