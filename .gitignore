@@ -16,3 +16,4 @@ obj/
 .squad-workstream
 .env
 .superpowers/brainstorm/
+.playwright-cli/
