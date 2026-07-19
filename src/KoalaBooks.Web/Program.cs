@@ -147,6 +147,7 @@ builder.Services.AddOpenIddict()
 builder.Services.AddScoped<ISieImportService, SieImportService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IFiscalYearService, FiscalYearService>();
+builder.Services.AddScoped<FiscalYearSelectionContext>();
 builder.Services.AddScoped<JournalEntryService>();
 builder.Services.AddScoped<IJournalEntryService>(sp => sp.GetRequiredService<JournalEntryService>());
 builder.Services.AddScoped<IJournalEntryReportingService>(sp => sp.GetRequiredService<JournalEntryService>());
