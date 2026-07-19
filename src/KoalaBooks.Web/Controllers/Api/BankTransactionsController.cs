@@ -1,4 +1,3 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Web.Models.Api;
