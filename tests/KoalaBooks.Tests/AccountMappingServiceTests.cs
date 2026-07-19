@@ -1,6 +1,7 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Tests;
