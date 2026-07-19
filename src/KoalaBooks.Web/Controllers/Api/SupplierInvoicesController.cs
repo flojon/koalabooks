@@ -1,4 +1,5 @@
 using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Web.Models.Api;
 using Microsoft.AspNetCore.Authorization;

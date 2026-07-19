@@ -1,8 +1,8 @@
 @page "/reports/vat"
 @using System.IO
-@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Domain.Entities
-@using static KoalaBooks.Application.Services.VatQuarterHelper
+@using static KoalaBooks.Domain.Interfaces.VatQuarterHelper
 @inject IJSRuntime JS
 @inject IVatReportCsvExporter CsvExporter
 

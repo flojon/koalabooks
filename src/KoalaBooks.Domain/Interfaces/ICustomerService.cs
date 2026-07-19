@@ -1,6 +1,6 @@
 using KoalaBooks.Domain.Entities;
 
-namespace KoalaBooks.Application.Services;
+namespace KoalaBooks.Domain.Interfaces;
 
 public interface ICustomerService
 {

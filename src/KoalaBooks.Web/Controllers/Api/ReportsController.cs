@@ -1,4 +1,4 @@
-using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Web.Models.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

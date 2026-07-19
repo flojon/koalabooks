@@ -1,6 +1,7 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Components.Pages;
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 
