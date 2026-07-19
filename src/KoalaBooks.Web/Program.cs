@@ -1,4 +1,5 @@
 using KoalaBooks.Application.Services;
+using KoalaBooks.Domain;
 using KoalaBooks.Domain.Auth;
 using Scalar.AspNetCore;
 using Hangfire;

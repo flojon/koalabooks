@@ -33,6 +33,25 @@ public class FiscalYearApiService(HttpClient http) : IFiscalYearService
         return year is null ? null : ToEntity(year);
     }
 
+    public async Task<FiscalYear?> GetForDateAsync(DateOnly date)
+    {
+        var years = await GetAllAsync().ConfigureAwait(false);
+        return years.FirstOrDefault(f => f.StartDate <= date && f.EndDate >= date);
+    }
+
+    public async Task<FiscalYear?> GetDefaultFiscalYearAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return await GetForDateAsync(today).ConfigureAwait(false)
+            ?? (await GetOpenFiscalYearsAsync().ConfigureAwait(false)).FirstOrDefault();
+    }
+
+    public async Task<List<FiscalYear>> GetOpenFiscalYearsAsync()
+    {
+        var years = await GetAllAsync().ConfigureAwait(false);
+        return years.Where(f => !f.IsClosed).ToList();
+    }
+
     public async Task<List<Account>> GetAccountsAsync(int fiscalYearId)
     {
         var accounts = await http.GetFromJsonAsync<List<AccountApiService.AccountResponse>>(

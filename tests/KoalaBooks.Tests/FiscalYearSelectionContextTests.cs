@@ -1,4 +1,4 @@
-using KoalaBooks.Application.Services;
+using KoalaBooks.Domain;
 
 namespace KoalaBooks.Tests;
 
