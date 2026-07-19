@@ -14,11 +14,34 @@ public class JournalEntriesController : ControllerBase
 {
     private readonly IJournalEntryService _journalEntryService;
     private readonly IFiscalYearService _fiscalYearService;
+    private readonly ICurrentUser _currentUser;
 
-    public JournalEntriesController(IJournalEntryService journalEntryService, IFiscalYearService fiscalYearService)
+    public JournalEntriesController(
+        IJournalEntryService journalEntryService, IFiscalYearService fiscalYearService, ICurrentUser currentUser)
     {
         _journalEntryService = journalEntryService;
         _fiscalYearService = fiscalYearService;
+        _currentUser = currentUser;
+    }
+
+    [HttpGet("journal-entries/drafts")]
+    [ProducesResponseType<List<JournalEntryResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetDraftsForOrganisation()
+    {
+        var organisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
+        var drafts = await _journalEntryService.GetDraftsForOrganisationAsync(organisationId);
+        return Ok(drafts.Select(MapEntry).ToList());
+    }
+
+    [HttpGet("journal-entries/draft-count")]
+    [ProducesResponseType<CountResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetDraftCountForOrganisation()
+    {
+        var organisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
+        var count = await _journalEntryService.CountDraftsForOrganisationAsync(organisationId);
+        return Ok(new CountResponse(count));
     }
 
     [HttpGet("fiscal-years/{fiscalYearId:int}/journal-entries")]

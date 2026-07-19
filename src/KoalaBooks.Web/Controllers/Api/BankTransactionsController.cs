@@ -14,11 +14,24 @@ public class BankTransactionsController : ControllerBase
 {
     private readonly IBankImportService _bankImportService;
     private readonly IFiscalYearService _fiscalYearService;
+    private readonly ICurrentUser _currentUser;
 
-    public BankTransactionsController(IBankImportService bankImportService, IFiscalYearService fiscalYearService)
+    public BankTransactionsController(
+        IBankImportService bankImportService, IFiscalYearService fiscalYearService, ICurrentUser currentUser)
     {
         _bankImportService = bankImportService;
         _fiscalYearService = fiscalYearService;
+        _currentUser = currentUser;
+    }
+
+    [HttpGet("bank-transactions/unmatched-count")]
+    [ProducesResponseType<CountResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetUnmatchedCountForOrganisation()
+    {
+        var organisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
+        var count = await _bankImportService.CountUnmatchedForOrganisationAsync(organisationId);
+        return Ok(new CountResponse(count));
     }
 
     [HttpGet("fiscal-years/{fiscalYearId:int}/bank-transactions")]
