@@ -77,22 +77,22 @@ All services a new controller could need **already exist and are DI-registered**
 | Interface | Location | Confirmed capability for #122 |
 |---|---|---|
 | `IAccountService` | Application | `CreateAsync`, `UpdateAsync`, `ToggleActiveAsync`, `GetMissingFromSourceAsync`, `CopyAccountsAsync` — all remaining Accounts verbs already implemented |
-| `IFiscalYearService` | Application | `CreateAsync`, `GetAccountsAsync`, `PropagateBalancesToNextYearAsync` — all remaining FiscalYears verbs already implemented (no explicit "close year" method — see 5.B open question) |
+| `IFiscalYearService` | Application | `CreateAsync`, `GetAccountsAsync`, `PropagateBalancesToNextYearAsync` — all remaining FiscalYears verbs already implemented. **Resolved (5.B):** "close year" is not a FiscalYears method — it's `IYearEndClosingService`'s validate/preview/execute triad, nested under the fiscal-years route but owned entirely by Agent H |
 | `ISupplierInvoiceService` | Application | `PostAsync`, `MarkAsPaidAsync`, `FindMatchingBankTransactionsAsync`, `CreateFromEntryAsync`, `DeleteAsync` — all remaining verbs implemented |
 | `IBankImportService` | Domain.Interfaces | `ParseFile`, `BuildPreviewAsync`, `ImportAsync`, `GetUnmatchedAsync`, `SetStatusAsync`, `MatchToEntryAsync`, `SuggestContraAccountAsync` — all remaining verbs implemented |
 | `ICustomerService` | Application | `GetAllAsync`, `CreateAsync`, `UpdateAsync`, `DeactivateAsync` — full Customers resource implemented |
-| `ICustomerInvoiceService` | Application | `GetAllAsync(fiscalYearId)`, `GetByIdAsync`, `CreateAsync`, `PostAsync`, `FindMatchingBankTransactionsAsync`, `MarkAsPaidAsync`, `DeleteAsync` — list-by-fiscal-year and by-id are implemented; only `CreateFromEntryAsync` is a genuine gap (unlike `ISupplierInvoiceService`, which has one) |
+| `ICustomerInvoiceService` | Application | `GetAllAsync(fiscalYearId)`, `GetByIdAsync`, `CreateAsync`, `PostAsync`, `FindMatchingBankTransactionsAsync`, `MarkAsPaidAsync`, `DeleteAsync` — list-by-fiscal-year and by-id are implemented. **Resolved (5.E):** `CreateFromEntryAsync` is a genuine gap (unlike `ISupplierInvoiceService`, which has one) but is **deferred to a follow-up issue**, out of scope for this pass |
 | `IDocumentService` | Application | `UploadAsync`, `UpdateMetadataAsync`, `GetPendingAsync`/`GetPendingCountAsync`, `GetLinkedAsync`, `GetDownloadAsync`, `DeleteAsync`, `LinkAsync`, `UploadAndLinkAsync`, `UploadZipAsync` — full Documents resource implemented |
 | `CustomerInvoicePdfGenerator` | `KoalaBooks.Web/Services/` (static, **not DI**) | `byte[] Generate(CustomerInvoice invoice)` — already used once from `Program.cs:251`; call directly, no registration needed |
 | `IYearEndClosingService` | Application | `ValidateForClosingAsync`, `PreviewClosingAsync`, `ExecuteClosingAsync` — full Year-end closing resource implemented |
 | `IVoucherGapService` | Application | `FindGapsAsync`, `GetUnexplainedGapsAsync`, `AddExplanationAsync`, `GetExplanationsAsync` — full Voucher gaps resource implemented |
 | `IAccountMappingService` | Application | `BuildMappingAsync`, `ApplyMappingAsync` — full Account mapping resource implemented |
 | `IOrganisationService` | Application | `GetCurrentAsync`, `UpdateAsync(name, orgNumber)` — full Organisation profile resource implemented |
-| `ISieImportService` | **Infrastructure** (outlier namespace) | `Parse`, `GetPreviewAsync`, `ImportAllAsync`, `ImportFiscalYearAsync` — capability exists but see 5.H open question on sync-vs-async shape |
+| `ISieImportService` | **Infrastructure** (outlier namespace) | `Parse`, `GetPreviewAsync`, `ImportAllAsync`, `ImportFiscalYearAsync` — capability exists. **Resolved (5.H-1):** Agent H wraps it in a new `SieImportJob` (Hangfire), reusing the `BackgroundJobRun` envelope from PR #285 (see 1.9). Subsumes #279 — close it as superseded once merged |
 | `ISieExportService` | Domain.Interfaces | `ExportAsync(fiscalYearId, companyName?)` → `byte[]` — full SIE export implemented |
 | `IJournalEntryReportingService` | Application | `GetTrialBalanceAsync`, `GetAccountLedgerAsync`, `GetGeneralLedgerAsync`, `GetComputedBalancesAsync`, `GetAccountIdsWithTransactionsAsync`, `GetBalanceSheetAsync`, `GetIncomeStatementAsync`, `GetVatReportAsync`, `GetDashboardStatsAsync` — **every report endpoint in the ticket has a backing method already** |
 | `IVatReportCsvExporter` | Application (singleton) | backs the VAT report's CSV variant if needed |
-| **`IBulkJournalImportService`** | **Does not exist** | Genuine gap — batch journal-entry import has no Application-layer service. Must be designed, not invented ad hoc in a controller. |
+| **`IBulkJournalImportService`** | **Does not exist** | Genuine gap — batch journal-entry import has no Application-layer service. **Resolved (5.H-2):** all-or-nothing transactional semantics (deliberately different from the partial-success convention below); exact method signature/DTO shape still needs a short design pass before controller code. |
 
 ### 1.4 Tenant scoping
 EF Core global query filters on `AppDbContext`, keyed off `ICurrentUser.OrganisationId` (sourced from the JWT `org_id` claim via `HttpContextCurrentUser`). Filtered entities: `FiscalYear`, `BankTransaction`, `JournalEntry`, `JournalEntryLine`, `SupplierInvoice`, `Customer`, `CustomerInvoice`, the voucher-gap entity, `Document`. **`Account` has no direct filter** — ownership must be verified transitively via its `FiscalYear` (see `AccountsController.cs:29-30,49-50` for the exact pattern to copy). Cross-tenant access should always resolve to 404, never 403 — this is deliberate and tested (`ApiTests.cs:190,264,423`).
@@ -108,6 +108,13 @@ Built-in `Microsoft.AspNetCore.OpenApi` (`AddOpenApi()`/`MapOpenApi()` in `Progr
 
 ### 1.8 Known in-flight work — do not duplicate
 - **PR #299** (`worktree-issue-122-api-coverage` → `main`, currently **OPEN/draft, not merged**) adds `POST /api/v1/journal-entries/{id}/preview-reversal` via `IJournalEntryService.PreviewReversalAsync`. The issue checklist marks this `[x]` but it is **not on `main` yet** — confirmed by reading `JournalEntriesController.cs` on `main`, which has no such action. No stream below should touch `JournalEntriesController.cs`; if it needs to change for an unrelated reason, rebase on or coordinate with #299 first, don't silently reimplement the same route.
+
+### 1.9 Background-job status envelope (exists, mostly unused)
+PR #285 built a generic async-job status system that already anticipates this program's needs: `BackgroundJobRun` (`KoalaBooks.Domain.Entities`) + `IBackgroundJobRunService` (`KoalaBooks.Application.Services`) + `BackgroundJobType` enum. The enum already reserves `ZipImport = 0` (the only one implemented so far, driving `Inbox.razor`), `SieImport = 1`, `BasImport = 2`, `YearEndClose = 3`, `SieExport = 4` — all unused today, clearly reserved for exactly the streams in this program and #279-282.
+
+Pattern to copy for any new async job (confirmed via `ZipImportJob`/`HangfireZipImportQueue` in `src/KoalaBooks.Application/Jobs/`): DI-register a scoped `{Noun}Job` deriving `BackgroundJobRunBase` + an `IHangfire{Noun}Queue` wrapper; the job's entry point calls `LoadRunAsync(runId, jobId)`, does its work incrementally with `SaveProgressAsync(processedCount)` per unit (so a Hangfire retry resumes rather than restarts), and finishes with `CompleteAsync(status, resultPayload)`.
+
+**Gap:** `IBackgroundJobRunService` currently only has `CreateRunAsync`, `GetOpenRunsAsync`, `AcknowledgeAsync` — **no single-run lookup by id**. Any REST status-poll endpoint (Agent H's SIE import, Agent F's upload-zip) needs a `GetByIdAsync(int runId)` (tenant-scoped) added first. Small, mechanical addition — not a design question. Whichever of Agent H or Agent F lands first should add it and the other should reuse it, rather than each adding their own.
 
 ---
 
@@ -126,7 +133,7 @@ Legend: ✅ merged on `main` · 🟡 open PR (not merged) · ⬜ not started · 
 | | POST create | ⬜ | `IFiscalYearService.CreateAsync` |
 | | GET accounts-for-year | ⬜ | `IFiscalYearService.GetAccountsAsync` |
 | | POST propagate-balances | ⬜ | `IFiscalYearService.PropagateBalancesToNextYearAsync` |
-| | POST close year | ⬜ 🧩 | no dedicated method found — likely means Year-end closing's `ExecuteClosingAsync`; confirm with user (5.B) whether this is a distinct action or the same as Year-end closing execute |
+| | ~~POST close year~~ | resolved | not a FiscalYearsController action — see **Year-end closing** row below (5.B) |
 | **Journal entries** | update, post | ✅ (PR #273) | `IJournalEntryService` |
 | | preview-reversal | 🟡 PR #299 open | do not duplicate (1.8) |
 | **Supplier invoices** | list/by-id/create/update/delete | ✅ (PR #272) | `ISupplierInvoiceService` |
@@ -141,16 +148,16 @@ Legend: ✅ merged on `main` · 🟡 open PR (not merged) · ⬜ not started · 
 | | POST suggest-contra | ⬜ | `SuggestContraAccountAsync` |
 | | POST set-status | ⬜ | `SetStatusAsync` |
 | | POST match-to-entry | ⬜ | `MatchToEntryAsync` |
-| **Customers** | list/by-id/create/update/deactivate | ⬜ (new controller) | `ICustomerService` (verify `GetByIdAsync` exists — not seen in interface dump, see 5.E) |
-| **Customer invoices** | list/by-id/create/from-entry/post/mark-paid/find-matching/delete/pdf | ⬜ (new controller) | `ICustomerInvoiceService` + `CustomerInvoicePdfGenerator.Generate` (list/by-id confirmed implemented; from-entry is the only confirmed gap, see 5.E) |
+| **Customers** | list/by-id/create/update/deactivate | ⬜ (new controller) | `ICustomerService` — confirmed no `GetByIdAsync` (5.E resolved); Agent E adds it (trivial, org-scoped) before building the controller |
+| **Customer invoices** | list/by-id/create/post/mark-paid/find-matching/delete/pdf (from-entry deferred, 5.E resolved) | ⬜ (new controller) | `ICustomerInvoiceService` + `CustomerInvoicePdfGenerator.Generate` — full scope implemented; `CreateFromEntryAsync` intentionally out of scope, tracked as a follow-up |
 | **Documents** | pending list+count/upload/upload-zip/linked/link/metadata/delete/download | ⬜ (new controller) | `IDocumentService` — every method already exists |
 | **Organisation profile** | GET current / PUT update | ⬜ (new controller, smallest stream) | `IOrganisationService` |
-| **SIE import/export** | parse+preview/import-all/export | ⬜ 🧩 | `ISieImportService`/`ISieExportService` exist, but see cross-ref with #279 (5.H) on sync vs async shape |
+| **SIE import/export** | parse+preview/import-all (async via Hangfire)/export | ⬜ 🧩 | resolved (5.H-1): Agent H builds `SieImportJob`+`HangfireSieImportQueue` wrapping `ISieImportService`, reusing the `BackgroundJobRun` envelope (1.9), exposed via a REST status-poll endpoint. Subsumes #279 — close it as superseded once merged. `ISieExportService` unaffected, no gap. |
 | **Account mapping** | build-mapping/apply-mapping | ⬜ | `IAccountMappingService` |
-| **Year-end closing** | preview-closing/execute-closing | ⬜ | `IYearEndClosingService` |
+| **Year-end closing** | validate/preview/execute, nested under `fiscal-years/{id}/year-end-closing/...` (also satisfies the issue's FiscalYears "close year" bullet — 5.B) | ⬜ | `IYearEndClosingService` (`ValidateForClosingAsync`/`PreviewClosingAsync`/`ExecuteClosingAsync`, all three exposed for a future checks-based closing wizard) |
 | **Voucher gaps** | gaps/explanations/add-explanation | ⬜ | `IVoucherGapService` |
 | **Reports** | dashboard/balance-sheet/income-statement/trial-balance/general-ledger (3 sub-endpoints)/vat-report | ⬜ (new controller) | `IJournalEntryReportingService` — every method already exists |
-| **Bulk journal import** | POST batch | ⬜ 🧩 | `IBulkJournalImportService` does not exist — needs design |
+| **Bulk journal import** | POST batch | ⬜ 🧩 | `IBulkJournalImportService` does not exist — resolved (5.H-2): all-or-nothing transactional semantics; method signature/DTO shape still needs a short design pass before controller code |
 | **Infra** | cursor-based pagination | ⬜ (not assigned — cross-cutting, out of scope for lettered streams) | — |
 
 ---
@@ -161,7 +168,7 @@ Legend: ✅ merged on `main` · 🟡 open PR (not merged) · ⬜ not started · 
 Infra/Auth (done: OpenIddict API client #120, PR #272)
    │
    ├── Agent B: Accounts + FiscalYears completion  — no dependency on other streams
-   │        (FiscalYears "close year" ambiguity may depend on Agent H's Year-end-closing scope)
+   │        (5.B resolved: "close year" is entirely Agent H's Year-end-closing scope, not Agent B's)
    │
    ├── Agent C: Supplier invoices remaining verbs   — independent; touches only SupplierInvoicesController.cs
    │
@@ -170,17 +177,19 @@ Infra/Auth (done: OpenIddict API client #120, PR #272)
    │         customer-invoice find-matching-bank-tx — same read-only method on 3 services, no write conflict)
    │
    ├── Agent E: Customers + Customer invoices        — new controllers; independent
-   │        (must verify ICustomerInvoiceService/ICustomerService gaps before starting, see 5.E)
+   │        (5.E resolved: add ICustomerService.GetByIdAsync; customer-invoice from-entry deferred to a follow-up)
    │
    ├── Agent F: Documents                             — new controller; independent
-   │        (upload-zip returns a background-job handle — same status-polling shape question as Agent H's SIE import)
+   │        (upload-zip's background-job handle reuses the BackgroundJobRun status-poll endpoint
+   │         Agent H builds for SIE import, see 1.9/5.H-1 — don't build a second one)
    │
    ├── Agent G: Reports                               — new controller, read-only; fully independent, zero service gaps
    │
    ├── Agent H: SIE import/export, account mapping,   — mixed independence:
-   │            year-end closing, voucher gaps,          - account mapping / year-end closing / voucher gaps: independent, services exist
-   │            bulk journal import                      - SIE import: blocked on a design decision cross-referenced with #279 (Hangfire)
-   │                                                      - bulk journal import: blocked on designing IBulkJournalImportService
+   │            year-end closing, voucher gaps,          - account mapping / voucher gaps: independent, services exist
+   │            bulk journal import                      - year-end closing: independent, services exist (5.B resolved — validate/preview/execute triad)
+   │                                                      - SIE import: unblocked (5.H-1 resolved) — build the Hangfire wrapper now, subsumes #279
+   │                                                      - bulk journal import: semantics resolved (5.H-2, all-or-nothing); still needs a short design pass
    │
    └── Organisation profile (unassigned in the A-I split above — smallest stream,
             fold into Agent B or Agent E, whichever finishes first, or hand to Agent A)
@@ -193,19 +202,18 @@ Agent I: final audit — strictly after all of B-H (and A's last pass) land
 ```
 
 No stream in B-H has a hard build-order dependency on another **except**:
-- FiscalYears "close year" (Agent B) vs Year-end closing execute (Agent H) — same underlying action, one plan, resolve before either starts (5.B).
-- SIE import shape (Agent H) — resolve against #279 before starting that one sub-item; the rest of Agent H's scope is unblocked.
-- Bulk journal import (Agent H) — needs a short service-design pass before any controller code.
+- Bulk journal import (Agent H) — needs a short service-design pass (all-or-nothing transactional, per 5.H-2) before any controller code.
+- Agent F's upload-zip status-poll endpoint and Agent H's SIE-import status-poll endpoint both need `IBackgroundJobRunService.GetByIdAsync` (1.9) — whichever lands first adds it, the other reuses it. Not a hard order, just coordinate so it's not added twice.
 
 ---
 
 ## 4. Recommended Execution Order
 
 1. **Agent G — Reports** first: zero service gaps, zero ambiguity, purely additive read-only controller. Best "prove the pattern still holds" stream and a fast, safe win.
-2. **Agent B — Accounts + FiscalYears completion**: also zero gaps except the one "close year" naming question — ask user (5.B), then proceed same-day.
+2. **Agent B — Accounts + FiscalYears completion**: zero gaps, no open questions (5.B resolved — "close year" belongs entirely to Agent H's Year-end closing stream, not Agent B).
 3. **Agent C — Supplier invoices remaining verbs** and **Agent D — Bank transaction/import endpoints** in parallel: both independent, both just wiring existing service methods into existing controllers, no new controllers.
-4. **Agent E — Customers + Customer invoices** and **Agent F — Documents**: both new controllers, need their own service-gap verification pass first (5.E, 5.F) but no cross-stream blockers.
-5. **Agent H — SIE import/export, account mapping, year-end closing, voucher gaps, bulk journal import**: split internally — ship account-mapping/year-end-closing/voucher-gaps first (no gaps), hold SIE-import and bulk-journal-import until their respective design questions are answered.
+4. **Agent E — Customers + Customer invoices** and **Agent F — Documents**: both new controllers. 5.E resolved (add `ICustomerService.GetByIdAsync`, defer customer-invoice from-entry to a follow-up). Agent F's upload-zip status endpoint should reuse `IBackgroundJobRunService.GetByIdAsync` (1.9) — coordinate with Agent H rather than adding it twice.
+5. **Agent H — SIE import/export, account mapping, year-end closing, voucher gaps, bulk journal import**: split internally — ship account-mapping/voucher-gaps first (no gaps), then year-end closing (5.B: validate/preview/execute triad nested under fiscal-years), then SIE import (5.H-1: build the async Hangfire wrapper now — `SieImportJob`/`HangfireSieImportQueue`, add `IBackgroundJobRunService.GetByIdAsync`, expose a status-poll endpoint; subsumes #279, close it as superseded once merged), then bulk journal import last (5.H-2: design `IBulkJournalImportService` with all-or-nothing transactional semantics before any controller code).
 6. **Organisation profile**: smallest stream, slot in wherever capacity opens (suggest folding into Agent B's PR or giving it to Agent E once Customers lands).
 7. **Agent A — conventions/DTO/OpenAPI review**: not a phase, an ongoing pass — review each PR from 1-6 as it's opened, flag drift from section 1's patterns.
 8. **Agent I — final audit**: only after every stream above has merged.
@@ -224,7 +232,7 @@ Each entry: scope, exact files, services consumed (all confirmed to exist unless
 ### Agent B — AccountsController + FiscalYearsController completion
 **Files:** modify `src/KoalaBooks.Web/Controllers/Api/AccountsController.cs`, `FiscalYearsController.cs`; new DTOs in `Models/Api/` (`CreateAccountRequest`, `UpdateAccountRequest`, `CopyAccountsRequest`, `CreateFiscalYearRequest`); tests in `tests/KoalaBooks.Tests/Api/ApiTests.cs` (or a split file if it's grown too large — check current line count first).
 **Services:** `IAccountService` (all methods exist), `IFiscalYearService` (all methods exist).
-**Open question (5.B):** issue says FiscalYears needs "close year" but `IFiscalYearService` has no closing method — only `IYearEndClosingService.ExecuteClosingAsync` does that. Confirm with user: is "close year" meant to just be a thin FiscalYears-rooted route that calls `IYearEndClosingService`, or is it the same action Agent H is already building under Year-end closing (in which case Agent B should skip it entirely)?
+**Resolved (5.B):** "close year" is **not** a FiscalYearsController action. `IYearEndClosingService` has `ValidateForClosingAsync`/`PreviewClosingAsync`/`ExecuteClosingAsync` — a validate → preview → execute triad, clearly built for a future checks-based closing wizard, not a single flat action. All three are owned by Agent H, exposed nested under `/api/v1/fiscal-years/{id}/year-end-closing/...` for discoverability (matches `FiscalYears.razor`, the only existing UI consumer, which already treats closing as a fiscal-year action). Agent B's scope is Accounts + the remaining FiscalYears verbs only (create, get-accounts-for-year, propagate-balances) — no closing-related files or DTOs.
 
 ### Agent C — Supplier invoices remaining verbs
 **Files:** modify `SupplierInvoicesController.cs`; new DTOs (`SupplierInvoiceFromEntryRequest`, `PostSupplierInvoiceRequest`, `MarkSupplierInvoicePaidRequest`); tests.
@@ -239,12 +247,12 @@ Each entry: scope, exact files, services consumed (all confirmed to exist unless
 ### Agent E — Customers + Customer invoices
 **Files:** new `CustomersController.cs`, `CustomerInvoicesController.cs`; new DTOs (`CustomerResponse`, `CreateCustomerRequest`, `UpdateCustomerRequest`, `CustomerInvoiceResponse`, `CreateCustomerInvoiceRequest`, etc.); tests.
 **Services:** `ICustomerService`, `ICustomerInvoiceService`, `CustomerInvoicePdfGenerator.Generate` (static, no DI).
-**Open question (5.E):** `ICustomerService` has no `GetByIdAsync` — only `GetAllAsync(int organisationId)`. `ICustomerInvoiceService` does have a fiscal-year-scoped list method (`GetAllAsync(int fiscalYearId)`) and `GetByIdAsync`, but no `CreateFromEntryAsync` (unlike `ISupplierInvoiceService`, which has one). Before writing controllers, Agent E must confirm whether Customers needs a by-id lookup added to the service (flag back, don't add it in the controller) and whether customer-invoice from-entry is actually in scope for this pass — if so, design it the same way `SupplierInvoiceService.CreateFromEntryAsync` was designed, per the "no duplicate business logic in controllers" rule.
+**Resolved (5.E):** `ICustomerService` has no `GetByIdAsync` — only `GetAllAsync(int organisationId)`. Agent E adds a straightforward org-scoped `GetByIdAsync` to `ICustomerService`/`CustomerService` before building `CustomersController` — no design ambiguity, just an addition (in the service, not the controller). `ICustomerInvoiceService` does have a fiscal-year-scoped list method (`GetAllAsync(int fiscalYearId)`) and `GetByIdAsync`, confirmed working as-is. `CreateFromEntryAsync` (unlike `ISupplierInvoiceService`, which has one) is a genuine gap but **deferred to a follow-up issue** — out of scope here. Ship list/by-id/create/post/mark-paid/find-matching/delete/pdf only.
 
 ### Agent F — Documents/file handling endpoints
 **Files:** new `DocumentsController.cs`; new DTOs (`DocumentResponse`, `LinkDocumentRequest`, `UpdateDocumentMetadataRequest`); tests (multipart upload test pattern will be new to this test suite — check no existing precedent in `ApiTests.cs` first).
 **Services:** `IDocumentService` — every method (`UploadAsync`, `UpdateMetadataAsync`, `GetPendingAsync`/`GetPendingCountAsync`, `GetLinkedAsync`, `GetDownloadAsync`, `DeleteAsync`, `LinkAsync`, `UploadAndLinkAsync`, `UploadZipAsync`) confirmed to exist.
-**Open question:** `UploadZipAsync` returns `(int? RunId, string? Error)` — a background-job handle (ties into the `BackgroundJobRun`/poller infra from PR #285/#296). The REST response shape for "upload accepted, here's a job id, poll elsewhere" needs to match whatever Agent H picks for SIE import (see 5.H) — coordinate rather than each inventing its own polling envelope.
+**Resolved:** `UploadZipAsync` returns `(int? RunId, string? Error)` — a `BackgroundJobRun` handle (ties into the poller infra from PR #285/#296). Reuse the REST status-poll endpoint Agent H builds for SIE import (5.H-1) rather than inventing a second one — both read the same `BackgroundJobRun` row via `IBackgroundJobRunService.GetByIdAsync` (see 1.9). If Agent F lands first, add `GetByIdAsync` itself and Agent H reuses it; coordinate whichever order they land in.
 
 ### Agent G — Reports endpoints
 **Files:** new `ReportsController.cs`; new DTOs for each report shape (check `IJournalEntryReportingService` return types before naming — several likely already have suitable shapes without needing new response records); tests.
@@ -254,8 +262,13 @@ Each entry: scope, exact files, services consumed (all confirmed to exist unless
 ### Agent H — SIE import/export, account mapping, year-end closing, voucher gaps, bulk journal import
 **Files:** new `SieController.cs` (or split import/export), `AccountMappingController.cs`, `YearEndClosingController.cs`, `VoucherGapsController.cs`; a new `IBulkJournalImportService`/`BulkJournalImportService` pair in `src/KoalaBooks.Application/Services/` plus a controller action for it; tests for each.
 **Services:** `IAccountMappingService`, `IYearEndClosingService`, `IVoucherGapService` — all fully implemented, no gaps, safe to build immediately. `ISieImportService`/`ISieExportService` exist but see open question below. `IBulkJournalImportService` doesn't exist at all.
-**Open question (5.H-1, SIE):** issue comment on #122 explicitly flags that #279 (Hangfire-based async SIE import) may land first or second, and whichever lands first should design a generic job-status surface (`batch/job id, done/progress/error`) the other reuses as its REST status endpoint. **Do not build a synchronous "upload, wait, get result" SIE import endpoint** — confirm with the user whether #279 has landed yet and reuse its status shape, or if #122 goes first, design the status envelope with #279's future needs in mind.
-**Open question (5.H-2, bulk import):** `IBulkJournalImportService` must be designed before any controller code — this is exactly the "if a required service capability does not exist, identify it, don't bypass the architecture" case from the task brief. Recommend: stop and write a short interface-design note (method signature, batch validation semantics — all-or-nothing vs partial success, response shape) and confirm with the user before implementing, rather than guessing at semantics for a financial bulk-write operation.
+**Resolved (5.H-1, SIE):** #279 (Hangfire-based async SIE import) has no branch or PR yet — unstarted. PR #285's shared background-job infra already reserves `BackgroundJobType.SieImport` for exactly this. **Do not build a synchronous "upload, wait, get result" SIE import endpoint** — instead, build the async wrapper now, subsuming #279:
+- Add `SieImportJob` + `HangfireSieImportQueue` under `src/KoalaBooks.Application/Jobs/`, mirroring `ZipImportJob`/`HangfireZipImportQueue` exactly (wrap `ISieImportService.ImportAllAsync`/`ImportFiscalYearAsync`, drive it through `BackgroundJobRunBase`, DI-register in `Program.cs` next to the zip-import registrations).
+- Add `IBackgroundJobRunService.GetByIdAsync(int runId)` (doesn't exist yet — see 1.9), tenant-scoped, needed for the status-poll endpoint below and shared with Agent F's upload-zip.
+- Expose `POST .../sie/import` (enqueues, returns the `RunId`) + a `GET` status-poll endpoint reading `BackgroundJobRun` by id.
+- Once merged, close #279 as superseded — same pattern as #169's split into #279-282.
+
+**Resolved (5.H-2, bulk import):** all-or-nothing transactional semantics — a single DB transaction across the whole batch; any invalid entry rolls back the entire import. Deliberately different from the `SieImportAllResult`/`ZipImportResult` partial-success-with-warnings convention used elsewhere in the codebase, because this is a direct financial write, not a document/reference-data import. The semantics are settled but the exact shape isn't — still write a short interface-design note (method signature, request/response DTO shape, validate-before-transaction vs fail-mid-transaction-and-rollback) before any controller code, per the "identify gaps, don't bypass the architecture" rule.
 
 ### Agent I — Final audit
 **Role:** after B-H (and Organisation profile, wherever it lands) are merged — compare final endpoint set against section 2's table, confirm every ⬜ became ✅, confirm every new controller has integration tests covering happy-path/401/404-cross-tenant, confirm every action has `[ProducesResponseType]`, confirm `/openapi/v1.json` reflects every new route (`curl` it and diff against the endpoint table). Produces a gap report, not code.
@@ -264,5 +277,5 @@ Each entry: scope, exact files, services consumed (all confirmed to exist unless
 
 ## Self-review notes
 - Spec coverage: every checklist item in issue #122's body maps to a row in section 2 and an agent in section 5, except the standalone "cursor-based pagination" infra item, which is explicitly called out as unassigned/out-of-scope for this pass (matches "work incrementally" — it's a cross-cutting change to an already-shipped endpoint, not new coverage).
-- Three genuine ambiguities were found by reading the code rather than assumed away: FiscalYears "close year" vs Year-end closing overlap (5.B), `ICustomerService`'s missing `GetByIdAsync` and `ICustomerInvoiceService`'s missing `CreateFromEntryAsync` (5.E), and the SIE-import/#279 async-shape cross-reference plus the missing `IBulkJournalImportService` (5.H). All four are flagged to the user rather than resolved by invention, per the task brief's explicit instruction.
+- Four genuine ambiguities were found by reading the code rather than assumed away: FiscalYears "close year" vs Year-end closing overlap (5.B), `ICustomerService`'s missing `GetByIdAsync` and `ICustomerInvoiceService`'s missing `CreateFromEntryAsync` (5.E), and the SIE-import/#279 async-shape cross-reference plus the missing `IBulkJournalImportService` (5.H). All four were resolved with the user on 2026-07-19 rather than invented — see each section's "Resolved" note. Decisions: Year-end closing becomes its own resource (validate/preview/execute triad) nested under `fiscal-years/{id}/...`, owned by Agent H, not a separate FiscalYears action; customer-invoice from-entry deferred to a follow-up issue; SIE import gets an async Hangfire wrapper built now, reusing PR #285's `BackgroundJobRun` envelope and subsuming #279; bulk journal import uses all-or-nothing transactional semantics.
 - PR #299 status (open, not merged) was verified via `gh pr view`, not assumed from the issue checklist — the checklist alone would have led every stream to falsely believe `JournalEntriesController.cs` was fully done.
