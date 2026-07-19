@@ -16,11 +16,13 @@ namespace KoalaBooks.Application.Jobs;
 public abstract class BackgroundJobRunBase : IAsyncDisposable
 {
     protected AppDbContext Db { get; }
+    protected DbContextOptions<AppDbContext> DbOptions { get; }
     protected LocalCurrentUser Tenant { get; }
     protected BackgroundJobRun Run { get; private set; } = null!;
 
     protected BackgroundJobRunBase(DbContextOptions<AppDbContext> dbOptions)
     {
+        DbOptions = dbOptions;
         (Db, Tenant) = JobTenantContext.CreateUnscoped(dbOptions);
     }
 

@@ -15,12 +15,9 @@ namespace KoalaBooks.Application.Jobs;
 
 public record SkippedEntry(string FileName, string Reason);
 
-// The ResultJson payload for a BackgroundJobRun with JobType == ZipImport. Written after
-// every processed entry (not just at CompleteAsync) so a Hangfire retry that resumes
-// mid-zip can recover the tally from entries an earlier attempt already accounted for —
-// Run.ProcessedCount alone tells RunAsync *where* to resume, but not what the running
-// import/skip counts were. Read directly by Inbox.razor via plain JSON property-name
-// matching — no shared type reference between Components and Application.Jobs needed.
+// BackgroundJobRun.ResultJson payload for a ZipImport run. Written after every entry
+// (not just at CompleteAsync) so a resumed retry can recover the running tally, not just
+// ProcessedCount. Read by Inbox.razor via plain JSON property matching, no shared type ref.
 public record ZipImportResult(string FileName, int ImportedCount, int SkippedCount, List<SkippedEntry> SkippedReasons);
 
 public class ZipImportJob(
@@ -38,22 +35,11 @@ public class ZipImportJob(
         [".jpeg"] = "image/jpeg",
     };
 
-    // A run left un-Completed after all 3 retries are exhausted is caught by
-    // BackgroundJobRunFailureFilter (PR #285), which marks it Failed so
-    // BackgroundJobStatusPoller/Inbox.razor can surface that instead of polling forever.
-    //
-    // fileName/stagingOid arrive as ordinary Hangfire job arguments (serialized once at
-    // Enqueue time, replayed unchanged on every automatic retry) rather than being looked
-    // up from a persisted row — BackgroundJobRun has no room for job-specific input
-    // columns by design (see the design doc's Architecture §1).
-    //
-    // context is Hangfire's special PerformContext parameter: real callers (see
-    // HangfireZipImportQueue) pass null at enqueue time and Hangfire substitutes the real
-    // context at execution time, giving BackgroundJob.Id — the same id across every
-    // automatic retry of this job, which is what LoadRunAsync's double-claim protection
-    // keys on. Unit tests call RunAsync directly with no context, falling back to a fresh
-    // random id; no test depends on jobId being stable across two separate RunAsync calls
-    // (retry-resume tests simulate the earlier attempt by writing directly to the row).
+    // fileName/stagingOid are plain Hangfire job arguments, replayed unchanged on every
+    // retry, rather than columns on BackgroundJobRun. context is Hangfire's PerformContext:
+    // real callers pass null at enqueue time and Hangfire substitutes the real one at
+    // execution, giving a stable BackgroundJob.Id that LoadRunAsync's double-claim check
+    // keys on; tests calling RunAsync directly fall back to a fresh random id.
     [AutomaticRetry(Attempts = 3)]
     public async Task RunAsync(int runId, string fileName, uint stagingOid, PerformContext? context = null)
     {
@@ -61,7 +47,7 @@ public class ZipImportJob(
         if (!await LoadRunAsync(runId, jobId).ConfigureAwait(false)) return;
 
         var documentService = new DocumentService(
-            Db, storage, extractionQueue, zipImportQueue, new BackgroundJobRunService(Db, dbOptions, Tenant), Tenant);
+            Db, storage, extractionQueue, zipImportQueue, new BackgroundJobRunService(Db, DbOptions, Tenant), Tenant);
 
         var (importedCount, skippedCount, skipped) = Run.ResultJson is null
             ? (0, 0, new List<SkippedEntry>())

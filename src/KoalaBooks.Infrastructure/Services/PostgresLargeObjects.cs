@@ -1,15 +1,11 @@
-// src/KoalaBooks.Infrastructure/Services/PostgresLargeObjects.cs
 using Npgsql;
 using NpgsqlTypes;
 
 namespace KoalaBooks.Infrastructure.Services;
 
-// Plain-SQL lo_* function calls, matching DbDocumentStorage's existing approach —
-// deliberately not Npgsql's NpgsqlLargeObjectManager/NpgsqlLargeObjectStream, which
-// are [Obsolete] as of Npgsql 8.0 specifically in favor of calling these functions
-// directly. Callers own the surrounding transaction; these are sequential-only
-// (no Seek) — that's sufficient for both current callers, which each need either a
-// forward write or a forward read, never random access.
+// Plain-SQL lo_* calls, not Npgsql's NpgsqlLargeObjectManager/Stream ([Obsolete] as of
+// Npgsql 8.0 in favor of these). Callers own the transaction; sequential-only (no Seek)
+// since both current callers only ever need a forward write or forward read.
 public static class PostgresLargeObjects
 {
     // https://www.postgresql.org/docs/current/lo-interfaces.html#LO-INTERFACES-OPEN
