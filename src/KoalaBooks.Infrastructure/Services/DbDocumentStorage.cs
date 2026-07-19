@@ -4,17 +4,11 @@ using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace KoalaBooks.Infrastructure.Services;
 
 public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
 {
-    // https://www.postgresql.org/docs/current/lo-interfaces.html#LO-INTERFACES-OPEN
-    private const int InvWrite = 0x00020000;
-    private const int InvRead = 0x00040000;
-    private const int ChunkSize = 81920; // matches Stream.CopyToAsync's default buffer size
-
     public async Task<(string StorageKey, long FileSize)> SaveAsync(int documentId, string contentType, Func<Stream> openData)
     {
         var strategy = db.Database.CreateExecutionStrategy();
@@ -40,23 +34,9 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
 
                 var existing = await db.DocumentData.FindAsync(documentId).ConfigureAwait(false);
                 if (existing is not null)
-                    await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, existing.Oid)).ConfigureAwait(false);
+                    await PostgresLargeObjects.DeleteLargeObjectAsync(conn, existing.Oid).ConfigureAwait(false);
 
-                var oid = await ExecuteScalarAsync<uint>(conn, "SELECT lo_create(0)").ConfigureAwait(false);
-                var fd = await ExecuteScalarAsync<int>(conn, "SELECT lo_open(@oid, @mode)",
-                    ("oid", NpgsqlDbType.Oid, oid), ("mode", NpgsqlDbType.Integer, InvWrite)).ConfigureAwait(false);
-
-                var buffer = new byte[ChunkSize];
-                long fileSize = 0;
-                int read;
-                while ((read = await data.ReadAsync(buffer).ConfigureAwait(false)) > 0)
-                {
-                    fileSize += read;
-                    var chunk = buffer[..read];
-                    await ExecuteScalarAsync<int>(conn, "SELECT lowrite(@fd, @chunk)",
-                        ("fd", NpgsqlDbType.Integer, fd), ("chunk", NpgsqlDbType.Bytea, chunk)).ConfigureAwait(false);
-                }
-                await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd)).ConfigureAwait(false);
+                var (oid, fileSize) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, data).ConfigureAwait(false);
 
                 if (existing is not null)
                     existing.Oid = oid;
@@ -94,18 +74,8 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
             if (row is null) return [];
 
             var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-            var fd = await ExecuteScalarAsync<int>(conn, "SELECT lo_open(@oid, @mode)",
-                ("oid", NpgsqlDbType.Oid, row.Oid), ("mode", NpgsqlDbType.Integer, InvRead)).ConfigureAwait(false);
-
             using var ms = new MemoryStream();
-            while (true)
-            {
-                var chunk = await ExecuteScalarAsync<byte[]>(conn, "SELECT loread(@fd, @len)",
-                    ("fd", NpgsqlDbType.Integer, fd), ("len", NpgsqlDbType.Integer, ChunkSize)).ConfigureAwait(false);
-                if (chunk.Length > 0) await ms.WriteAsync(chunk).ConfigureAwait(false);
-                if (chunk.Length < ChunkSize) break;
-            }
-            await ExecuteScalarAsync<int>(conn, "SELECT lo_close(@fd)", ("fd", NpgsqlDbType.Integer, fd)).ConfigureAwait(false);
+            await PostgresLargeObjects.CopyLargeObjectIntoStreamAsync(conn, row.Oid, ms).ConfigureAwait(false);
             await tx.CommitAsync().ConfigureAwait(false);
             return ms.ToArray();
         }).ConfigureAwait(false);
@@ -129,7 +99,7 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
                 if (row is null) return;
 
                 var conn = (NpgsqlConnection)db.Database.GetDbConnection();
-                await ExecuteScalarAsync<int>(conn, "SELECT lo_unlink(@oid)", ("oid", NpgsqlDbType.Oid, row.Oid)).ConfigureAwait(false);
+                await PostgresLargeObjects.DeleteLargeObjectAsync(conn, row.Oid).ConfigureAwait(false);
                 db.DocumentData.Remove(row);
                 await db.SaveChangesAsync().ConfigureAwait(false);
                 await tx.CommitAsync().ConfigureAwait(false);
@@ -155,17 +125,5 @@ public class DbDocumentStorage(AppDbContext db) : IDocumentStorage
         var entry = db.ChangeTracker.Entries<DocumentData>()
             .FirstOrDefault(e => e.Entity.DocumentId == documentId);
         if (entry is not null) entry.State = EntityState.Detached;
-    }
-
-    private static async Task<T> ExecuteScalarAsync<T>(NpgsqlConnection conn, string sql,
-        params (string Name, NpgsqlDbType Type, object Value)[] parameters)
-    {
-#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
-        await using var cmd = new NpgsqlCommand(sql, conn);
-#pragma warning restore CA2007
-        foreach (var (name, type, value) in parameters)
-            cmd.Parameters.Add(new NpgsqlParameter { ParameterName = name, NpgsqlDbType = type, Value = value });
-        var result = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
-        return (T)result!;
     }
 }

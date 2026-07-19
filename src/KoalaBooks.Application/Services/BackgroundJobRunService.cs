@@ -6,7 +6,14 @@ using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
 
-public class BackgroundJobRunService(AppDbContext db, ICurrentUser currentUser) : IBackgroundJobRunService
+// CreateRunAsync uses the ambient db so callers like UploadZipAsync can share their own
+// transaction. GetOpenRunsAsync/AcknowledgeAsync build a short-lived AppDbContext instead,
+// since they're driven by BackgroundJobStatusPoller's own timer running independently of
+// whatever else the host page does against the same ambient, non-concurrency-safe context.
+public class BackgroundJobRunService(
+    AppDbContext db,
+    DbContextOptions<AppDbContext> dbOptions,
+    ICurrentUser currentUser) : IBackgroundJobRunService
 {
     public async Task<BackgroundJobRun> CreateRunAsync(BackgroundJobType jobType, int? totalCount = null)
     {
@@ -22,16 +29,24 @@ public class BackgroundJobRunService(AppDbContext db, ICurrentUser currentUser) 
         return run;
     }
 
-    public Task<List<BackgroundJobRun>> GetOpenRunsAsync(BackgroundJobType jobType) =>
-        db.BackgroundJobRuns
+    public async Task<List<BackgroundJobRun>> GetOpenRunsAsync(BackgroundJobType jobType)
+    {
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+        await using var freshDb = new AppDbContext(dbOptions, currentUser);
+#pragma warning restore CA2007
+        return await freshDb.BackgroundJobRuns
             .Where(r => r.JobType == jobType && !r.Acknowledged)
-            .ToListAsync();
+            .ToListAsync().ConfigureAwait(false);
+    }
 
     public async Task AcknowledgeAsync(int runId)
     {
-        var run = await db.BackgroundJobRuns.FirstOrDefaultAsync(r => r.Id == runId).ConfigureAwait(false);
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+        await using var freshDb = new AppDbContext(dbOptions, currentUser);
+#pragma warning restore CA2007
+        var run = await freshDb.BackgroundJobRuns.FirstOrDefaultAsync(r => r.Id == runId).ConfigureAwait(false);
         if (run is null) return;
         run.Acknowledged = true;
-        await db.SaveChangesAsync().ConfigureAwait(false);
+        await freshDb.SaveChangesAsync().ConfigureAwait(false);
     }
 }

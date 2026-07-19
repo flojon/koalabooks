@@ -194,11 +194,14 @@ public class TestFixture : IDisposable
         MakeDocumentService(new DbDocumentStorage(Db));
 
     public DocumentService MakeDocumentService(IDocumentStorage storage) =>
-        new DocumentService(Db, storage, new NoOpDocumentExtractionQueue(), _currentUser);
+        new DocumentService(Db, storage, new NoOpDocumentExtractionQueue(), new NoOpZipImportQueue(), MakeBackgroundJobRunService(), _currentUser);
 
     public DocumentService MakeDocumentService(IDocumentExtractionQueue extractionQueue) =>
-        new DocumentService(Db, new DbDocumentStorage(Db), extractionQueue, _currentUser);
+        new DocumentService(Db, new DbDocumentStorage(Db), extractionQueue, new NoOpZipImportQueue(), MakeBackgroundJobRunService(), _currentUser);
+
+    public DocumentService MakeDocumentService(IZipImportQueue zipImportQueue) =>
+        new DocumentService(Db, new DbDocumentStorage(Db), new NoOpDocumentExtractionQueue(), zipImportQueue, MakeBackgroundJobRunService(), _currentUser);
 
     public BackgroundJobRunService MakeBackgroundJobRunService() =>
-        new BackgroundJobRunService(Db, _currentUser);
+        new BackgroundJobRunService(Db, Options, _currentUser);
 }

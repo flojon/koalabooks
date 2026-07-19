@@ -2,7 +2,9 @@ using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
+using KoalaBooks.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.IO.Compression;
 
 namespace KoalaBooks.Application.Services;
@@ -11,11 +13,13 @@ public class DocumentService(
     AppDbContext db,
     IDocumentStorage storage,
     IDocumentExtractionQueue extractionQueue,
+    IZipImportQueue zipImportQueue,
+    IBackgroundJobRunService backgroundJobRunService,
     ICurrentUser currentUser) : IDocumentService
 {
     private const long MaxBytes = 10 * 1024 * 1024;
-    private const long ZipMaxBytes = 50 * 1024 * 1024;
-    private const int ZipMaxEntries = 50;
+    private const long ZipMaxBytes = 500 * 1024 * 1024;
+    private const int ZipMaxEntries = 500;
 
     private static readonly HashSet<string> AllowedContentTypes =
     [
@@ -24,14 +28,6 @@ public class DocumentService(
         "image/jpeg",
         "image/jpg", // Some browsers report .jpg files as image/jpg rather than image/jpeg
     ];
-
-    private static readonly Dictionary<string, string> ZipEntryContentTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [".pdf"] = "application/pdf",
-        [".png"] = "image/png",
-        [".jpg"] = "image/jpeg",
-        [".jpeg"] = "image/jpeg",
-    };
 
     private sealed class DocumentTooLargeException : Exception;
 
@@ -297,96 +293,84 @@ public class DocumentService(
         return (doc, null);
     }
 
-    public async Task<(ZipImportResult? Result, string? Error)> UploadZipAsync(byte[] zipData)
+    public async Task<(int? RunId, string? Error)> UploadZipAsync(string fileName, Func<Stream> openZipData)
     {
-        if (zipData.Length > ZipMaxBytes)
-            return (null, "Zip-filen är för stor (max 50 MB).");
+        if (currentUser.OrganisationId is null)
+            return (null, "Ingen aktiv organisation.");
 
-        var zipStream = new MemoryStream(zipData);
-        ZipArchive? archive = null;
+        var tempPath = Path.GetTempFileName();
         try
         {
-#pragma warning disable CA2000 // disposed in finally below; CA2000's dataflow analysis doesn't track disposal across await points in async methods
-            archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
-#pragma warning restore CA2000
-            var fileEntries = archive.Entries.Where(e => !string.IsNullOrEmpty(e.Name)).ToList();
-
-            if (fileEntries.Count > ZipMaxEntries)
-                return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
-
-            var imported = new List<Document>();
-            var skipped = new List<(string FileName, string Reason)>();
-
-            foreach (var entry in fileEntries)
+            long totalBytes;
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+            await using (var tempWriteStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
+            await using (var source = openZipData())
+#pragma warning restore CA2007
             {
-                if (!ZipEntryContentTypes.TryGetValue(Path.GetExtension(entry.Name), out var contentType))
+                var buffer = new byte[81920];
+                totalBytes = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer).ConfigureAwait(false)) > 0)
                 {
-                    skipped.Add((entry.Name, "Otillåten filtyp."));
-                    continue;
-                }
-
-                if (entry.Length > MaxBytes)
-                {
-                    skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
-                    continue;
-                }
-
-                byte[] data;
-                try
-                {
-                    using var entryStream = entry.Open();
-                    var (readData, oversized) = await ReadBoundedAsync(entryStream, MaxBytes).ConfigureAwait(false);
-                    if (oversized)
+                    totalBytes += read;
+                    if (totalBytes > ZipMaxBytes)
                     {
-                        skipped.Add((entry.Name, "Filen är för stor (max 10 MB)."));
-                        continue;
+                        return (null, "Zip-filen är för stor (max 500 MB).");
                     }
-                    data = readData!;
+                    await tempWriteStream.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
                 }
-                catch (InvalidDataException)
-                {
-                    skipped.Add((entry.Name, "Skadad fil."));
-                    continue;
-                }
-
-                var (doc, err) = await UploadAsync(entry.Name, contentType, () => new MemoryStream(data)).ConfigureAwait(false);
-                if (doc is not null)
-                    imported.Add(doc);
-                else
-                    skipped.Add((entry.Name, err ?? "Okänt fel."));
             }
 
-            return (new ZipImportResult(imported, skipped), null);
-        }
-        catch (InvalidDataException)
-        {
-            return (null, "Ogiltig zip-fil.");
+            int entryCount;
+            try
+            {
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+                await using var tempReadStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read);
+#pragma warning restore CA2007
+                using var archive = new ZipArchive(tempReadStream, ZipArchiveMode.Read);
+                entryCount = archive.Entries.Count(e => !string.IsNullOrEmpty(e.Name));
+            }
+            catch (InvalidDataException)
+            {
+                return (null, "Ogiltig zip-fil.");
+            }
+
+            if (entryCount > ZipMaxEntries)
+                return (null, $"För många filer i zip-filen (max {ZipMaxEntries}).");
+
+            var strategy = db.Database.CreateExecutionStrategy();
+            var (runId, stagingOid) = await strategy.ExecuteAsync(async () =>
+            {
+                // A retry re-runs this whole delegate: a prior failed attempt may have
+                // left a BackgroundJobRun row tracked (Added) without committing —
+                // detach it before adding a fresh one, or SaveChangesAsync would insert
+                // both and produce a duplicate row.
+                foreach (var stale in db.ChangeTracker.Entries<BackgroundJobRun>().Where(e => e.State == EntityState.Added).ToList())
+                    stale.State = EntityState.Detached;
+
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+                await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning restore CA2007
+                var conn = (NpgsqlConnection)db.Database.GetDbConnection();
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+                await using var tempReadStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read);
+#pragma warning restore CA2007
+                var (oid, _) = await PostgresLargeObjects.CopyStreamIntoNewLargeObjectAsync(conn, tempReadStream).ConfigureAwait(false);
+
+                var run = await backgroundJobRunService.CreateRunAsync(BackgroundJobType.ZipImport, entryCount).ConfigureAwait(false);
+
+                await tx.CommitAsync().ConfigureAwait(false);
+                return (run.Id, oid);
+            }).ConfigureAwait(false);
+
+            zipImportQueue.Enqueue(runId, fileName, stagingOid);
+
+            return (runId, null);
         }
         finally
         {
-            // ZipArchive takes ownership of the stream (disposes it) once constructed;
-            // only dispose zipStream ourselves if construction never got that far.
-            if (archive is not null)
-                archive.Dispose();
-            else
-                zipStream.Dispose();
+            File.Delete(tempPath);
         }
-    }
-
-    private static async Task<(byte[]? Data, bool Oversized)> ReadBoundedAsync(Stream stream, long maxBytes)
-    {
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        long totalRead = 0;
-        int bytesRead;
-        while ((bytesRead = await stream.ReadAsync(chunk).ConfigureAwait(false)) > 0)
-        {
-            totalRead += bytesRead;
-            if (totalRead > maxBytes)
-                return (null, true);
-            await buffer.WriteAsync(chunk.AsMemory(0, bytesRead)).ConfigureAwait(false);
-        }
-        return (buffer.ToArray(), false);
     }
 
     private async Task<List<DocumentMeta>> SelectMetaAsync(IQueryable<Document> query)
@@ -450,5 +434,3 @@ public class DocumentMeta
     public static DateTime? ResolvePrefillDate(DateOnly? documentDate, DateOnly? extractedInvoiceDate) =>
         (documentDate ?? extractedInvoiceDate)?.ToDateTime(TimeOnly.MinValue);
 }
-
-public record ZipImportResult(IReadOnlyList<Document> Imported, IReadOnlyList<(string FileName, string Reason)> Skipped);
