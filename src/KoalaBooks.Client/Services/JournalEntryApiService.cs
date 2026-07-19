@@ -1,5 +1,5 @@
 using System.Net.Http.Json;
-using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 

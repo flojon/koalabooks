@@ -1,4 +1,5 @@
 using KoalaBooks.Application.Services;
+using KoalaBooks.Domain.Interfaces;
 
 namespace KoalaBooks.Tests;
 
