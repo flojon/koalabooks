@@ -61,4 +61,31 @@ public class InboxZipImportToastTests : BunitContext
             Assert.Contains("fakturor.zip: 3 dokument importerades", snackbarProvider.Markup));
         _ = _backgroundJobRunService.Received(1).AcknowledgeAsync(1);
     }
+
+    // Reproduces the crash a run left Failed with no ResultJson would otherwise cause:
+    // BackgroundJobRunFailureFilter (#285) only flips Status to Failed when all retries are
+    // exhausted, it never writes ResultJson — a run that fails before processing its first
+    // entry (e.g. the staging large object can't be read) reaches OnRunCompleted with
+    // ResultJson still null.
+    [Fact]
+    public async Task FailedZipImportRun_WithNoResultJson_ShowsGenericFailureToastInsteadOfCrashing()
+    {
+        _backgroundJobRunService.GetOpenRunsAsync(BackgroundJobType.ZipImport).Returns([
+            new BackgroundJobRun
+            {
+                Id = 1,
+                JobType = BackgroundJobType.ZipImport,
+                Status = BackgroundJobStatus.Failed,
+                ResultJson = null,
+                CreatedAt = DateTime.UtcNow
+            }
+        ]);
+
+        var snackbarProvider = Render<MudSnackbarProvider>();
+        await snackbarProvider.InvokeAsync(() => Render<Inbox>());
+
+        snackbarProvider.WaitForAssertion(() =>
+            Assert.Contains("Zip-import misslyckades.", snackbarProvider.Markup));
+        _ = _backgroundJobRunService.Received(1).AcknowledgeAsync(1);
+    }
 }

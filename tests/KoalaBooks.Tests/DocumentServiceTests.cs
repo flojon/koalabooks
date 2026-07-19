@@ -410,9 +410,8 @@ public class DocumentServiceTests : IDisposable
     {
         var queue = new RecordingZipImportQueue();
         var svc = _fx.MakeDocumentService(queue);
-        var bigZip = new byte[501 * 1024 * 1024];
 
-        var (runId, err) = await svc.UploadZipAsync("test.zip", () => new MemoryStream(bigZip));
+        var (runId, err) = await svc.UploadZipAsync("test.zip", () => new ZeroFilledStream(501L * 1024 * 1024));
 
         Assert.Null(runId);
         Assert.NotNull(err);
@@ -470,30 +469,6 @@ public class DocumentServiceTests : IDisposable
         Assert.Empty(queue.EnqueuedRunIds);
     }
 
-    private static byte[] CorruptEntryData(byte[] zipBytes, string entryName)
-    {
-        var corrupted = (byte[])zipBytes.Clone();
-        for (var i = 0; i < corrupted.Length - 4; i++)
-        {
-            if (corrupted[i] == 0x50 && corrupted[i + 1] == 0x4B && corrupted[i + 2] == 0x03 && corrupted[i + 3] == 0x04)
-            {
-                var nameLen = BitConverter.ToUInt16(corrupted, i + 26);
-                var extraLen = BitConverter.ToUInt16(corrupted, i + 28);
-                var nameStart = i + 30;
-                var name = System.Text.Encoding.UTF8.GetString(corrupted, nameStart, nameLen);
-                if (name == entryName)
-                {
-                    var compressedSize = BitConverter.ToInt32(corrupted, i + 18);
-                    var dataStart = nameStart + nameLen + extraLen;
-                    for (var j = dataStart; j < dataStart + compressedSize; j++)
-                        corrupted[j] = (byte)~corrupted[j];
-                    return corrupted;
-                }
-            }
-        }
-        throw new InvalidOperationException($"entry {entryName} not found in zip for corruption");
-    }
-
     private static byte[] BuildZip(params (string Name, byte[] Data)[] entries)
     {
         using var ms = new MemoryStream();
@@ -505,20 +480,6 @@ public class DocumentServiceTests : IDisposable
                 using var entryStream = entry.Open();
                 entryStream.Write(data, 0, data.Length);
             }
-        }
-        return ms.ToArray();
-    }
-
-    private static byte[] BuildZipWithDirectoryEntry()
-    {
-        using var ms = new MemoryStream();
-        using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
-        {
-            archive.CreateEntry("empty_folder/");
-            var entry = archive.CreateEntry("faktura.pdf");
-            using var entryStream = entry.Open();
-            var data = new byte[] { 1, 2, 3 };
-            entryStream.Write(data, 0, data.Length);
         }
         return ms.ToArray();
     }
@@ -543,4 +504,33 @@ file class RecordingZipImportQueue : IZipImportQueue
 {
     public List<int> EnqueuedRunIds { get; } = [];
     public void Enqueue(int runId, string fileName, uint stagingOid) => EnqueuedRunIds.Add(runId);
+}
+
+// Reports a given length via zero-filled reads without ever holding that many bytes in
+// memory at once — lets the oversized-zip test exercise UploadZipAsync's streaming byte
+// count check at a real 500MB-plus boundary without a 500MB+ test-time allocation.
+file sealed class ZeroFilledStream(long length) : Stream
+{
+    private long _position;
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => length;
+    public override long Position { get => _position; set => throw new NotSupportedException(); }
+
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        var remaining = length - _position;
+        if (remaining <= 0) return 0;
+        var toRead = (int)Math.Min(count, remaining);
+        Array.Clear(buffer, offset, toRead);
+        _position += toRead;
+        return toRead;
+    }
+
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }

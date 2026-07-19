@@ -190,20 +190,34 @@ else
     // UpdatePolling) and picks them up on its next tick.
     private Task HandleZipImportCompletedAsync(BackgroundJobRun run)
     {
-        var result = JsonSerializer.Deserialize<ZipImportSummary>(run.ResultJson!)!;
+        // A run that exhausts all retries before ever reaching an entry (e.g. the staging
+        // large object couldn't be read) never gets a ResultJson written —
+        // BackgroundJobRunFailureFilter (#285) only flips Status to Failed, it doesn't
+        // synthesize one. Fall back to a generic failure toast instead of deserializing null.
+        if (run.ResultJson is null)
+        {
+            Snackbar.Add("Zip-import misslyckades.", Severity.Error, config => config.RequireInteraction = true);
+            return Task.CompletedTask;
+        }
+
+        var result = JsonSerializer.Deserialize<ZipImportSummary>(run.ResultJson)!;
         var summary = $"{result.FileName}: {result.ImportedCount} dokument importerades";
         if (result.SkippedCount > 0)
         {
             var reasons = string.Join(", ", result.SkippedReasons.Select(s => $"{s.FileName}: {s.Reason}"));
             summary += $", {result.SkippedCount} hoppade över ({reasons})";
         }
+        if (run.Status == BackgroundJobStatus.Failed)
+            summary += " (importen misslyckades innan den slutfördes)";
         // The default 3s auto-dismiss (Program.cs's SnackbarConfiguration) is too short here:
         // this toast only fires on the poll tick after the job finishes (up to 5s late), so a
         // user not staring at the screen at that exact moment would otherwise never see the
         // one place the imported/skipped counts are ever reported. RequireInteraction keeps it
         // up until dismissed.
-        Snackbar.Add(summary, result.SkippedCount > 0 ? Severity.Warning : Severity.Success,
-            config => config.RequireInteraction = true);
+        var severity = run.Status == BackgroundJobStatus.Failed
+            ? Severity.Error
+            : result.SkippedCount > 0 ? Severity.Warning : Severity.Success;
+        Snackbar.Add(summary, severity, config => config.RequireInteraction = true);
         return Task.CompletedTask;
     }
 

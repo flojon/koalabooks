@@ -29,14 +29,6 @@ public class DocumentService(
         "image/jpg", // Some browsers report .jpg files as image/jpg rather than image/jpeg
     ];
 
-    private static readonly Dictionary<string, string> ZipEntryContentTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [".pdf"] = "application/pdf",
-        [".png"] = "image/png",
-        [".jpg"] = "image/jpeg",
-        [".jpeg"] = "image/jpeg",
-    };
-
     private sealed class DocumentTooLargeException : Exception;
 
     private sealed class MaxBytesEnforcingStream(Stream inner, long maxBytes) : Stream
