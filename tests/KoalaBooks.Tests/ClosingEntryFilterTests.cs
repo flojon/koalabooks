@@ -21,7 +21,8 @@ public class ClosingEntryFilterTests : IDisposable
     public ClosingEntryFilterTests()
     {
         _f = new TestFixture();
-        _fy = _f.CreateFiscalYear();
+        // EndDate must be in the past — closing before a year has ended is now rejected (issue #307).
+        _fy = _f.CreateFiscalYear(end: DateOnly.FromDateTime(DateTime.Today).AddDays(-1));
         var accounts = _f.CreateStandardAccounts(_fy.Id);
         _cash = accounts.Cash;
         _revenue = accounts.Revenue;
