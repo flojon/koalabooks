@@ -12,10 +12,6 @@
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
 }
-else if (_fiscalYear is null)
-{
-    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
-}
 else if (!_items.Any())
 {
     <MudAlert Severity="Severity.Success">Allt är bokfört och betalt. Inget att göra!</MudAlert>
@@ -123,15 +119,16 @@ else
 }
 
 @code {
-    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IBankImportService BankImportService { get; set; } = default!;
     [Inject] private ISupplierInvoiceService SupplierInvoiceService { get; set; } = default!;
     [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
+    [Inject] private ICurrentUser CurrentUser { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
-    private FiscalYear? _fiscalYear;
+    private int _organisationId;
     private List<TodoItem> _items = [];
+    private readonly Dictionary<int, List<Account>> _accountsByFiscalYear = [];
     private List<Account> _allAccounts = [];
     private List<Account> _bankAccounts = [];
     private bool _isLoading;
@@ -156,41 +153,51 @@ else
 
     private record TodoItem(
         DateOnly Date, TodoKind Kind, string Description, decimal Amount,
-        bool IsOverdue, int EntityId,
+        bool IsOverdue, int EntityId, int FiscalYearId,
         string? AccountNumber = null, int? BankAccountId = null);
 
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        _fiscalYear = await FiscalYearService.GetActiveAsync();
-        if (_fiscalYear is not null)
-        {
-            _allAccounts = await AccountService.GetAllAsync(_fiscalYear.Id);
-            _bankAccounts = _allAccounts.Where(a => a.AccountNumber.StartsWith("19")).ToList();
+        _organisationId = CurrentUser.OrganisationId
+            ?? throw new InvalidOperationException("No active tenant.");
 
-            await ReloadItems();
-        }
+        await ReloadItems();
         _isLoading = false;
     }
 
+    // Work queue spans all open fiscal years, not just one ambiguous "active" one -
+    // matches the Review/Inbox/nav-badge scope.
     private async Task ReloadItems()
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
 
-        var txItems = (await BankImportService.GetUnmatchedAsync(_fiscalYear!.Id))
+        var txItems = (await BankImportService.GetUnmatchedForOrganisationAsync(_organisationId))
             .Select(tx => new TodoItem(
                 tx.Date, TodoKind.BankTx, tx.Description, tx.Amount,
-                false, tx.Id, tx.Account.AccountNumber, tx.AccountId));
+                false, tx.Id, tx.Account.FiscalYearId, tx.Account.AccountNumber, tx.AccountId));
 
-        var invoices = await SupplierInvoiceService.GetAllAsync(_fiscalYear.Id);
+        var invoices = await SupplierInvoiceService.GetAllForOrganisationAsync(_organisationId);
         var invItems = invoices
             .Where(i => !i.IsPaid)
             .Select(i => new TodoItem(
                 i.DueDate, TodoKind.Invoice,
                 i.SupplierName + (i.InvoiceNumber is not null ? $" #{i.InvoiceNumber}" : ""),
-                -i.TotalAmount, i.DueDate < today, i.Id));
+                -i.TotalAmount, i.DueDate < today, i.Id, i.FiscalYearId));
 
         _items = txItems.Concat(invItems).OrderBy(i => i.Date).ThenBy(i => i.Kind).ToList();
+    }
+
+    // Each item may belong to a different open fiscal year, so the account dropdowns
+    // for the currently-expanded row must be scoped to that item's own year.
+    private async Task<List<Account>> GetAccountsForFiscalYearAsync(int fiscalYearId)
+    {
+        if (!_accountsByFiscalYear.TryGetValue(fiscalYearId, out var accounts))
+        {
+            accounts = await AccountService.GetAllAsync(fiscalYearId);
+            _accountsByFiscalYear[fiscalYearId] = accounts;
+        }
+        return accounts;
     }
 
     private async Task ToggleExpand(TodoItem item)
@@ -203,6 +210,9 @@ else
         }
         _expandedId = item.EntityId;
         _expandedKind = item.Kind;
+
+        _allAccounts = await GetAccountsForFiscalYearAsync(item.FiscalYearId);
+        _bankAccounts = _allAccounts.Where(a => a.AccountNumber.StartsWith("19")).ToList();
 
         if (item.Kind == TodoKind.BankTx)
         {
@@ -239,7 +249,7 @@ else
             {
                 Date = item.Date,
                 Description = _entryDescription.Trim(),
-                FiscalYearId = _fiscalYear!.Id,
+                FiscalYearId = item.FiscalYearId,
                 Lines =
                 [
                     new JournalEntryLine { AccountId = item.BankAccountId!.Value, DebitAmount = bankDebit,       CreditAmount = bankCredit },
