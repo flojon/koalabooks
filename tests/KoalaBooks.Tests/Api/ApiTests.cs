@@ -756,6 +756,41 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task JournalEntries_PreviewReversal_EmptyReason_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+
+        var createBody = new
+        {
+            date = "2025-09-05",
+            description = "Posted, but empty reason",
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 100m }
+            }
+        };
+        var createResp = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", createBody);
+        var created = await createResp.Content.ReadFromJsonAsync<JsonElement>();
+        var entryId = created.GetProperty("id").GetInt32();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entryToPost = await db.JournalEntries.IgnoreQueryFilters().FirstAsync(j => j.Id == entryId);
+        entryToPost.IsPosted = true;
+        entryToPost.Status = JournalEntryStatus.Posted;
+        await db.SaveChangesAsync();
+
+        var previewResp = await client.PostAsJsonAsync($"/api/v1/journal-entries/{entryId}/preview-reversal", new { reason = "" });
+        Assert.Equal(HttpStatusCode.BadRequest, previewResp.StatusCode);
+    }
+
+    [Fact]
     public async Task JournalEntries_Update_DraftEntry_ReturnsUpdatedValues()
     {
         var client = await AuthenticatedClientAsync();
