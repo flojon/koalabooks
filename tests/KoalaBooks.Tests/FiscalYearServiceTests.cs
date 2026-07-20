@@ -55,21 +55,6 @@ public class FiscalYearServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetActiveAsync_ReturnsNonClosedYear()
-    {
-        _f.CreateFiscalYear("2025",
-            new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31), isClosed: true);
-        var open = _f.CreateFiscalYear("2026",
-            new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
-
-        var active = await _f.FiscalYearService.GetActiveAsync();
-
-        Assert.NotNull(active);
-        Assert.Equal(open.Id, active.Id);
-        Assert.False(active.IsClosed);
-    }
-
-    [Fact]
     public async Task GetForDateAsync_DateInsideRange_ReturnsThatYear()
     {
         _f.CreateFiscalYear("2025",

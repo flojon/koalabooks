@@ -30,14 +30,6 @@ public class FiscalYearService : IFiscalYearService
         return await _db.FiscalYears.FirstOrDefaultAsync(f => f.Id == id).ConfigureAwait(false);
     }
 
-    public async Task<FiscalYear?> GetActiveAsync()
-    {
-        return await _db.FiscalYears
-            .Where(f => !f.IsClosed)
-            .OrderByDescending(f => f.StartDate)
-            .FirstOrDefaultAsync().ConfigureAwait(false);
-    }
-
     public async Task<FiscalYear?> GetForDateAsync(DateOnly date)
     {
         return await _db.FiscalYears
