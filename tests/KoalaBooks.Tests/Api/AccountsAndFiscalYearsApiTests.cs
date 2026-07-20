@@ -435,6 +435,17 @@ public class AccountsAndFiscalYearsApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Accounts_CopyAccounts_NullAccountIds_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/v1/fiscal-years/{_fiscalYearId}/accounts/copy-accounts",
+            new { accountIds = (int[]?)null });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     // ── FiscalYears: create ───────────────────────────────────────────────────
 
     [Fact]

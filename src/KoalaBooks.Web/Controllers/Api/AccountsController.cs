@@ -33,7 +33,7 @@ public class AccountsController : ControllerBase
         if (fy is null) return NotFound();
 
         var accounts = await _accountService.GetAllAsync(fiscalYearId);
-        return Ok(accounts.Select(MapAccount).ToList());
+        return Ok(accounts.Select(AccountResponse.From).ToList());
     }
 
     [HttpGet("accounts/{id:int}")]
@@ -49,7 +49,7 @@ public class AccountsController : ControllerBase
         var fy = await _fiscalYearService.GetByIdAsync(account.FiscalYearId);
         if (fy is null) return NotFound();
 
-        return Ok(MapAccount(account));
+        return Ok(AccountResponse.From(account));
     }
 
     [HttpPost("fiscal-years/{fiscalYearId:int}/accounts")]
@@ -71,7 +71,7 @@ public class AccountsController : ControllerBase
         };
 
         var created = await _accountService.CreateAsync(account);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, MapAccount(created));
+        return CreatedAtAction(nameof(GetById), new { id = created.Id }, AccountResponse.From(created));
     }
 
     [HttpPut("accounts/{id:int}")]
@@ -93,7 +93,7 @@ public class AccountsController : ControllerBase
         account.AccountClass = request.AccountClass!.Value;
 
         await _accountService.UpdateAsync(account);
-        return Ok(MapAccount(account));
+        return Ok(AccountResponse.From(account));
     }
 
     [HttpPost("accounts/{id:int}/toggle-active")]
@@ -112,7 +112,7 @@ public class AccountsController : ControllerBase
         await _accountService.ToggleActiveAsync(id);
 
         var updated = await _accountService.GetByIdAsync(id);
-        return Ok(MapAccount(updated!));
+        return Ok(AccountResponse.From(updated!));
     }
 
     [HttpGet("fiscal-years/{fiscalYearId:int}/accounts/missing-from-source/{sourceFiscalYearId:int}")]
@@ -128,7 +128,7 @@ public class AccountsController : ControllerBase
         if (sourceFy is null) return NotFound();
 
         var accounts = await _accountService.GetMissingFromSourceAsync(fiscalYearId, sourceFiscalYearId);
-        return Ok(accounts.Select(MapAccount).ToList());
+        return Ok(accounts.Select(AccountResponse.From).ToList());
     }
 
     [HttpPost("fiscal-years/{fiscalYearId:int}/accounts/copy-accounts")]
@@ -141,20 +141,16 @@ public class AccountsController : ControllerBase
         if (fy is null) return NotFound();
 
         // Account has no global query filter — verify tenant ownership of every source
-        // account transitively via its fiscal year before copying any of them.
-        foreach (var accountId in request.AccountIds.Distinct())
-        {
-            var source = await _accountService.GetByIdAsync(accountId);
-            if (source is null) return NotFound();
+        // account transitively via its fiscal year before copying any of them. Batched
+        // rather than checked per-id to avoid an N+1 query per copy request.
+        var distinctIds = request.AccountIds.Distinct().ToList();
+        var sources = await _accountService.GetByIdsAsync(distinctIds);
+        if (sources.Count != distinctIds.Count) return NotFound();
 
-            var sourceFy = await _fiscalYearService.GetByIdAsync(source.FiscalYearId);
-            if (sourceFy is null) return NotFound();
-        }
+        var ownedFiscalYearIds = (await _fiscalYearService.GetAllAsync()).Select(y => y.Id).ToHashSet();
+        if (sources.Any(s => !ownedFiscalYearIds.Contains(s.FiscalYearId))) return NotFound();
 
         var copiedCount = await _accountService.CopyAccountsAsync(fiscalYearId, request.AccountIds);
         return Ok(new CountResponse(copiedCount));
     }
-
-    private static AccountResponse MapAccount(Account a) =>
-        new(a.Id, a.AccountNumber, a.Name, a.AccountClass, a.IsActive, a.IncomingBalance, a.OutgoingBalance);
 }

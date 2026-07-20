@@ -84,9 +84,7 @@ public class FiscalYearsController : ControllerBase
         if (fy is null) return NotFound();
 
         var accounts = await _service.GetAccountsAsync(id);
-        return Ok(accounts.Select(a => new AccountResponse(
-            a.Id, a.AccountNumber, a.Name, a.AccountClass,
-            a.IsActive, a.IncomingBalance, a.OutgoingBalance)).ToList());
+        return Ok(accounts.Select(AccountResponse.From).ToList());
     }
 
     [HttpPost("{id:int}/propagate-balances")]
