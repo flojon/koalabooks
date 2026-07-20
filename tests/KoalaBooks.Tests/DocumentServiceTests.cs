@@ -352,7 +352,7 @@ public class DocumentServiceTests : IDisposable
     public async Task PostSupplierInvoice_AutoLinksDocumentToJournalEntry()
     {
         var docSvc = _fx.MakeDocumentService();
-        var supplierSvc = new SupplierInvoiceService(_fx.Db);
+        var supplierSvc = new SupplierInvoiceService(_fx.Db, TestFixture.MakeTenant(_fx.OrganisationId));
         var fy = _fx.CreateFiscalYear();
         var (expense, payable, _, _, _) = _fx.CreateStandardAccounts(fy.Id);
 

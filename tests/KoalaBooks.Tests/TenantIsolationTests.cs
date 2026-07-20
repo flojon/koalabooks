@@ -113,7 +113,7 @@ public class TenantIsolationTests : IDisposable
         SeedJournalEntry(fyA.Id, accountA.Id);
 
         using var dbB = DbFor(_orgBId);
-        IJournalEntryService service = new JournalEntryService(dbB);
+        IJournalEntryService service = new JournalEntryService(dbB, TestFixture.MakeTenant(_orgBId));
         var results = await service.GetByFiscalYearAsync(fyA.Id);
 
         Assert.Empty(results);

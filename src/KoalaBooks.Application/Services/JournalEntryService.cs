@@ -15,10 +15,12 @@ public class JournalEntryService : IJournalEntryService, IJournalEntryReportingS
         JournalEntryReversalHelper.BuildReversalDescription(originalEntryNumber, reason);
 
     private readonly AppDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
-    public JournalEntryService(AppDbContext db)
+    public JournalEntryService(AppDbContext db, ICurrentUser currentUser)
     {
         _db = db;
+        _currentUser = currentUser;
     }
 
     public async Task<List<JournalEntry>> GetByFiscalYearAsync(int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
@@ -38,8 +40,9 @@ public class JournalEntryService : IJournalEntryService, IJournalEntryReportingS
     public Task<int> CountDraftsAsync(int fiscalYearId) =>
         _db.JournalEntries.CountAsync(j => j.FiscalYearId == fiscalYearId && !j.IsPosted);
 
-    public async Task<List<JournalEntry>> GetDraftsForOrganisationAsync(int organisationId)
+    public async Task<List<JournalEntry>> GetDraftsForOrganisationAsync()
     {
+        var organisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
         return await _db.JournalEntries
             .Include(j => j.Lines).ThenInclude(l => l.Account)
             .Where(j => j.FiscalYear.OrganisationId == organisationId && !j.IsPosted)
@@ -47,8 +50,11 @@ public class JournalEntryService : IJournalEntryService, IJournalEntryReportingS
             .ToListAsync().ConfigureAwait(false);
     }
 
-    public Task<int> CountDraftsForOrganisationAsync(int organisationId) =>
-        _db.JournalEntries.CountAsync(j => j.FiscalYear.OrganisationId == organisationId && !j.IsPosted);
+    public Task<int> CountDraftsForOrganisationAsync()
+    {
+        var organisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
+        return _db.JournalEntries.CountAsync(j => j.FiscalYear.OrganisationId == organisationId && !j.IsPosted);
+    }
 
     public async Task<JournalEntry?> GetByIdAsync(int id)
     {

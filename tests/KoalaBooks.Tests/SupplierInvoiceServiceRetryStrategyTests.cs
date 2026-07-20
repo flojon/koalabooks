@@ -76,7 +76,7 @@ public class SupplierInvoiceServiceRetryStrategyTests : IDisposable
     [Fact]
     public async Task PostAsync_SucceedsUnderRetryingExecutionStrategy()
     {
-        var service = new SupplierInvoiceService(_db);
+        var service = new SupplierInvoiceService(_db, _currentUser);
         var (invoice, createError) = await service.CreateAsync(new SupplierInvoice
         {
             FiscalYearId = _fiscalYearId,
@@ -100,7 +100,7 @@ public class SupplierInvoiceServiceRetryStrategyTests : IDisposable
     [Fact]
     public async Task MarkAsPaidAsync_SucceedsUnderRetryingExecutionStrategy()
     {
-        var service = new SupplierInvoiceService(_db);
+        var service = new SupplierInvoiceService(_db, _currentUser);
         var (invoice, createError) = await service.CreateAsync(new SupplierInvoice
         {
             FiscalYearId = _fiscalYearId,

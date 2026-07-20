@@ -5,7 +5,6 @@
 @inject IJournalEntryService JournalEntryService
 @inject IFiscalYearService FiscalYearService
 @inject IAccountService AccountService
-@inject ICurrentUser CurrentUser
 
 <PageTitle>Att granska — KoalaBooks</PageTitle>
 
@@ -60,7 +59,6 @@ else
 
     private async Task ReloadDraftsAsync()
     {
-        var organisationId = CurrentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
-        _drafts = await JournalEntryService.GetDraftsForOrganisationAsync(organisationId);
+        _drafts = await JournalEntryService.GetDraftsForOrganisationAsync();
     }
 }

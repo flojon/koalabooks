@@ -11,7 +11,7 @@ public class SupplierInvoiceServiceOrganisationScopeTests : IDisposable
     public SupplierInvoiceServiceOrganisationScopeTests()
     {
         _f = new TestFixture();
-        _svc = new SupplierInvoiceService(_f.Db);
+        _svc = new SupplierInvoiceService(_f.Db, TestFixture.MakeTenant(_f.OrganisationId));
     }
 
     public void Dispose() => _f.Dispose();
@@ -28,8 +28,8 @@ public class SupplierInvoiceServiceOrganisationScopeTests : IDisposable
             new SupplierInvoice { FiscalYearId = fy2026.Id, SupplierName = "C", InvoiceDate = new DateOnly(2026, 6, 1), DueDate = new DateOnly(2026, 7, 1), TotalAmount = 300, IsPaid = true });
         await _f.Db.SaveChangesAsync();
 
-        var all = await _svc.GetAllForOrganisationAsync(_f.OrganisationId);
-        var unpaidCount = await _svc.CountUnpaidForOrganisationAsync(_f.OrganisationId);
+        var all = await _svc.GetAllForOrganisationAsync();
+        var unpaidCount = await _svc.CountUnpaidForOrganisationAsync();
 
         Assert.Equal(3, all.Count);
         Assert.Equal(2, unpaidCount);

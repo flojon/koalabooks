@@ -25,16 +25,14 @@ public class JournalEntryApiService(HttpClient http) : IJournalEntryService
         return count?.Count ?? 0;
     }
 
-    public async Task<List<JournalEntry>> GetDraftsForOrganisationAsync(int organisationId)
+    public async Task<List<JournalEntry>> GetDraftsForOrganisationAsync()
     {
         var drafts = await http.GetFromJsonAsync<List<JournalEntryResponse>>(
             "api/v1/journal-entries/drafts", ApiJson.Options).ConfigureAwait(false);
         return drafts?.Select(ToEntity).ToList() ?? [];
     }
 
-    // organisationId is not sent to the server — the endpoint resolves the tenant from
-    // ICurrentUser, so a caller can't use this to look up another organisation's count.
-    public async Task<int> CountDraftsForOrganisationAsync(int organisationId)
+    public async Task<int> CountDraftsForOrganisationAsync()
     {
         var count = await http.GetFromJsonAsync<CountResponse>(
             "api/v1/journal-entries/draft-count", ApiJson.Options).ConfigureAwait(false);

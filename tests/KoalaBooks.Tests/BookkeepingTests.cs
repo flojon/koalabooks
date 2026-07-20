@@ -158,8 +158,8 @@ public class JournalEntryServiceTests : IDisposable
         _f.Db.JournalEntries.AddRange(draft2025, draft2026);
         await _f.Db.SaveChangesAsync();
 
-        var drafts = await _f.JournalEntryService.GetDraftsForOrganisationAsync(_f.OrganisationId);
-        var count = await _f.JournalEntryService.CountDraftsForOrganisationAsync(_f.OrganisationId);
+        var drafts = await _f.JournalEntryService.GetDraftsForOrganisationAsync();
+        var count = await _f.JournalEntryService.CountDraftsForOrganisationAsync();
 
         Assert.Equal(2, drafts.Count);
         Assert.Equal(2, count);
@@ -178,7 +178,7 @@ public class JournalEntryServiceTests : IDisposable
         _f.Db.JournalEntries.Add(posted);
         await _f.Db.SaveChangesAsync();
 
-        var drafts = await _f.JournalEntryService.GetDraftsForOrganisationAsync(_f.OrganisationId);
+        var drafts = await _f.JournalEntryService.GetDraftsForOrganisationAsync();
 
         Assert.Empty(drafts);
     }

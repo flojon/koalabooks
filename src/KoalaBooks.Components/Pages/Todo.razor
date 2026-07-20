@@ -123,10 +123,8 @@ else
     [Inject] private ISupplierInvoiceService SupplierInvoiceService { get; set; } = default!;
     [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
-    [Inject] private ICurrentUser CurrentUser { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
-    private int _organisationId;
     private List<TodoItem> _items = [];
     private readonly Dictionary<int, List<Account>> _accountsByFiscalYear = [];
     private List<Account> _allAccounts = [];
@@ -159,9 +157,6 @@ else
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        _organisationId = CurrentUser.OrganisationId
-            ?? throw new InvalidOperationException("No active tenant.");
-
         await ReloadItems();
         _isLoading = false;
     }
@@ -172,12 +167,12 @@ else
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
 
-        var txItems = (await BankImportService.GetUnmatchedForOrganisationAsync(_organisationId))
+        var txItems = (await BankImportService.GetUnmatchedForOrganisationAsync())
             .Select(tx => new TodoItem(
                 tx.Date, TodoKind.BankTx, tx.Description, tx.Amount,
                 false, tx.Id, tx.Account.FiscalYearId, tx.Account.AccountNumber, tx.AccountId));
 
-        var invoices = await SupplierInvoiceService.GetAllForOrganisationAsync(_organisationId);
+        var invoices = await SupplierInvoiceService.GetAllForOrganisationAsync();
         var invItems = invoices
             .Where(i => !i.IsPaid)
             .Select(i => new TodoItem(

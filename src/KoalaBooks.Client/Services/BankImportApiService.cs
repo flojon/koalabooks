@@ -17,16 +17,14 @@ public class BankImportApiService(HttpClient http) : IBankImportService
         return response?.Count ?? 0;
     }
 
-    // organisationId is not sent to the server — the endpoint resolves the tenant from
-    // ICurrentUser, so a caller can't use this to look up another organisation's count.
-    public async Task<int> CountUnmatchedForOrganisationAsync(int organisationId)
+    public async Task<int> CountUnmatchedForOrganisationAsync()
     {
         var response = await http.GetFromJsonAsync<CountResponse>(
             "api/v1/bank-transactions/unmatched-count", ApiJson.Options).ConfigureAwait(false);
         return response?.Count ?? 0;
     }
 
-    public Task<List<BankTransaction>> GetUnmatchedForOrganisationAsync(int organisationId) =>
+    public Task<List<BankTransaction>> GetUnmatchedForOrganisationAsync() =>
         Task.FromException<List<BankTransaction>>(
             new NotSupportedException("Fetching organisation-wide unmatched bank transactions has no REST endpoint yet."));
 

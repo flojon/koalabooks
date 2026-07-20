@@ -75,8 +75,8 @@ public static class DemoDataSeeder
             await new BasImportService(db).ImportDefaultAsync(currentFiscalYear.Id).ConfigureAwait(false);
 
             await SeedPreviousYearEntriesAsync(db, tenant, previousFiscalYear).ConfigureAwait(false);
-            await SeedCurrentYearEntriesAsync(db, currentFiscalYear.Id).ConfigureAwait(false);
-            await SeedCustomersAndInvoicesAsync(db, org.Id, currentFiscalYear.Id).ConfigureAwait(false);
+            await SeedCurrentYearEntriesAsync(db, tenant, currentFiscalYear.Id).ConfigureAwait(false);
+            await SeedCustomersAndInvoicesAsync(db, tenant, org.Id, currentFiscalYear.Id).ConfigureAwait(false);
         }
 
         // Existence-checked so a retry after a partial failure can't fail as a duplicate.
@@ -155,7 +155,7 @@ public static class DemoDataSeeder
         var expense = accounts["5010"].Id;
 
         var year = previousFiscalYear.StartDate.Year;
-        var journalEntryService = new JournalEntryService(db);
+        var journalEntryService = new JournalEntryService(db, tenant);
 
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 2, 10), cash, revenue, 9000m, "Kontantförsäljning").ConfigureAwait(false);
         await PostEntryAsync(journalEntryService, previousFiscalYear.Id, new DateOnly(year, 5, 15), expense, cash, 8000m, "Lokalhyra").ConfigureAwait(false);
@@ -172,7 +172,7 @@ public static class DemoDataSeeder
             throw new InvalidOperationException($"Demo seed failed to close previous fiscal year: {closingResult.Error}");
     }
 
-    private static async Task SeedCurrentYearEntriesAsync(AppDbContext db, int fiscalYearId)
+    private static async Task SeedCurrentYearEntriesAsync(AppDbContext db, LocalCurrentUser tenant, int fiscalYearId)
     {
         var accounts = await LoadDemoAccountsAsync(db, fiscalYearId).ConfigureAwait(false);
         var cash = accounts["1910"].Id;
@@ -182,7 +182,7 @@ public static class DemoDataSeeder
         var expense = accounts["5010"].Id;
 
         var year = DateTime.UtcNow.Year;
-        var journalEntryService = new JournalEntryService(db);
+        var journalEntryService = new JournalEntryService(db, tenant);
 
         (DateOnly Date, int DebitAccountId, int CreditAccountId, decimal Amount, string Description)[] entries =
         [
@@ -212,7 +212,8 @@ public static class DemoDataSeeder
         await db.JournalEntries.Where(j => j.Id == gapEntryId).ExecuteDeleteAsync().ConfigureAwait(false);
     }
 
-    private static async Task SeedCustomersAndInvoicesAsync(AppDbContext db, int organisationId, int fiscalYearId)
+    private static async Task SeedCustomersAndInvoicesAsync(
+        AppDbContext db, LocalCurrentUser tenant, int organisationId, int fiscalYearId)
     {
         var customerService = new CustomerService(db);
         var customers = new[]
@@ -234,7 +235,7 @@ public static class DemoDataSeeder
 
         var year = DateTime.UtcNow.Year;
         var accounts = await LoadDemoAccountsAsync(db, fiscalYearId).ConfigureAwait(false);
-        var supplierInvoiceService = new SupplierInvoiceService(db);
+        var supplierInvoiceService = new SupplierInvoiceService(db, tenant);
 
         // Left unposted so the "obokförd leverantörsfaktura" demo state exists.
         var (unposted, unpostedError) = await supplierInvoiceService.CreateAsync(new SupplierInvoice

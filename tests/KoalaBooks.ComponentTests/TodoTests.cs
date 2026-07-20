@@ -23,7 +23,6 @@ public class TodoTests : BunitContext
     private readonly ISupplierInvoiceService _supplierInvoiceService = Substitute.For<ISupplierInvoiceService>();
     private readonly IJournalEntryService _journalEntryService = Substitute.For<IJournalEntryService>();
     private readonly IAccountService _accountService = Substitute.For<IAccountService>();
-    private readonly ICurrentUser _currentUser = Substitute.For<ICurrentUser>();
 
     public TodoTests()
     {
@@ -33,11 +32,9 @@ public class TodoTests : BunitContext
         Services.AddSingleton(_supplierInvoiceService);
         Services.AddSingleton(_journalEntryService);
         Services.AddSingleton(_accountService);
-        Services.AddSingleton(_currentUser);
 
-        _currentUser.OrganisationId.Returns(OrganisationId);
-        _supplierInvoiceService.GetAllForOrganisationAsync(OrganisationId).Returns([]);
-        _bankImportService.GetUnmatchedForOrganisationAsync(OrganisationId).Returns([]);
+        _supplierInvoiceService.GetAllForOrganisationAsync().Returns([]);
+        _bankImportService.GetUnmatchedForOrganisationAsync().Returns([]);
         _bankImportService.SuggestContraAccountAsync(Arg.Any<int>(), Arg.Any<string>(), Arg.Any<decimal>())
             .Returns((int?)null);
     }
@@ -69,7 +66,7 @@ public class TodoTests : BunitContext
     [Fact]
     public void TwoOpenFiscalYears_ItemsFromBothYearsAppearTogether()
     {
-        _bankImportService.GetUnmatchedForOrganisationAsync(OrganisationId).Returns([
+        _bankImportService.GetUnmatchedForOrganisationAsync().Returns([
             MakeUnmatchedTx(1, FiscalYear2025Id, "tx-2025", new DateOnly(2025, 6, 1)),
             MakeUnmatchedTx(2, FiscalYear2026Id, "tx-2026", new DateOnly(2026, 6, 1)),
         ]);
@@ -83,7 +80,7 @@ public class TodoTests : BunitContext
     [Fact]
     public async Task ExpandingItem_LoadsAccountsScopedToItsOwnFiscalYear_NotAnotherOpenYear()
     {
-        _bankImportService.GetUnmatchedForOrganisationAsync(OrganisationId).Returns([
+        _bankImportService.GetUnmatchedForOrganisationAsync().Returns([
             MakeUnmatchedTx(1, FiscalYear2025Id, "tx-2025", new DateOnly(2025, 6, 1)),
         ]);
         _accountService.GetAllAsync(FiscalYear2025Id).Returns([
@@ -107,7 +104,7 @@ public class TodoTests : BunitContext
     [Fact]
     public async Task PostingBankTxItem_CreatesEntryInTheItemsOwnFiscalYear()
     {
-        _bankImportService.GetUnmatchedForOrganisationAsync(OrganisationId).Returns([
+        _bankImportService.GetUnmatchedForOrganisationAsync().Returns([
             MakeUnmatchedTx(1, FiscalYear2026Id, "tx-2026", new DateOnly(2026, 6, 1)),
         ]);
         var contraAccount = MakeAccount(20, FiscalYear2026Id, "6100", "Kontorsmaterial");

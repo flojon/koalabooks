@@ -50,13 +50,13 @@ public class TestFixture : IDisposable
         OrganisationId = org.Id;
         SetActiveTenant(OrganisationId);
 
-        JournalEntryService = new JournalEntryService(Db);
+        JournalEntryService = new JournalEntryService(Db, _currentUser);
         FiscalYearService = new FiscalYearService(Db, _currentUser);
         VoucherGapService = new VoucherGapService(Db);
         YearEndClosingService = new YearEndClosingService(Db, FiscalYearService, VoucherGapService);
         SieExportService = new SieExportService(Db);
         SieImportService = new SieImportService(Db, _currentUser);
-        SupplierInvoiceService = new SupplierInvoiceService(Db);
+        SupplierInvoiceService = new SupplierInvoiceService(Db, _currentUser);
         BankImportService = new BankImportService(Db, _currentUser);
     }
 

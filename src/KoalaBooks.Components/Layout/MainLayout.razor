@@ -152,14 +152,11 @@
             // Use a dedicated scope so this background query doesn't share a DbContext
             // with the page's OnInitializedAsync, which would cause concurrent-operation exceptions.
             await using var scope = ScopeFactory.CreateAsyncScope();
-            var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
             var bankSvc = scope.ServiceProvider.GetRequiredService<IBankImportService>();
             var invSvc = scope.ServiceProvider.GetRequiredService<ISupplierInvoiceService>();
 
-            if (currentUser.OrganisationId is not { } organisationId) { _todoCount = 0; return; }
-
-            var unmatched = await bankSvc.CountUnmatchedForOrganisationAsync(organisationId);
-            var unpaid = await invSvc.CountUnpaidForOrganisationAsync(organisationId);
+            var unmatched = await bankSvc.CountUnmatchedForOrganisationAsync();
+            var unpaid = await invSvc.CountUnpaidForOrganisationAsync();
             _todoCount = unmatched + unpaid;
         }
         catch (Exception ex)
@@ -180,12 +177,9 @@
         try
         {
             await using var scope = ScopeFactory.CreateAsyncScope();
-            var currentUser = scope.ServiceProvider.GetRequiredService<ICurrentUser>();
             var journalSvc = scope.ServiceProvider.GetRequiredService<IJournalEntryService>();
 
-            if (currentUser.OrganisationId is not { } organisationId) { _draftCount = 0; return; }
-
-            _draftCount = await journalSvc.CountDraftsForOrganisationAsync(organisationId);
+            _draftCount = await journalSvc.CountDraftsForOrganisationAsync();
         }
         catch (Exception ex)
         {

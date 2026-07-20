@@ -15,14 +15,12 @@ public class SupplierInvoicesController : ControllerBase
 {
     private readonly ISupplierInvoiceService _supplierInvoiceService;
     private readonly IFiscalYearService _fiscalYearService;
-    private readonly ICurrentUser _currentUser;
 
     public SupplierInvoicesController(
-        ISupplierInvoiceService supplierInvoiceService, IFiscalYearService fiscalYearService, ICurrentUser currentUser)
+        ISupplierInvoiceService supplierInvoiceService, IFiscalYearService fiscalYearService)
     {
         _supplierInvoiceService = supplierInvoiceService;
         _fiscalYearService = fiscalYearService;
-        _currentUser = currentUser;
     }
 
     [HttpGet("supplier-invoices/unpaid-count")]
@@ -30,8 +28,7 @@ public class SupplierInvoicesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetUnpaidCountForOrganisation()
     {
-        var organisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
-        var count = await _supplierInvoiceService.CountUnpaidForOrganisationAsync(organisationId);
+        var count = await _supplierInvoiceService.CountUnpaidForOrganisationAsync();
         return Ok(new CountResponse(count));
     }
 

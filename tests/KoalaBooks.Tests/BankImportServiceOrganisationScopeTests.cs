@@ -31,8 +31,8 @@ public class BankImportServiceOrganisationScopeTests : IDisposable
             new BankTransaction { OrganisationId = _f.OrganisationId, AccountId = acc2026.Id, Date = new DateOnly(2026, 7, 1), Amount = 300, Description = "tx3", Status = BankTransactionStatus.Matched });
         await _f.Db.SaveChangesAsync();
 
-        var unmatched = await _svc.GetUnmatchedForOrganisationAsync(_f.OrganisationId);
-        var count = await _svc.CountUnmatchedForOrganisationAsync(_f.OrganisationId);
+        var unmatched = await _svc.GetUnmatchedForOrganisationAsync();
+        var count = await _svc.CountUnmatchedForOrganisationAsync();
 
         Assert.Equal(2, unmatched.Count);
         Assert.Equal(2, count);
