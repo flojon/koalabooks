@@ -19,6 +19,7 @@ public class InboxZipImportToastTests : BunitContext
 {
     private readonly IDocumentService _documentService = Substitute.For<IDocumentService>();
     private readonly IBackgroundJobRunService _backgroundJobRunService = Substitute.For<IBackgroundJobRunService>();
+    private readonly IFiscalYearService _fiscalYearService = Substitute.For<IFiscalYearService>();
 
     public InboxZipImportToastTests()
     {
@@ -26,9 +27,11 @@ public class InboxZipImportToastTests : BunitContext
         Services.AddMudServices();
         Services.AddSingleton(_documentService);
         Services.AddSingleton(_backgroundJobRunService);
+        Services.AddSingleton(_fiscalYearService);
         Services.AddSingleton(Substitute.For<IDocumentProvider>());
         Services.AddSingleton(Substitute.For<ILogger<KoalaBooks.Components.Shared.BackgroundJobStatusPoller>>());
 
+        _fiscalYearService.GetOpenFiscalYearsAsync().Returns([]);
         _documentService.GetPendingAsync(Arg.Any<string?>(), Arg.Any<int>(), Arg.Any<int?>(), Arg.Any<string>(), Arg.Any<bool>())
             .Returns([]);
         _documentService.GetPendingCountAsync(Arg.Any<string?>()).Returns(0);

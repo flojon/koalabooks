@@ -34,6 +34,8 @@ public interface IBankImportService
     Task<BankImportResult> ImportAsync(int accountId, List<BankTransactionPreview> previews);
     Task<int> CountUnmatchedAsync(int fiscalYearId);
     Task<List<BankTransaction>> GetUnmatchedAsync(int fiscalYearId);
+    Task<int> CountUnmatchedForOrganisationAsync();
+    Task<List<BankTransaction>> GetUnmatchedForOrganisationAsync();
     Task<List<BankTransaction>> GetByAccountAsync(int accountId);
     Task<List<BankTransaction>> GetByFiscalYearAsync(int fiscalYearId, DateOnly? from, DateOnly? to, int? accountId);
     Task<BankTransaction?> GetByIdAsync(int id);

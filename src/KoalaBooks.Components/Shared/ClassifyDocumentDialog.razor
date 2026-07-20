@@ -248,7 +248,6 @@
     protected override async Task OnInitializedAsync()
     {
         _type = Doc.ClassifiedType ?? Doc.SuggestedType ?? "";
-        _fiscalYear = await FiscalYearService.GetActiveAsync();
 
         ExtractionResult? ex = null;
         if (Doc.ExtractedDataJson is not null)
@@ -270,6 +269,11 @@
         // preview over the raw AI-extracted invoice date.
         var prefill = DocumentMeta.ResolvePrefillDate(Doc.DocumentDate, ex?.InvoiceDate);
         if (prefill.HasValue) _date = prefill.Value;
+
+        // Resolve from the document's own date, not "today" or a page default - a document
+        // dated into a specific fiscal year must classify into that year regardless of
+        // which year is currently the default working year.
+        _fiscalYear = await FiscalYearService.GetForDateAsync(DateOnly.FromDateTime(_date));
 
         if (_fiscalYear is not null)
         {

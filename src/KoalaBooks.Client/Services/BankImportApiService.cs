@@ -17,6 +17,17 @@ public class BankImportApiService(HttpClient http) : IBankImportService
         return response?.Count ?? 0;
     }
 
+    public async Task<int> CountUnmatchedForOrganisationAsync()
+    {
+        var response = await http.GetFromJsonAsync<CountResponse>(
+            "api/v1/bank-transactions/unmatched-count", ApiJson.Options).ConfigureAwait(false);
+        return response?.Count ?? 0;
+    }
+
+    public Task<List<BankTransaction>> GetUnmatchedForOrganisationAsync() =>
+        Task.FromException<List<BankTransaction>>(
+            new NotSupportedException("Fetching organisation-wide unmatched bank transactions has no REST endpoint yet."));
+
     // Everything below has no REST endpoint yet and isn't needed by the WASM-rendered /review
     // page. Task-returning members use Task.FromException so the failure surfaces on await like
     // a real async call, instead of throwing synchronously at the call site.

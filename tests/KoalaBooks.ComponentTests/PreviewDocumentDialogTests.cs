@@ -52,12 +52,12 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
         // ClickingBokfor_EditedDateCarriesIntoClassifyDialog below. They must be
         // registered here, before any component renders - bUnit locks the service
         // collection against further registrations after the first resolve.
-        Services.AddSingleton<ISupplierInvoiceService>(new SupplierInvoiceService(db));
+        Services.AddSingleton<ISupplierInvoiceService>(new SupplierInvoiceService(db, Substitute.For<ICurrentUser>()));
         Services.AddSingleton<ICustomerInvoiceService>(new CustomerInvoiceService(db));
         Services.AddSingleton<IAccountService>(new AccountService(db));
         Services.AddSingleton<ICustomerService>(new CustomerService(db));
         var fiscalYearService = Substitute.For<IFiscalYearService>();
-        fiscalYearService.GetActiveAsync().Returns((FiscalYear?)null);
+        fiscalYearService.GetForDateAsync(Arg.Any<DateOnly>()).Returns((FiscalYear?)null);
         Services.AddSingleton(fiscalYearService);
         Services.AddSingleton(Substitute.For<IJournalEntryService>());
     }

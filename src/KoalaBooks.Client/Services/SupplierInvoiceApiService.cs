@@ -16,6 +16,17 @@ public class SupplierInvoiceApiService(HttpClient http) : ISupplierInvoiceServic
         return response?.Count ?? 0;
     }
 
+    public async Task<int> CountUnpaidForOrganisationAsync()
+    {
+        var response = await http.GetFromJsonAsync<CountResponse>(
+            "api/v1/supplier-invoices/unpaid-count", ApiJson.Options).ConfigureAwait(false);
+        return response?.Count ?? 0;
+    }
+
+    public Task<List<SupplierInvoice>> GetAllForOrganisationAsync() =>
+        Task.FromException<List<SupplierInvoice>>(
+            new NotSupportedException("Fetching organisation-wide supplier invoices has no REST endpoint yet."));
+
     // Everything below has no REST endpoint yet and isn't needed by the WASM-rendered /review
     // page. Task.FromException surfaces the failure on await, like a real async call, instead of
     // throwing synchronously at the call site.

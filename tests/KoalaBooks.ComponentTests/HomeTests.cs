@@ -27,7 +27,7 @@ public class HomeTests : BunitContext
     [Fact]
     public void NoActiveFiscalYear_ShowsInfoAlert()
     {
-        _fiscalYearService.GetActiveAsync().Returns((FiscalYear?)null);
+        _fiscalYearService.GetDefaultFiscalYearAsync().Returns((FiscalYear?)null);
 
         var cut = Render<Home>();
 
@@ -45,7 +45,7 @@ public class HomeTests : BunitContext
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31),
         };
-        _fiscalYearService.GetActiveAsync().Returns(fiscalYear);
+        _fiscalYearService.GetDefaultFiscalYearAsync().Returns(fiscalYear);
         _journalReportingService.GetDashboardStatsAsync(1).Returns(new DashboardStats
         {
             EntryCount = 5,

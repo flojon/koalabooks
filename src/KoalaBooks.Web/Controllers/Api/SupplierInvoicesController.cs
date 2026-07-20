@@ -16,10 +16,20 @@ public class SupplierInvoicesController : ControllerBase
     private readonly ISupplierInvoiceService _supplierInvoiceService;
     private readonly IFiscalYearService _fiscalYearService;
 
-    public SupplierInvoicesController(ISupplierInvoiceService supplierInvoiceService, IFiscalYearService fiscalYearService)
+    public SupplierInvoicesController(
+        ISupplierInvoiceService supplierInvoiceService, IFiscalYearService fiscalYearService)
     {
         _supplierInvoiceService = supplierInvoiceService;
         _fiscalYearService = fiscalYearService;
+    }
+
+    [HttpGet("supplier-invoices/unpaid-count")]
+    [ProducesResponseType<CountResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetUnpaidCountForOrganisation()
+    {
+        var count = await _supplierInvoiceService.CountUnpaidForOrganisationAsync();
+        return Ok(new CountResponse(count));
     }
 
     [HttpGet("fiscal-years/{fiscalYearId:int}/supplier-invoices")]

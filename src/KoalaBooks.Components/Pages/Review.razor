@@ -10,45 +10,53 @@
 
 <h1>🔍 Att granska</h1>
 
-@if (_activeFiscalYear is null && !_isLoading)
-{
-    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
-    return;
-}
-
 @if (_isLoading)
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
 }
 else
 {
-    <JournalReviewSection Entries="_drafts" Accounts="_accounts" OnEntriesChanged="ReloadDraftsAsync" />
+    <div class="toolbar" style="margin-bottom:1rem;">
+        <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
+        <select @bind="_selectedFiscalYearId" @bind:after="OnFilterChangedAsync" style="width:220px;">
+            <option value="0">Alla räkenskapsår</option>
+            @foreach (var fy in _openFiscalYears)
+            {
+                <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+            }
+        </select>
+    </div>
+
+    <JournalReviewSection Entries="FilteredDrafts" Accounts="_accounts" OnEntriesChanged="ReloadDraftsAsync" />
 }
 
 @code {
-    private FiscalYear? _activeFiscalYear;
+    private List<FiscalYear> _openFiscalYears = [];
     private List<Account> _accounts = [];
     private List<JournalEntry> _drafts = [];
+    private int _selectedFiscalYearId; // 0 = "Alla räkenskapsår"
     private bool _isLoading;
+
+    private List<JournalEntry> FilteredDrafts => _selectedFiscalYearId == 0
+        ? _drafts
+        : _drafts.Where(d => d.FiscalYearId == _selectedFiscalYearId).ToList();
 
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        _activeFiscalYear = await FiscalYearService.GetActiveAsync();
-        if (_activeFiscalYear is null)
-        {
-            _isLoading = false;
-            return;
-        }
+        _openFiscalYears = await FiscalYearService.GetOpenFiscalYearsAsync();
 
-        _accounts = (await AccountService.GetAllAsync(_activeFiscalYear.Id)).Where(a => a.IsActive).ToList();
+        var accountsPerFiscalYear = await Task.WhenAll(_openFiscalYears.Select(fy => AccountService.GetAllAsync(fy.Id)));
+        _accounts = accountsPerFiscalYear.SelectMany(a => a).Where(a => a.IsActive).DistinctBy(a => a.AccountNumber).ToList();
+
         await ReloadDraftsAsync();
         _isLoading = false;
     }
 
+    private async Task OnFilterChangedAsync() => await ReloadDraftsAsync();
+
     private async Task ReloadDraftsAsync()
     {
-        var all = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
-        _drafts = all.Where(e => !e.IsPosted).ToList();
+        _drafts = await JournalEntryService.GetDraftsForOrganisationAsync();
     }
 }

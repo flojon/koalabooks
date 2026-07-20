@@ -54,7 +54,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _activeFiscalYear = await FiscalYearService.GetActiveAsync();
+        _activeFiscalYear = await FiscalYearService.GetDefaultFiscalYearAsync();
         if (_activeFiscalYear is not null)
         {
             _stats = await JournalReportingService.GetDashboardStatsAsync(_activeFiscalYear.Id);

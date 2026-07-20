@@ -11,10 +11,12 @@ public class SupplierInvoiceService : ISupplierInvoiceService
     public const string NotFoundMessage = "Fakturan hittades inte.";
 
     private readonly AppDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
-    public SupplierInvoiceService(AppDbContext db)
+    public SupplierInvoiceService(AppDbContext db, ICurrentUser currentUser)
     {
         _db = db;
+        _currentUser = currentUser;
     }
 
     public Task<int> CountUnpaidAsync(int fiscalYearId) =>
@@ -26,6 +28,24 @@ public class SupplierInvoiceService : ISupplierInvoiceService
             .Include(s => s.JournalEntry)
             .Include(s => s.PaymentJournalEntry)
             .Where(s => s.FiscalYearId == fiscalYearId)
+            .OrderByDescending(s => s.InvoiceDate)
+            .ThenByDescending(s => s.Id)
+            .ToListAsync().ConfigureAwait(false);
+    }
+
+    public Task<int> CountUnpaidForOrganisationAsync()
+    {
+        var organisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
+        return _db.SupplierInvoices.CountAsync(s => s.FiscalYear.OrganisationId == organisationId && !s.IsPaid);
+    }
+
+    public async Task<List<SupplierInvoice>> GetAllForOrganisationAsync()
+    {
+        var organisationId = _currentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
+        return await _db.SupplierInvoices
+            .Include(s => s.JournalEntry)
+            .Include(s => s.PaymentJournalEntry)
+            .Where(s => s.FiscalYear.OrganisationId == organisationId)
             .OrderByDescending(s => s.InvoiceDate)
             .ThenByDescending(s => s.Id)
             .ToListAsync().ConfigureAwait(false);

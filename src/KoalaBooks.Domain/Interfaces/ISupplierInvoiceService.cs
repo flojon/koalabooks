@@ -6,6 +6,8 @@ public interface ISupplierInvoiceService
 {
     Task<int> CountUnpaidAsync(int fiscalYearId);
     Task<List<SupplierInvoice>> GetAllAsync(int fiscalYearId);
+    Task<int> CountUnpaidForOrganisationAsync();
+    Task<List<SupplierInvoice>> GetAllForOrganisationAsync();
     Task<SupplierInvoice?> GetByIdAsync(int id);
     Task<(SupplierInvoice? Invoice, string? Error)> UpdateAsync(SupplierInvoice invoice);
     Task<(SupplierInvoice? Invoice, string? Error)> CreateAsync(SupplierInvoice invoice);

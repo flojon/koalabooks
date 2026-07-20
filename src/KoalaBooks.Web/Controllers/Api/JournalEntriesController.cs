@@ -21,6 +21,24 @@ public class JournalEntriesController : ControllerBase
         _fiscalYearService = fiscalYearService;
     }
 
+    [HttpGet("journal-entries/drafts")]
+    [ProducesResponseType<List<JournalEntryResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetDraftsForOrganisation()
+    {
+        var drafts = await _journalEntryService.GetDraftsForOrganisationAsync();
+        return Ok(drafts.Select(MapEntry).ToList());
+    }
+
+    [HttpGet("journal-entries/draft-count")]
+    [ProducesResponseType<CountResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetDraftCountForOrganisation()
+    {
+        var count = await _journalEntryService.CountDraftsForOrganisationAsync();
+        return Ok(new CountResponse(count));
+    }
+
     [HttpGet("fiscal-years/{fiscalYearId:int}/journal-entries")]
     [ProducesResponseType<PagedResult<JournalEntryResponse>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

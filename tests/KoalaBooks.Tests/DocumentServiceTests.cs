@@ -260,6 +260,25 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetPendingAsync_FiscalYearRange_FiltersByDocumentDate()
+    {
+        var svc = _fx.MakeDocumentService();
+        _fx.Db.Documents.AddRange(
+            new Document { OrganisationId = _fx.OrganisationId, FileName = "in-range.pdf", StorageKey = "k1", DocumentDate = new DateOnly(2026, 6, 1) },
+            new Document { OrganisationId = _fx.OrganisationId, FileName = "out-of-range.pdf", StorageKey = "k2", DocumentDate = new DateOnly(2027, 6, 1) },
+            new Document { OrganisationId = _fx.OrganisationId, FileName = "undated.pdf", StorageKey = "k3", DocumentDate = null });
+        await _fx.Db.SaveChangesAsync();
+
+        var inRange = await svc.GetPendingAsync(fiscalYearStart: new DateOnly(2026, 1, 1), fiscalYearEnd: new DateOnly(2026, 12, 31));
+        var undated = await svc.GetPendingAsync(undatedOnly: true);
+
+        Assert.Single(inRange);
+        Assert.Equal("in-range.pdf", inRange[0].FileName);
+        Assert.Single(undated);
+        Assert.Equal("undated.pdf", undated[0].FileName);
+    }
+
+    [Fact]
     public async Task GetLinkedAsync_ReturnsDocumentsForJournalEntry()
     {
         var svc = _fx.MakeDocumentService();
@@ -333,7 +352,7 @@ public class DocumentServiceTests : IDisposable
     public async Task PostSupplierInvoice_AutoLinksDocumentToJournalEntry()
     {
         var docSvc = _fx.MakeDocumentService();
-        var supplierSvc = new SupplierInvoiceService(_fx.Db);
+        var supplierSvc = new SupplierInvoiceService(_fx.Db, TestFixture.MakeTenant(_fx.OrganisationId));
         var fy = _fx.CreateFiscalYear();
         var (expense, payable, _, _, _) = _fx.CreateStandardAccounts(fy.Id);
 

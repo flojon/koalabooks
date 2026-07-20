@@ -11,10 +11,6 @@
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
 }
-else if (_noFiscalYear)
-{
-    <MudAlert Severity="Severity.Info">Inget aktivt räkenskapsår. <a href="/fiscal-years">Skapa ett</a> först.</MudAlert>
-}
 else
 {
 
@@ -122,7 +118,7 @@ else
 
 @code {
     [Inject] private ICustomerService CustomerService { get; set; } = default!;
-    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private ICurrentUser CurrentUser { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IJSRuntime JS { get; set; } = default!;
 
@@ -142,21 +138,11 @@ else
     private string _fPostalCode = "";
     private string _fCity = "";
 
-    private bool _noFiscalYear;
-
     protected override async Task OnInitializedAsync()
     {
         _isLoading = true;
-        var fy = await FiscalYearService.GetActiveAsync();
-        if (fy is not null)
-        {
-            _organisationId = fy.OrganisationId;
-            _customers = await CustomerService.GetAllAsync(_organisationId);
-        }
-        else
-        {
-            _noFiscalYear = true;
-        }
+        _organisationId = CurrentUser.OrganisationId ?? throw new InvalidOperationException("No active tenant.");
+        _customers = await CustomerService.GetAllAsync(_organisationId);
         _isLoading = false;
     }
 

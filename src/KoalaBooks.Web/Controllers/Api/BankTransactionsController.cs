@@ -21,6 +21,15 @@ public class BankTransactionsController : ControllerBase
         _fiscalYearService = fiscalYearService;
     }
 
+    [HttpGet("bank-transactions/unmatched-count")]
+    [ProducesResponseType<CountResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetUnmatchedCountForOrganisation()
+    {
+        var count = await _bankImportService.CountUnmatchedForOrganisationAsync();
+        return Ok(new CountResponse(count));
+    }
+
     [HttpGet("fiscal-years/{fiscalYearId:int}/bank-transactions")]
     [ProducesResponseType<PagedResult<BankTransactionResponse>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

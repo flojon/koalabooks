@@ -47,6 +47,18 @@
     }
 </div>
 
+<div style="display:flex; gap:0.25rem; margin-bottom:1rem;">
+    <button class="btn btn-sm @(_fyFilter == "all" ? "btn-primary" : "btn-secondary")"
+            @onclick='() => SetFyFilterAsync("all")'>Alla år</button>
+    @foreach (var fy in _openFiscalYears)
+    {
+        <button class="btn btn-sm @(_fyFilter == fy.Id.ToString() ? "btn-primary" : "btn-secondary")"
+                @onclick='() => SetFyFilterAsync(fy.Id.ToString())'>@fy.Name</button>
+    }
+    <button class="btn btn-sm @(_fyFilter == "undated" ? "btn-primary" : "btn-secondary")"
+            @onclick='() => SetFyFilterAsync("undated")'>Odaterade</button>
+</div>
+
 @if (_isLoading)
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
@@ -129,12 +141,15 @@ else
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
 
     private List<DocumentMeta> _docs = [];
+    private List<FiscalYear> _openFiscalYears = [];
     private bool _isLoading;
     private bool _uploading;
     private string? _error;
     private string _filter = "all";
+    private string _fyFilter = "all"; // "all" | "undated" | a FiscalYear.Id as string
     private string _sortBy = "uploadedAt";
     private bool _sortAsc = false;
     private int _page = 1;
@@ -174,14 +189,37 @@ else
         ("Verifikation", nameof(DocumentEntityType.JournalEntry)),
     ];
 
-    protected override async Task OnInitializedAsync() => await LoadPageAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        _openFiscalYears = await FiscalYearService.GetOpenFiscalYearsAsync();
+        await LoadPageAsync();
+    }
+
+    private (DateOnly? Start, DateOnly? End, bool Undated) ResolveFyFilter()
+    {
+        if (_fyFilter == "undated") return (null, null, true);
+        if (_fyFilter != "all" && int.TryParse(_fyFilter, out var fyId))
+        {
+            var fy = _openFiscalYears.FirstOrDefault(f => f.Id == fyId);
+            if (fy is not null) return (fy.StartDate, fy.EndDate, false);
+        }
+        return (null, null, false);
+    }
+
+    private async Task SetFyFilterAsync(string fyFilter)
+    {
+        _fyFilter = fyFilter;
+        _page = 1;
+        await LoadPageAsync();
+    }
 
     private async Task LoadPageAsync(bool showSpinner = true)
     {
         if (showSpinner) _isLoading = true;
         var skip = (_page - 1) * PageSize;
-        _docs = await DocumentService.GetPendingAsync(_filter, skip, PageSize, _sortBy, _sortAsc);
-        _totalCount = await DocumentService.GetPendingCountAsync(_filter);
+        var (fyStart, fyEnd, undated) = ResolveFyFilter();
+        _docs = await DocumentService.GetPendingAsync(_filter, skip, PageSize, _sortBy, _sortAsc, fyStart, fyEnd, undated);
+        _totalCount = await DocumentService.GetPendingCountAsync(_filter, fyStart, fyEnd, undated);
         _isLoading = false;
         UpdatePolling();
     }

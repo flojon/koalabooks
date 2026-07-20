@@ -143,6 +143,46 @@ public class JournalEntryServiceTests : IDisposable
         Assert.Equal(0, debitAccount.TotalCredit);
     }
 
+    [Fact]
+    public async Task GetDraftsForOrganisationAsync_SpansMultipleOpenFiscalYears()
+    {
+        var fy2025 = _f.CreateFiscalYear("2025", new DateOnly(2025, 1, 1), new DateOnly(2025, 12, 31));
+        var fy2026 = _f.CreateFiscalYear("2026", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+        var acc1 = _f.CreateAccount(fy2025.Id, "1910", "Kassa");
+        var acc2 = _f.CreateAccount(fy2025.Id, "2440", "Lev.skulder");
+        var acc3 = _f.CreateAccount(fy2026.Id, "1910", "Kassa");
+        var acc4 = _f.CreateAccount(fy2026.Id, "2440", "Lev.skulder");
+
+        var draft2025 = _f.MakeEntry(fy2025.Id, acc1.Id, acc2.Id, 100, new DateOnly(2025, 6, 1));
+        var draft2026 = _f.MakeEntry(fy2026.Id, acc3.Id, acc4.Id, 200, new DateOnly(2026, 6, 1));
+        _f.Db.JournalEntries.AddRange(draft2025, draft2026);
+        await _f.Db.SaveChangesAsync();
+
+        var drafts = await _f.JournalEntryService.GetDraftsForOrganisationAsync();
+        var count = await _f.JournalEntryService.CountDraftsForOrganisationAsync();
+
+        Assert.Equal(2, drafts.Count);
+        Assert.Equal(2, count);
+        Assert.Contains(drafts, d => d.Id == draft2025.Id);
+        Assert.Contains(drafts, d => d.Id == draft2026.Id);
+    }
+
+    [Fact]
+    public async Task GetDraftsForOrganisationAsync_ExcludesPostedEntries()
+    {
+        var fy = _f.CreateFiscalYear("2026", new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31));
+        var acc1 = _f.CreateAccount(fy.Id, "1910", "Kassa");
+        var acc2 = _f.CreateAccount(fy.Id, "2440", "Lev.skulder");
+        var posted = _f.MakeEntry(fy.Id, acc1.Id, acc2.Id, 100, new DateOnly(2026, 6, 1));
+        posted.IsPosted = true;
+        _f.Db.JournalEntries.Add(posted);
+        await _f.Db.SaveChangesAsync();
+
+        var drafts = await _f.JournalEntryService.GetDraftsForOrganisationAsync();
+
+        Assert.Empty(drafts);
+    }
+
     private JournalEntry MakeEntry(decimal amount) => new()
     {
         Date = new DateOnly(2026, 3, 1),
