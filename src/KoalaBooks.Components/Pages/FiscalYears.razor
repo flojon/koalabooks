@@ -227,17 +227,13 @@
             return;
         }
 
-        FiscalYear newFy;
-        try
+        var (newFy, error) = await FiscalYearService.CreateAsync(new FiscalYear
         {
-            newFy = await FiscalYearService.CreateAsync(new FiscalYear
-            {
-                Name = _formName.Trim(),
-                StartDate = DateOnly.FromDateTime(_formStart),
-                EndDate = DateOnly.FromDateTime(_formEnd)
-            });
-        }
-        catch (InvalidOperationException)
+            Name = _formName.Trim(),
+            StartDate = DateOnly.FromDateTime(_formStart),
+            EndDate = DateOnly.FromDateTime(_formEnd)
+        });
+        if (error is not null)
         {
             Snackbar.Add("Räkenskapsåret överlappar med ett befintligt räkenskapsår.", Severity.Error);
             return;
@@ -245,7 +241,7 @@
 
         if (_seedBas)
         {
-            var result = await BasImportService.ImportDefaultAsync(newFy.Id);
+            var result = await BasImportService.ImportDefaultAsync(newFy!.Id);
             Snackbar.Add(
                 $"Räkenskapsår skapat. Importerade {result.ImportedCount} konton från BAS 2026.",
                 Severity.Success);

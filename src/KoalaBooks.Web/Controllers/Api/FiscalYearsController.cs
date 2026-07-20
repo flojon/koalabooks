@@ -60,18 +60,11 @@ public class FiscalYearsController : ControllerBase
             EndDate = request.EndDate!.Value
         };
 
-        try
-        {
-            var created = await _service.CreateAsync(fiscalYear);
-            return CreatedAtAction(nameof(GetById), new { id = created.Id }, MapFiscalYear(created));
-        }
-        catch (InvalidOperationException ex)
-        {
-            // CreateAsync signals validation failures (date overlap, no active tenant) via
-            // exception rather than an error tuple — translate to the same 400 shape other
-            // service errors use.
-            return Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest);
-        }
+        var (created, error) = await _service.CreateAsync(fiscalYear);
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return CreatedAtAction(nameof(GetById), new { id = created!.Id }, MapFiscalYear(created));
     }
 
     [HttpGet("{id:int}/accounts-for-year")]

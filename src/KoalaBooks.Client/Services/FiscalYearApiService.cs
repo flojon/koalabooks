@@ -59,7 +59,7 @@ public class FiscalYearApiService(HttpClient http) : IFiscalYearService
         return accounts?.Select(AccountApiService.ToEntity).ToList() ?? [];
     }
 
-    public Task<FiscalYear> CreateAsync(FiscalYear fiscalYear) =>
+    public Task<(FiscalYear? FiscalYear, string? Error)> CreateAsync(FiscalYear fiscalYear) =>
         throw new NotSupportedException(
             "Fiscal year creation has no REST endpoint yet; not needed by the WASM-rendered /review page.");
 
