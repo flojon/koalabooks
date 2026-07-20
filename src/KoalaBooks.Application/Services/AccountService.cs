@@ -27,6 +27,11 @@ public class AccountService : IAccountService
         return await _db.Accounts.FirstOrDefaultAsync(a => a.Id == id).ConfigureAwait(false);
     }
 
+    public async Task<List<Account>> GetByIdsAsync(List<int> ids)
+    {
+        return await _db.Accounts.Where(a => ids.Contains(a.Id)).ToListAsync().ConfigureAwait(false);
+    }
+
     public async Task<Account> CreateAsync(Account account)
     {
         var fiscalYearExists = await _db.FiscalYears.AnyAsync(f => f.Id == account.FiscalYearId).ConfigureAwait(false);

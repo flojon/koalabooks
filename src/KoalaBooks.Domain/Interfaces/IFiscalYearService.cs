@@ -10,7 +10,7 @@ public interface IFiscalYearService
     Task<FiscalYear?> GetForDateAsync(DateOnly date);
     Task<FiscalYear?> GetDefaultFiscalYearAsync();
     Task<List<FiscalYear>> GetOpenFiscalYearsAsync();
-    Task<FiscalYear> CreateAsync(FiscalYear fiscalYear);
+    Task<(FiscalYear? FiscalYear, string? Error)> CreateAsync(FiscalYear fiscalYear);
     Task<List<Account>> GetAccountsAsync(int fiscalYearId);
     Task PropagateBalancesToNextYearAsync(int fiscalYearId);
 }

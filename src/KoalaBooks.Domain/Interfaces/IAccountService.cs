@@ -6,6 +6,7 @@ public interface IAccountService
 {
     Task<List<Account>> GetAllAsync(int fiscalYearId);
     Task<Account?> GetByIdAsync(int id);
+    Task<List<Account>> GetByIdsAsync(List<int> ids);
     Task<Account> CreateAsync(Account account);
     Task UpdateAsync(Account account);
     Task ToggleActiveAsync(int id);

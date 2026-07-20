@@ -18,13 +18,14 @@ public class FiscalYearServiceTests : IDisposable
     [Fact]
     public async Task CreateAsync_ValidFiscalYear_CreatesSuccessfully()
     {
-        var fy = await _f.FiscalYearService.CreateAsync(new FiscalYear
+        var (fy, error) = await _f.FiscalYearService.CreateAsync(new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31)
         });
 
+        Assert.Null(error);
         Assert.NotNull(fy);
         Assert.True(fy.Id > 0);
         Assert.Equal("2026", fy.Name);
@@ -34,7 +35,7 @@ public class FiscalYearServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAsync_OverlappingFiscalYear_Throws()
+    public async Task CreateAsync_OverlappingFiscalYear_ReturnsError()
     {
         await _f.FiscalYearService.CreateAsync(new FiscalYear
         {
@@ -43,15 +44,16 @@ public class FiscalYearServiceTests : IDisposable
             EndDate = new DateOnly(2026, 12, 31)
         });
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _f.FiscalYearService.CreateAsync(new FiscalYear
-            {
-                Name = "2026-H2",
-                StartDate = new DateOnly(2026, 7, 1),
-                EndDate = new DateOnly(2027, 6, 30)
-            }));
+        var (fy, error) = await _f.FiscalYearService.CreateAsync(new FiscalYear
+        {
+            Name = "2026-H2",
+            StartDate = new DateOnly(2026, 7, 1),
+            EndDate = new DateOnly(2027, 6, 30)
+        });
 
-        Assert.Contains("overlap", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(fy);
+        Assert.NotNull(error);
+        Assert.Contains("overlap", error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -227,14 +229,15 @@ public class FiscalYearServiceTests : IDisposable
         _f.CreateAccount(prev.Id, "1910", "Kassa", AccountClass.Asset,
             outgoingBalance: 100);
 
-        var newFy = await _f.FiscalYearService.CreateAsync(new FiscalYear
+        var (newFy, error) = await _f.FiscalYearService.CreateAsync(new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
             EndDate = new DateOnly(2026, 12, 31)
         });
 
-        await _f.Db.Entry(newFy).ReloadAsync();
-        Assert.Equal(prev.Id, newFy.PreviousFiscalYearId);
+        Assert.Null(error);
+        await _f.Db.Entry(newFy!).ReloadAsync();
+        Assert.Equal(prev.Id, newFy!.PreviousFiscalYearId);
     }
 }

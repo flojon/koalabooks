@@ -63,15 +63,16 @@ public class FiscalYearService : IFiscalYearService
             .ToListAsync().ConfigureAwait(false);
     }
 
-    public async Task<FiscalYear> CreateAsync(FiscalYear fiscalYear)
+    public async Task<(FiscalYear? FiscalYear, string? Error)> CreateAsync(FiscalYear fiscalYear)
     {
-        fiscalYear.OrganisationId = _currentUser.OrganisationId
-            ?? throw new InvalidOperationException("No active tenant.");
+        if (_currentUser.OrganisationId is not { } organisationId)
+            return (null, "No active tenant.");
+        fiscalYear.OrganisationId = organisationId;
 
         var hasOverlap = await _db.FiscalYears
             .AnyAsync(f => f.StartDate <= fiscalYear.EndDate && f.EndDate >= fiscalYear.StartDate).ConfigureAwait(false);
         if (hasOverlap)
-            throw new InvalidOperationException("The fiscal year overlaps with an existing fiscal year.");
+            return (null, "The fiscal year overlaps with an existing fiscal year.");
 
         _db.FiscalYears.Add(fiscalYear);
         await _db.SaveChangesAsync().ConfigureAwait(false);
@@ -79,7 +80,7 @@ public class FiscalYearService : IFiscalYearService
         // Copy accounts from the previous fiscal year with IB = previous UB
         await CopyAccountsFromPreviousYearAsync(fiscalYear).ConfigureAwait(false);
 
-        return fiscalYear;
+        return (fiscalYear, null);
     }
 
     private async Task CopyAccountsFromPreviousYearAsync(FiscalYear targetYear)

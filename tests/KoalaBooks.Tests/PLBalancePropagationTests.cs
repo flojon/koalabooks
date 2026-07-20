@@ -41,7 +41,7 @@ public class PLBalancePropagationTests : IDisposable
             outgoingBalance: 15_000m);
 
         // Act: create new fiscal year (triggers CopyAccountsFromPreviousYear)
-        var fy2026 = await _f.FiscalYearService.CreateAsync(new FiscalYear
+        var (fy2026, _) = await _f.FiscalYearService.CreateAsync(new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
@@ -50,7 +50,7 @@ public class PLBalancePropagationTests : IDisposable
 
         // Assert: P&L accounts should have IB = 0
         var newAccounts = await _f.Db.Accounts
-            .Where(a => a.FiscalYearId == fy2026.Id)
+            .Where(a => a.FiscalYearId == fy2026!.Id)
             .ToListAsync();
 
         var revenue = newAccounts.SingleOrDefault(a => a.AccountNumber == "3010");
@@ -85,7 +85,7 @@ public class PLBalancePropagationTests : IDisposable
             outgoingBalance: 70_000m);
 
         // Act
-        var fy2026 = await _f.FiscalYearService.CreateAsync(new FiscalYear
+        var (fy2026, _) = await _f.FiscalYearService.CreateAsync(new FiscalYear
         {
             Name = "2026",
             StartDate = new DateOnly(2026, 1, 1),
@@ -94,7 +94,7 @@ public class PLBalancePropagationTests : IDisposable
 
         // Assert: B/S accounts should have IB = previous UB
         var newAccounts = await _f.Db.Accounts
-            .Where(a => a.FiscalYearId == fy2026.Id)
+            .Where(a => a.FiscalYearId == fy2026!.Id)
             .ToListAsync();
 
         var cash = newAccounts.Single(a => a.AccountNumber == "1910");

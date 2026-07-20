@@ -25,6 +25,10 @@ public class AccountApiService(HttpClient http) : IAccountService
         return account is null ? null : ToEntity(account);
     }
 
+    public Task<List<Account>> GetByIdsAsync(List<int> ids) =>
+        throw new NotSupportedException(
+            "Bulk account lookup has no REST endpoint yet; not needed by the WASM-rendered /review page.");
+
     public Task<Account> CreateAsync(Account account) =>
         throw new NotSupportedException(
             "Account creation has no REST endpoint yet; not needed by the WASM-rendered /review page.");
