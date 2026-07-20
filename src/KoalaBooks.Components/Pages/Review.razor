@@ -2,9 +2,11 @@
 @rendermode InteractiveAuto
 @using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Domain.Entities
+@implements IDisposable
 @inject IJournalEntryService JournalEntryService
 @inject IFiscalYearService FiscalYearService
 @inject IAccountService AccountService
+@inject NavigationManager Navigation
 
 <PageTitle>Att granska — KoalaBooks</PageTitle>
 
@@ -30,9 +32,35 @@ else
     private List<Account> _accounts = [];
     private List<JournalEntry> _drafts = [];
     private bool _isLoading;
+    private IDisposable? _navigationRegistration;
+    private bool _forcingFullReload;
 
     protected override async Task OnInitializedAsync()
     {
+        // This page is the only one that runs InteractiveAuto/WebAssembly. Once its WASM circuit is
+        // live, Blazor's client-side router keeps navigating to other pages inside that same circuit
+        // instead of asking the server — but KoalaBooks.Client's DI container only registers the
+        // services this page needs, so every other page throws or crashes the renderer outright.
+        // Forcing a real full-page navigation on the way out lets the destination renegotiate its own
+        // render mode fresh from the server, exactly like arriving at this page already does.
+        _navigationRegistration = Navigation.RegisterLocationChangingHandler(context =>
+        {
+            // NavigateTo() always re-invokes this same handler, even with forceLoad: true — the guard
+            // lets that second, self-triggered pass through instead of recursing forever.
+            if (_forcingFullReload)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            if (!context.TargetLocation.Contains("/review", StringComparison.OrdinalIgnoreCase))
+            {
+                _forcingFullReload = true;
+                context.PreventNavigation();
+                Navigation.NavigateTo(context.TargetLocation, forceLoad: true);
+            }
+            return ValueTask.CompletedTask;
+        });
+
         _isLoading = true;
         _activeFiscalYear = await FiscalYearService.GetActiveAsync();
         if (_activeFiscalYear is null)
@@ -51,4 +79,6 @@ else
         var all = await JournalEntryService.GetByFiscalYearAsync(_activeFiscalYear!.Id);
         _drafts = all.Where(e => !e.IsPosted).ToList();
     }
+
+    public void Dispose() => _navigationRegistration?.Dispose();
 }
