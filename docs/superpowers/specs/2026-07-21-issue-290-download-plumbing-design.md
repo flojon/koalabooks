@@ -36,8 +36,8 @@ No REST endpoint exists today for SIE export or customer-invoice PDF. No `Custom
 
 All under `api/v1`, all following the existing pattern (`[ApiController]`, `[Authorize(AuthenticationSchemes = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)]`, `[Route("api/v1")]`, `[ProducesResponseType]` on every action including 401/404, constructor-DI of interfaces only, DTOs in `KoalaBooks.Web.Models.Api`, no business logic in the controller) — see `SupplierInvoicesController`/`ReportsController` as the reference shape.
 
-- **`CustomersController`**
-  - `GET api/v1/customers?organisationId=` (or however the org is resolved — check how `ICurrentUser.OrganisationId` flows into existing organisation-scoped GETs, e.g. `AccountsController`, and match it) → list
+- **`CustomersController`** — no existing controller injects `ICurrentUser` directly (fiscal-year-scoped controllers rely on the tenant-filtered `FiscalYear` lookup instead), but `Customer` is org-scoped directly, not via a fiscal year, and `ICustomerService.GetAllAsync` takes an explicit `organisationId` — matching `Customers.razor`'s own `CurrentUser.OrganisationId ?? throw ...` pattern, `CustomersController` injects `ICurrentUser` and resolves the org id the same way (the `Customer` entity's global query filter is a second, redundant safety net either way, same as other tenant-scoped entities per `AppDbContext`).
+  - `GET api/v1/customers` → list, org resolved from `ICurrentUser.OrganisationId`
   - `GET api/v1/customers/{id}` → by id, 404 if missing or cross-tenant
   - `POST api/v1/customers` → create
   - `PUT api/v1/customers/{id}` → update
