@@ -1,4 +1,5 @@
-using KoalaBooks.Application.Services;
+using KoalaBooks.Domain;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Components.Pages;
 using KoalaBooks.Domain.Entities;
 using Microsoft.Extensions.DependencyInjection;
