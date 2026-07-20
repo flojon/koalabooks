@@ -127,8 +127,8 @@ else
 
     private List<TodoItem> _items = [];
 
-    // Never invalidated: a fiscal year's account list rarely changes mid-session,
-    // and the component is short-lived (reloaded on navigation).
+    // Never invalidated: a fiscal year's account list rarely changes mid-visit,
+    // and the cache only lives until the user navigates away from /todo.
     private readonly Dictionary<int, List<Account>> _accountsByFiscalYear = [];
     private List<Account> _allAccounts = [];
     private List<Account> _bankAccounts = [];
