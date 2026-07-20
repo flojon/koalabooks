@@ -46,10 +46,8 @@ else
         _isLoading = true;
         _openFiscalYears = await FiscalYearService.GetOpenFiscalYearsAsync();
 
-        var accountsByFiscalYear = new List<Account>();
-        foreach (var fy in _openFiscalYears)
-            accountsByFiscalYear.AddRange(await AccountService.GetAllAsync(fy.Id));
-        _accounts = accountsByFiscalYear.Where(a => a.IsActive).DistinctBy(a => a.AccountNumber).ToList();
+        var accountsPerFiscalYear = await Task.WhenAll(_openFiscalYears.Select(fy => AccountService.GetAllAsync(fy.Id)));
+        _accounts = accountsPerFiscalYear.SelectMany(a => a).Where(a => a.IsActive).DistinctBy(a => a.AccountNumber).ToList();
 
         await ReloadDraftsAsync();
         _isLoading = false;

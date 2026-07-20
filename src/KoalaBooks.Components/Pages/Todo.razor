@@ -126,6 +126,9 @@ else
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private List<TodoItem> _items = [];
+
+    // Never invalidated: a fiscal year's account list rarely changes mid-session,
+    // and the component is short-lived (reloaded on navigation).
     private readonly Dictionary<int, List<Account>> _accountsByFiscalYear = [];
     private List<Account> _allAccounts = [];
     private List<Account> _bankAccounts = [];
