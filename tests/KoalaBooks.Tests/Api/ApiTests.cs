@@ -241,11 +241,11 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task FiscalYears_GetActive_ReturnsActiveYear()
+    public async Task FiscalYears_GetDefault_ReturnsDefaultYear()
     {
         var client = await AuthenticatedClientAsync();
 
-        var response = await client.GetAsync("/api/v1/fiscal-years/active");
+        var response = await client.GetAsync("/api/v1/fiscal-years/default");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -254,7 +254,7 @@ public class ApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task FiscalYears_GetActive_NoActiveYear_Returns404()
+    public async Task FiscalYears_GetDefault_NoOpenYear_Returns404()
     {
         using (var scope = _factory.Services.CreateScope())
         {
@@ -265,19 +265,19 @@ public class ApiTests : IAsyncLifetime
         }
 
         var client = await AuthenticatedClientAsync();
-        var response = await client.GetAsync("/api/v1/fiscal-years/active");
+        var response = await client.GetAsync("/api/v1/fiscal-years/default");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task FiscalYears_GetActive_CrossTenant_ReturnsOwnActiveYear()
+    public async Task FiscalYears_GetDefault_CrossTenant_ReturnsOwnDefaultYear()
     {
-        // Seeds another org's fiscal year, which is active (not closed) by default — if the
-        // tenant query filter didn't apply to GetActiveAsync, this could leak into the result.
+        // Seeds another org's fiscal year, which is open (not closed) by default — if the
+        // tenant query filter didn't apply to GetDefaultFiscalYearAsync, this could leak into the result.
         await SeedSecondTenantAsync();
 
         var client = await AuthenticatedClientAsync();
-        var response = await client.GetAsync("/api/v1/fiscal-years/active");
+        var response = await client.GetAsync("/api/v1/fiscal-years/default");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
