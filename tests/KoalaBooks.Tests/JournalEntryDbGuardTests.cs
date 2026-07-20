@@ -14,7 +14,8 @@ public class JournalEntryDbGuardTests : IDisposable
     public JournalEntryDbGuardTests()
     {
         _f = new TestFixture();
-        _fy = _f.CreateFiscalYear();
+        // EndDate must be in the past — closing before a year has ended is now rejected (issue #307).
+        _fy = _f.CreateFiscalYear(end: DateOnly.FromDateTime(DateTime.Today).AddDays(-1));
         (_cash, _, _, _revenue, _) = _f.CreateStandardAccounts(_fy.Id);
     }
 

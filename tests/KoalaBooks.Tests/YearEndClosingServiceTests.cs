@@ -26,7 +26,8 @@ public class YearEndClosingServiceTests : IDisposable
     {
         _f = new TestFixture();
 
-        _fiscalYear = _f.CreateFiscalYear();
+        // EndDate must be in the past — closing before a year has ended is now rejected (issue #307).
+        _fiscalYear = _f.CreateFiscalYear(end: DateOnly.FromDateTime(DateTime.Today).AddDays(-1));
         _cashAccount = _f.CreateAccount(_fiscalYear.Id, "1910", "Kassa");
         _liabilityAccount = _f.CreateAccount(_fiscalYear.Id, "2440", "Leverantörsskulder", AccountClass.Liability);
         _equityAccount = _f.CreateAccount(_fiscalYear.Id, "2081", "Aktiekapital", AccountClass.Equity);
@@ -128,6 +129,47 @@ public class YearEndClosingServiceTests : IDisposable
 
         Assert.False(result.IsValid);
         Assert.NotEmpty(result.Errors);
+    }
+
+    [Fact]
+    public async Task ValidateForClosing_EndDateInFuture_ReturnsError()
+    {
+        // Regression test for #307: closing before a fiscal year has ended must be rejected.
+        _fiscalYear.EndDate = DateOnly.FromDateTime(DateTime.Today).AddDays(1);
+        await _f.Db.SaveChangesAsync();
+
+        var result = await _f.YearEndClosingService.ValidateForClosingAsync(_fiscalYear.Id);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("inte tagit slut"));
+    }
+
+    [Fact]
+    public async Task ValidateForClosing_EndDateIsToday_ReturnsSuccess()
+    {
+        await CreateAndPostEntry(_cashAccount.Id, _revenueAccount.Id, 5000m);
+        _fiscalYear.EndDate = DateOnly.FromDateTime(DateTime.Today);
+        await _f.Db.SaveChangesAsync();
+
+        var result = await _f.YearEndClosingService.ValidateForClosingAsync(_fiscalYear.Id);
+
+        Assert.True(result.IsValid);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task ExecuteClosing_EndDateInFuture_FiscalYearStaysOpen()
+    {
+        _fiscalYear.EndDate = DateOnly.FromDateTime(DateTime.Today).AddDays(1);
+        await _f.Db.SaveChangesAsync();
+
+        var result = await _f.YearEndClosingService.ExecuteClosingAsync(_fiscalYear.Id);
+
+        Assert.False(result.Success);
+        Assert.Contains("inte tagit slut", result.Error);
+
+        var fy = await _f.Db.FiscalYears.FindAsync(_fiscalYear.Id);
+        Assert.False(fy!.IsClosed);
     }
 
     [Fact]

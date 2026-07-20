@@ -1,5 +1,6 @@
 @page "/customer-invoices"
-@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain
+@using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
@@ -575,7 +576,7 @@ else
 
     private void RecalcLine(int index)
     {
-        CustomerInvoiceService.RecalcLine(_fLines[index]);
+        CustomerInvoiceLineHelper.RecalcLine(_fLines[index]);
     }
 
     private async Task SaveInvoice()

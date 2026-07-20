@@ -1,6 +1,6 @@
 @page "/import/bank"
 @page "/import/tax"
-@using KoalaBooks.Application.Services
+@using KoalaBooks.Domain
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
 @using KoalaBooks.Domain.Interfaces
@@ -32,9 +32,13 @@ else
     </select>
 </div>
 
-@if (!_bankAccounts.Any())
+@if (_fiscalYear is null)
 {
-    <MudAlert Severity="Severity.Info">Inga konton (@AccountPrefix&#42;&#42;) hittades för räkenskapsåret <strong>@_fiscalYear?.Name</strong>. <a href="/accounts">Lägg till konton</a> eller importera en kontoplan.</MudAlert>
+    <MudAlert Severity="Severity.Warning">Kunde inte läsa in det valda räkenskapsåret. Välj ett annat räkenskapsår ovan.</MudAlert>
+}
+else if (!_bankAccounts.Any())
+{
+    <MudAlert Severity="Severity.Info">Inga konton (@AccountPrefix&#42;&#42;) hittades för räkenskapsåret <strong>@_fiscalYear.Name</strong>. <a href="/accounts">Lägg till konton</a> eller importera en kontoplan.</MudAlert>
 }
 else
 {

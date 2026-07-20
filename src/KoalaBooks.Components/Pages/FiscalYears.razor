@@ -1,8 +1,6 @@
 @page "/fiscal-years"
-@using KoalaBooks.Application.Services
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Interfaces
-@using KoalaBooks.Infrastructure.Services
 @using MudBlazor
 @using Microsoft.AspNetCore.Components.Authorization
 
@@ -78,7 +76,9 @@
                 <td>
                     @if (!fy.IsClosed)
                     {
-                        <button class="btn btn-sm btn-warning" @onclick="() => StartClosing(fy.Id)">Stäng bokslut</button>
+                        var notEnded = fy.EndDate > DateOnly.FromDateTime(DateTime.Today);
+                        <button class="btn btn-sm btn-warning" disabled="@notEnded" @onclick="() => StartClosing(fy.Id)"
+                                title="@(notEnded ? $"Räkenskapsåret har inte tagit slut ännu." : null)">Stäng bokslut</button>
                     }
                 </td>
             </tr>

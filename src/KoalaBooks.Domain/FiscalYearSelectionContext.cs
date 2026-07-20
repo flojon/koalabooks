@@ -1,4 +1,4 @@
-namespace KoalaBooks.Application.Services;
+namespace KoalaBooks.Domain;
 
 // Scoped (per Blazor Server circuit): remembers the last fiscal year a user explicitly
 // picked on any page in the transactional/reporting page cluster, so navigating between

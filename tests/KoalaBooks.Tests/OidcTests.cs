@@ -1,4 +1,5 @@
 using KoalaBooks.Domain;
+using KoalaBooks.Domain.Auth;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
@@ -11,7 +12,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OpenIddict.Abstractions;
 using System.Net;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -259,7 +259,6 @@ public class WasmClientSeedingTests : IDisposable
 {
     private readonly ServiceProvider _sp;
     private readonly string _dbName;
-    private static readonly Uri RedirectUri = new("https://localhost:7154/authentication/login-callback");
 
     public WasmClientSeedingTests()
     {
@@ -279,10 +278,10 @@ public class WasmClientSeedingTests : IDisposable
     }
 
     [Fact]
-    public async Task SeedAsync_CreatesPublicClientRequiringPkce()
+    public async Task SeedAsync_CreatesPublicClientForCookieGrant()
     {
         using var scope = _sp.CreateScope();
-        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, RedirectUri);
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
 
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var app = await manager.FindByClientIdAsync(WasmClientSeeder.ClientId);
@@ -292,19 +291,21 @@ public class WasmClientSeedingTests : IDisposable
         await manager.PopulateAsync(descriptor, app);
 
         Assert.Equal(OpenIddictConstants.ClientTypes.Public, descriptor.ClientType);
-        Assert.Contains(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange, descriptor.Requirements);
-        Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
-        Assert.Contains(RedirectUri, descriptor.RedirectUris);
+        Assert.Contains(
+            OpenIddictConstants.Permissions.Prefixes.GrantType + WasmCookieBridge.GrantType,
+            descriptor.Permissions);
+        Assert.DoesNotContain(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
+        Assert.DoesNotContain(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange, descriptor.Requirements);
     }
 
     [Fact]
     public async Task SeedAsync_IsIdempotent()
     {
         using (var scope = _sp.CreateScope())
-            await WasmClientSeeder.SeedAsync(scope.ServiceProvider, RedirectUri);
+            await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
 
         using (var scope = _sp.CreateScope())
-            await WasmClientSeeder.SeedAsync(scope.ServiceProvider, RedirectUri);
+            await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
 
         using var verifyScope = _sp.CreateScope();
         var manager = verifyScope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
@@ -318,13 +319,15 @@ public class WasmClientSeedingTests : IDisposable
     }
 }
 
-// Proves Track B of #257: the WASM client's silent authorization-code + PKCE exchange,
-// driven manually here instead of by a real browser, yields an access token that both
-// authenticates against the API and carries org_id for tenant scoping.
-public class OidcSilentPkceForOwnClientTests
+// #292: proves the WASM client can bridge its ambient Identity cookie session to a bearer
+// token via the cookie grant, without ever going through AddOidcAuthentication()'s
+// RemoteAuthenticationService (whose DI-slot conflict with AddAuthenticationStateDeserialization()
+// is what #292 is about). The minted token both authenticates against the API and carries org_id
+// for tenant scoping, same as the password/authorization_code grants.
+public class OidcCookieGrantForWasmClientTests
 {
     [Fact]
-    public async Task SilentPkceExchange_ForWasmClient_ReturnsAccessTokenWithOrgId()
+    public async Task CookieGrant_ForWasmClient_ReturnsAccessTokenWithOrgId()
     {
         var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
         try
@@ -334,7 +337,6 @@ public class OidcSilentPkceForOwnClientTests
 
             const string email = "wasm-user@test.com";
             const string password = "ValidPass123!";
-            var redirectUri = new Uri("https://localhost:7154/authentication/login-callback");
             int orgId;
 
             using (var scope = factory.Services.CreateScope())
@@ -351,7 +353,7 @@ public class OidcSilentPkceForOwnClientTests
                     password);
                 Assert.True(created.Succeeded);
 
-                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, redirectUri);
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
             }
 
             var loginPage = await client.GetAsync("/account/login");
@@ -366,28 +368,18 @@ public class OidcSilentPkceForOwnClientTests
                 }));
             Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
 
-            var codeVerifier = GenerateCodeVerifier();
-            var codeChallenge = ComputeCodeChallenge(codeVerifier);
-
-            var authorizeResponse = await client.GetAsync(
-                $"/connect/authorize?client_id={WasmClientSeeder.ClientId}&response_type=code" +
-                $"&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile%20email" +
-                $"&code_challenge={codeChallenge}&code_challenge_method=S256");
-            Assert.Equal(HttpStatusCode.Redirect, authorizeResponse.StatusCode);
-
-            var code = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["code"].ToString();
-            Assert.False(string.IsNullOrEmpty(code));
-
-            var tokenResponse = await client.PostAsync("/connect/token", new FormUrlEncodedContent(
-                new Dictionary<string, string>
+            using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
-                    ["grant_type"] = "authorization_code",
-                    ["code"] = code,
-                    ["redirect_uri"] = redirectUri.ToString(),
+                    ["grant_type"] = WasmCookieBridge.GrantType,
                     ["client_id"] = WasmClientSeeder.ClientId,
-                    ["code_verifier"] = codeVerifier,
-                }));
+                    ["scope"] = "email profile",
+                })
+            };
+            tokenRequest.Headers.Add(WasmCookieBridge.CsrfHeaderName, WasmCookieBridge.CsrfHeaderValue);
 
+            var tokenResponse = await client.SendAsync(tokenRequest);
             var body = await tokenResponse.Content.ReadAsStringAsync();
             Assert.True(tokenResponse.IsSuccessStatusCode, body);
 
@@ -405,15 +397,56 @@ public class OidcSilentPkceForOwnClientTests
         }
     }
 
-    private static string GenerateCodeVerifier()
+    [Fact]
+    public async Task CookieGrant_WithoutCsrfHeader_IsRejected()
     {
-        var bytes = RandomNumberGenerator.GetBytes(32);
-        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    }
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-    private static string ComputeCodeChallenge(string codeVerifier)
-    {
-        var hash = SHA256.HashData(Encoding.ASCII.GetBytes(codeVerifier));
-        return Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            const string email = "wasm-user-2@test.com";
+            const string password = "ValidPass123!";
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                var created = await userManager.CreateAsync(
+                    new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true }, password);
+                Assert.True(created.Succeeded);
+
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var antiforgeryToken = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+
+            var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["Email"] = email,
+                    ["Password"] = password,
+                    ["__RequestVerificationToken"] = antiforgeryToken,
+                }));
+            Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
+
+            // No X-KoalaBooks-Csrf header this time.
+            var tokenResponse = await client.PostAsync("/connect/token", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["grant_type"] = WasmCookieBridge.GrantType,
+                    ["client_id"] = WasmClientSeeder.ClientId,
+                    ["scope"] = "email profile",
+                }));
+
+            var body = await tokenResponse.Content.ReadAsStringAsync();
+            Assert.False(tokenResponse.IsSuccessStatusCode, body);
+            Assert.Contains("invalid_request", body);
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
     }
 }

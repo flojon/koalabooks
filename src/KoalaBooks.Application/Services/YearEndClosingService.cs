@@ -1,25 +1,10 @@
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace KoalaBooks.Application.Services;
-
-public record ClosingValidationResult(bool IsValid, List<string> Errors);
-
-public record ClosingPreview(
-    bool IsValid,
-    List<string> Errors,
-    decimal TotalRevenue,
-    decimal TotalExpenses,
-    decimal NetResult,
-    List<ClosingEntryPreview> Entries);
-
-public record ClosingEntryPreview(string Description, List<ClosingLinePreview> Lines);
-
-public record ClosingLinePreview(string AccountNumber, string AccountName, decimal Debit, decimal Credit);
-
-public record ClosingResult(bool Success, string? Error, int? ClosingEntry1Number, int? ClosingEntry2Number);
 
 public class YearEndClosingService : IYearEndClosingService
 {
@@ -48,6 +33,11 @@ public class YearEndClosingService : IYearEndClosingService
         if (fiscalYear.IsClosed)
         {
             errors.Add("Fiscal year is already closed.");
+        }
+
+        if (fiscalYear.EndDate > DateOnly.FromDateTime(DateTime.Today))
+        {
+            errors.Add($"Räkenskapsåret har inte tagit slut än (slutar {fiscalYear.EndDate}). Bokslut kan inte göras förrän räkenskapsåret är slut.");
         }
 
         var draftCount = await _db.JournalEntries
