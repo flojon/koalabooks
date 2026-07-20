@@ -24,15 +24,6 @@ public class FiscalYearApiService(HttpClient http) : IFiscalYearService
         return year is null ? null : ToEntity(year);
     }
 
-    public async Task<FiscalYear?> GetActiveAsync()
-    {
-        var response = await http.GetAsync("api/v1/fiscal-years/active").ConfigureAwait(false);
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
-        response.EnsureSuccessStatusCode();
-        var year = await response.Content.ReadFromJsonAsync<FiscalYearResponse>(ApiJson.Options).ConfigureAwait(false);
-        return year is null ? null : ToEntity(year);
-    }
-
     public async Task<FiscalYear?> GetForDateAsync(DateOnly date)
     {
         var years = await GetAllAsync().ConfigureAwait(false);

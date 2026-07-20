@@ -36,13 +36,13 @@ public class FiscalYearsController : ControllerBase
         return Ok(MapFiscalYear(fy));
     }
 
-    [HttpGet("active")]
+    [HttpGet("default")]
     [ProducesResponseType<FiscalYearResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetActive()
+    public async Task<IActionResult> GetDefault()
     {
-        var fy = await _service.GetActiveAsync();
+        var fy = await _service.GetDefaultFiscalYearAsync();
         if (fy is null) return NotFound();
         return Ok(MapFiscalYear(fy));
     }

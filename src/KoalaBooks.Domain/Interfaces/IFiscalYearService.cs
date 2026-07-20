@@ -6,7 +6,6 @@ public interface IFiscalYearService
 {
     Task<List<FiscalYear>> GetAllAsync();
     Task<FiscalYear?> GetByIdAsync(int id);
-    Task<FiscalYear?> GetActiveAsync();
     Task<FiscalYear?> GetForDateAsync(DateOnly date);
     Task<FiscalYear?> GetDefaultFiscalYearAsync();
     Task<List<FiscalYear>> GetOpenFiscalYearsAsync();
