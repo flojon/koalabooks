@@ -1,5 +1,6 @@
 @page "/journal"
 @page "/journal/{EntryId:int}"
+@using KoalaBooks.Domain
 @using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Domain.Entities
 @using KoalaBooks.Domain.Enums
@@ -317,6 +318,7 @@ else
     [Inject] private IDocumentProvider DocumentProvider { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private FiscalYearSelectionContext SelectionContext { get; set; } = default!;
 
     private FiscalYear? _activeFiscalYear;
     private List<FiscalYear> _allFiscalYears = [];
@@ -376,7 +378,13 @@ else
             _isLoading = false;
             return;
         }
-        _selectedFiscalYearId = _activeFiscalYear?.Id ?? _allFiscalYears.First().Id;
+
+        FiscalYear? seed = null;
+        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
+            seed = _allFiscalYears.FirstOrDefault(f => f.Id == lastId);
+        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync() ?? _activeFiscalYear ?? _allFiscalYears.First();
+
+        _selectedFiscalYearId = seed.Id;
         await LoadForSelectedYearAsync();
         _isLoading = false;
     }
@@ -454,6 +462,7 @@ else
 
     private async Task OnFiscalYearChangedAsync()
     {
+        SelectionContext.Set(_selectedFiscalYearId);
         _selectedMonthStr = "";
         _showForm = false;
         _isDirty = false;

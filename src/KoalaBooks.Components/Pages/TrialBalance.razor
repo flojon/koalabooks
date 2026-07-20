@@ -1,4 +1,5 @@
 @page "/reports/trial-balance"
+@using KoalaBooks.Domain
 @using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Domain.Entities
 
@@ -10,7 +11,7 @@
 {
     <div class="toolbar">
         <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
-        <select @bind="SelectedFiscalYearId" @bind:after="LoadReport" style="width:200px;">
+        <select @bind="SelectedFiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:200px;">
             @foreach (var fy in _fiscalYears)
             {
                 <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
@@ -68,6 +69,7 @@ else
 @code {
     [Inject] private IJournalEntryReportingService JournalReportingService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
+    [Inject] private FiscalYearSelectionContext SelectionContext { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
     private List<TrialBalanceRow> _rows = [];
@@ -76,12 +78,23 @@ else
     protected override async Task OnInitializedAsync()
     {
         _fiscalYears = await FiscalYearService.GetAllAsync();
-        var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
-        if (active is not null)
+
+        FiscalYear? seed = null;
+        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
+            seed = _fiscalYears.FirstOrDefault(f => f.Id == lastId);
+        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync() ?? _fiscalYears.FirstOrDefault();
+
+        if (seed is not null)
         {
-            SelectedFiscalYearId = active.Id;
+            SelectedFiscalYearId = seed.Id;
             await LoadReport();
         }
+    }
+
+    private async Task OnFiscalYearChangedAsync()
+    {
+        SelectionContext.Set(SelectedFiscalYearId);
+        await LoadReport();
     }
 
     private async Task LoadReport()

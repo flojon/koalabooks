@@ -1,4 +1,5 @@
 @page "/reports/general-ledger"
+@using KoalaBooks.Domain
 @using KoalaBooks.Domain.Interfaces
 @using KoalaBooks.Domain.Entities
 @using MudBlazor
@@ -15,7 +16,7 @@ else if (_fiscalYears.Any())
 {
     <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
         <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
-        <select @bind="SelectedFiscalYearId" @bind:after="ApplyFilters" style="width:200px;">
+        <select @bind="SelectedFiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:200px;">
             @foreach (var fy in _fiscalYears)
             {
                 <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
@@ -150,6 +151,7 @@ else
     [Inject] private IJournalEntryReportingService JournalReportingService { get; set; } = default!;
     [Inject] private IFiscalYearService FiscalYearService { get; set; } = default!;
     [Inject] private IAccountService AccountService { get; set; } = default!;
+    [Inject] private FiscalYearSelectionContext SelectionContext { get; set; } = default!;
 
     private List<FiscalYear> _fiscalYears = [];
     private List<Account> _accounts = [];
@@ -195,10 +197,15 @@ else
         try
         {
             _fiscalYears = await FiscalYearService.GetAllAsync();
-            var active = _fiscalYears.FirstOrDefault(f => !f.IsClosed) ?? _fiscalYears.FirstOrDefault();
-            if (active is not null)
+
+            FiscalYear? seed = null;
+            if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
+                seed = _fiscalYears.FirstOrDefault(f => f.Id == lastId);
+            seed ??= await FiscalYearService.GetDefaultFiscalYearAsync() ?? _fiscalYears.FirstOrDefault();
+
+            if (seed is not null)
             {
-                SelectedFiscalYearId = active.Id;
+                SelectedFiscalYearId = seed.Id;
                 await LoadAccountList();
             }
         }
@@ -206,6 +213,12 @@ else
         {
             _isLoading = false;
         }
+    }
+
+    private async Task OnFiscalYearChangedAsync()
+    {
+        SelectionContext.Set(SelectedFiscalYearId);
+        await ApplyFilters();
     }
 
     private async Task LoadAccountList()
