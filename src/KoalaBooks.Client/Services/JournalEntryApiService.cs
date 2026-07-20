@@ -32,6 +32,8 @@ public class JournalEntryApiService(HttpClient http) : IJournalEntryService
         return drafts?.Select(ToEntity).ToList() ?? [];
     }
 
+    // organisationId is not sent to the server — the endpoint resolves the tenant from
+    // ICurrentUser, so a caller can't use this to look up another organisation's count.
     public async Task<int> CountDraftsForOrganisationAsync(int organisationId)
     {
         var count = await http.GetFromJsonAsync<CountResponse>(

@@ -17,6 +17,8 @@ public class BankImportApiService(HttpClient http) : IBankImportService
         return response?.Count ?? 0;
     }
 
+    // organisationId is not sent to the server — the endpoint resolves the tenant from
+    // ICurrentUser, so a caller can't use this to look up another organisation's count.
     public async Task<int> CountUnmatchedForOrganisationAsync(int organisationId)
     {
         var response = await http.GetFromJsonAsync<CountResponse>(
