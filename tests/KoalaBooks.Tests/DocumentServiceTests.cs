@@ -86,6 +86,50 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LinkAsync_RejectsCrossTenantEntity()
+    {
+        var svc = _fx.MakeDocumentService();
+        var (doc, _) = await svc.UploadAsync("a.pdf", "application/pdf", () => new MemoryStream([1]));
+
+        int entryOtherId;
+        await using (var otherDb = new AppDbContext(_fx.Options, TestFixture.MakeTenant(0)))
+        {
+            var otherOrg = new Organisation { Name = "Other Org", Slug = "other-org" };
+            otherDb.Organisations.Add(otherOrg);
+            await otherDb.SaveChangesAsync();
+
+            await using var otherTenantDb = new AppDbContext(_fx.Options, TestFixture.MakeTenant(otherOrg.Id));
+            var otherJeSvc = new JournalEntryService(otherTenantDb, TestFixture.MakeTenant(otherOrg.Id));
+            var fyOther = new FiscalYear { Name = "Other FY", StartDate = new DateOnly(2026, 1, 1), EndDate = new DateOnly(2026, 12, 31), OrganisationId = otherOrg.Id };
+            otherTenantDb.FiscalYears.Add(fyOther);
+            await otherTenantDb.SaveChangesAsync();
+            var debitO = new Account { AccountNumber = "1910", Name = "Kassa", AccountClass = AccountClass.Asset, FiscalYearId = fyOther.Id };
+            var creditO = new Account { AccountNumber = "2440", Name = "Leverantörsskulder", AccountClass = AccountClass.Liability, FiscalYearId = fyOther.Id };
+            otherTenantDb.Accounts.AddRange(debitO, creditO);
+            await otherTenantDb.SaveChangesAsync();
+
+            var entry = new JournalEntry
+            {
+                Date = new DateOnly(2026, 6, 15),
+                Description = "other org entry",
+                FiscalYearId = fyOther.Id,
+                Lines = [
+                    new() { AccountId = debitO.Id, DebitAmount = 50m, CreditAmount = 0 },
+                    new() { AccountId = creditO.Id, DebitAmount = 0, CreditAmount = 50m }
+                ]
+            };
+            var (created, error) = await otherJeSvc.CreateAsync(entry);
+            Assert.Null(error);
+            entryOtherId = created!.Id;
+        }
+
+        // svc's underlying context has never seen entryOtherId, so this exercises the real
+        // database-level query filter, not a change-tracker shortcut.
+        var outcome = await svc.LinkAsync(doc!.Id, DocumentEntityType.JournalEntry, entryOtherId);
+        Assert.Equal(LinkOutcome.EntityNotFound, outcome);
+    }
+
+    [Fact]
     public async Task UpdateMetadataAsync_SetsTypeAndDate()
     {
         var svc = _fx.MakeDocumentService();
