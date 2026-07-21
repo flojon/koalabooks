@@ -11,7 +11,8 @@ var postgres = builder.AddPostgres("postgres")
     .WithDataVolume(postgresVolumeName)
     .WithLifetime(ContainerLifetime.Persistent)
     .WithInitFiles("../../db-init")
-    .WithEnvironment("APP_USER_PASSWORD", appUserPassword);
+    .WithEnvironment("APP_USER_PASSWORD", appUserPassword)
+    .WithEnvironment("POSTGRES_DB", "koalabooks");
 
 var koalabooksDb = postgres.AddDatabase("koalabooks");
 
