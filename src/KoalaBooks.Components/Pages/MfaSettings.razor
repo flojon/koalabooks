@@ -1,0 +1,196 @@
+@page "/account/mfa"
+@using System.Security.Claims
+@using KoalaBooks.Domain.Interfaces
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Authorization
+
+<PageTitle>Tvåfaktorsautentisering — KoalaBooks</PageTitle>
+
+<h1>Tvåfaktorsautentisering</h1>
+
+@if (_userId is null)
+{
+    @if (_loadError)
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-2">Kunde inte identifiera din användare. Ladda om sidan och försök igen.</MudAlert>
+    }
+    else
+    {
+        <p>Laddar...</p>
+    }
+}
+else if (_showRecoveryCodes && _confirmResult is not null)
+{
+    <div class="card" style="max-width:480px;">
+        <h3>Spara dina återställningskoder</h3>
+        <MudAlert Severity="Severity.Success" Class="mt-2">Tvåfaktorsautentisering är nu aktiverad.</MudAlert>
+        <p style="color:#64748b;">
+            Dessa återställningskoder visas bara en gång. Spara dem på ett säkert ställe — du kan
+            använda en av dem för att logga in om du tappar bort din autentiseringsapp.
+        </p>
+        <div class="form-group">
+            <pre style="background:#f1f5f9; padding:0.75rem; border-radius:6px;">@string.Join("\n", _confirmResult.RecoveryCodes)</pre>
+        </div>
+        <div style="margin-top:1rem;">
+            <button class="btn btn-primary" @onclick="DismissRecoveryCodes">Klart</button>
+        </div>
+    </div>
+}
+else if (_enrollment is not null)
+{
+    <div class="card" style="max-width:480px;">
+        <h3>Aktivera tvåfaktorsautentisering</h3>
+        <p style="color:#64748b;">
+            Skanna QR-koden nedan med en autentiseringsapp (t.ex. Google Authenticator eller Authy),
+            eller ange nyckeln manuellt. Ange sedan koden från appen för att bekräfta.
+        </p>
+        <div class="form-group">
+            <img src="@_enrollment.QrCodeDataUri" alt="QR-kod för tvåfaktorsautentisering" style="max-width:200px;" />
+        </div>
+        <div class="form-group">
+            <label>Manuell nyckel</label>
+            <input type="text" readonly value="@_enrollment.SharedKey" />
+        </div>
+        <div class="form-group">
+            <label>Bekräftelsekod</label>
+            <input type="text" @bind="_confirmCode" placeholder="6-siffrig kod" />
+        </div>
+        @if (_confirmError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_confirmError</MudAlert>
+        }
+        <div style="margin-top:1rem;">
+            <button class="btn btn-primary" @onclick="Confirm">Bekräfta</button>
+        </div>
+    </div>
+}
+else if (_isEnabled)
+{
+    <div class="card" style="max-width:480px;">
+        <MudAlert Severity="Severity.Success" Class="mt-2">Tvåfaktorsautentisering är aktiverad för ditt konto.</MudAlert>
+        <h3>Inaktivera tvåfaktorsautentisering</h3>
+        <div class="form-group">
+            <label>Lösenord</label>
+            <input type="password" @bind="_disablePassword" />
+        </div>
+        @if (_disableError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_disableError</MudAlert>
+        }
+        <div style="margin-top:1rem;">
+            <button class="btn btn-primary" @onclick="Disable">Inaktivera tvåfaktorsautentisering</button>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card" style="max-width:480px;">
+        <h3>Skydda ditt konto</h3>
+        <p style="color:#64748b;">
+            Tvåfaktorsautentisering (2FA) lägger till ett extra säkerhetssteg vid inloggning.
+            Utöver ditt lösenord behöver du en engångskod från en autentiseringsapp i din telefon.
+        </p>
+        @if (_beginError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_beginError</MudAlert>
+        }
+        <div style="margin-top:1rem;">
+            <button class="btn btn-primary" @onclick="BeginEnrollment">Aktivera tvåfaktorsautentisering</button>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
+    [Inject] private IMfaService MfaService { get; set; } = default!;
+
+    private string? _userId;
+    private bool _loadError;
+    private bool _isEnabled;
+
+    private MfaEnrollmentInfo? _enrollment;
+    private string _confirmCode = "";
+    private string? _confirmError;
+
+    private MfaConfirmResult? _confirmResult;
+    private bool _showRecoveryCodes;
+
+    private string _disablePassword = "";
+    private string? _disableError;
+    private string? _beginError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationStateTask is null)
+        {
+            _loadError = true;
+            return;
+        }
+
+        var authState = await AuthenticationStateTask;
+        _userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (_userId is null)
+        {
+            _loadError = true;
+            return;
+        }
+
+        _isEnabled = await MfaService.IsEnabledAsync(_userId);
+    }
+
+    private async Task BeginEnrollment()
+    {
+        if (_userId is null) return;
+
+        _beginError = null;
+        try
+        {
+            _enrollment = await MfaService.BeginEnrollmentAsync(_userId);
+        }
+        catch (Exception)
+        {
+            _beginError = "Kunde inte starta aktiveringen. Försök igen.";
+        }
+    }
+
+    private async Task Confirm()
+    {
+        if (_userId is null) return;
+
+        _confirmError = null;
+        var result = await MfaService.ConfirmEnrollmentAsync(_userId, _confirmCode);
+        if (!result.Succeeded)
+        {
+            _confirmError = result.Error ?? "Fel kod. Försök igen.";
+            return;
+        }
+
+        _confirmResult = result;
+        _enrollment = null;
+        _showRecoveryCodes = true;
+    }
+
+    private void DismissRecoveryCodes()
+    {
+        _showRecoveryCodes = false;
+        _confirmResult = null;
+        _isEnabled = true;
+    }
+
+    private async Task Disable()
+    {
+        if (_userId is null) return;
+
+        _disableError = null;
+        var succeeded = await MfaService.DisableAsync(_userId, _disablePassword);
+        if (!succeeded)
+        {
+            _disableError = "Fel lösenord.";
+            return;
+        }
+
+        _disablePassword = "";
+        _isEnabled = false;
+    }
+}
