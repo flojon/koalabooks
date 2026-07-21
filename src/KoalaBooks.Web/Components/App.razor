@@ -13,14 +13,14 @@
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["KoalaBooks.Web.styles.css"]" />
     <ImportMap />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="RenderModeForPage" />
 </head>
 
 <body>
     <MudThemeProvider Theme="_theme" />
-    <MudPopoverProvider @rendermode="InteractiveServer" />
-    <MudDialogProvider @rendermode="InteractiveServer" />
-    <MudSnackbarProvider @rendermode="InteractiveServer" />
+    <MudPopoverProvider @rendermode="RenderModeForPage" />
+    <MudDialogProvider @rendermode="RenderModeForPage" />
+    <MudSnackbarProvider @rendermode="RenderModeForPage" />
     <Routes @rendermode="RenderModeForPage" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
