@@ -6,6 +6,7 @@ public interface ICustomerInvoiceService
 {
     Task<List<CustomerInvoice>> GetAllAsync(int fiscalYearId);
     Task<CustomerInvoice?> GetByIdAsync(int id);
+    Task<byte[]?> GetPdfAsync(int id);
     Task<(CustomerInvoice? Invoice, string? Error)> CreateAsync(
         CustomerInvoice invoice, List<CustomerInvoiceLine> lines);
     Task<(CustomerInvoice? Invoice, string? Error)> PostAsync(

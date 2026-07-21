@@ -36,6 +36,12 @@ public class CustomerInvoiceService : ICustomerInvoiceService
             .FirstOrDefaultAsync(i => i.Id == id).ConfigureAwait(false);
     }
 
+    public async Task<byte[]?> GetPdfAsync(int id)
+    {
+        var invoice = await GetByIdAsync(id).ConfigureAwait(false);
+        return invoice is null ? null : CustomerInvoicePdfGenerator.Generate(invoice);
+    }
+
     public async Task<(CustomerInvoice? Invoice, string? Error)> CreateAsync(
         CustomerInvoice invoice, List<CustomerInvoiceLine> lines)
     {
