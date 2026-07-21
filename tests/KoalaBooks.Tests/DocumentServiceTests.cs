@@ -92,8 +92,9 @@ public class DocumentServiceTests : IDisposable
         var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", () => new MemoryStream());
         var date = new DateOnly(2026, 3, 15);
 
-        var err = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
+        var (found, err) = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
 
+        Assert.True(found);
         Assert.Null(err);
         var pending = await svc.GetPendingAsync();
         var updated = pending.First(d => d.Id == doc.Id);
@@ -119,8 +120,9 @@ public class DocumentServiceTests : IDisposable
         }
 
         var date = new DateOnly(2026, 3, 15);
-        var err = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
+        var (found, err) = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
 
+        Assert.True(found);
         Assert.Null(err);
 
         // Verify through a fresh DbContext — _fx.Db still has the stale tracked instance.
@@ -185,8 +187,9 @@ public class DocumentServiceTests : IDisposable
             collidingDb, new DbDocumentStorage(collidingDb), new NoOpDocumentExtractionQueue(),
             new NoOpZipImportQueue(), new BackgroundJobRunService(collidingDb, options, collidingTenant), collidingTenant);
 
-        var err = await collidingSvc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", new DateOnly(2026, 3, 15));
+        var (found, err) = await collidingSvc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", new DateOnly(2026, 3, 15));
 
+        Assert.True(found);
         Assert.Equal("Kunde inte spara just nu. Försök igen.", err);
     }
 

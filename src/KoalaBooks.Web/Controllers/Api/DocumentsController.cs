@@ -1,4 +1,3 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
@@ -133,14 +132,17 @@ public class DocumentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Link(int id, [FromBody] LinkDocumentRequest request)
     {
-        if (!await EntityExistsAsync(request.EntityType!.Value, request.EntityId!.Value)) return NotFound();
-
-        var found = await _documentService.LinkAsync(id, request.EntityType!.Value, request.EntityId!.Value);
-        if (!found) return NotFound();
-
-        return NoContent();
+        var outcome = await _documentService.LinkAsync(id, request.EntityType!.Value, request.EntityId!.Value);
+        return outcome switch
+        {
+            LinkOutcome.Linked => NoContent(),
+            LinkOutcome.ConcurrencyConflict =>
+                Problem(detail: "Kunde inte länka just nu. Försök igen.", statusCode: StatusCodes.Status409Conflict),
+            _ => NotFound()
+        };
     }
 
     [HttpPut("documents/{id:int}")]
@@ -150,8 +152,8 @@ public class DocumentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> UpdateMetadata(int id, [FromBody] UpdateDocumentRequest request)
     {
-        var error = await _documentService.UpdateMetadataAsync(id, request.ClassifiedType, request.DocumentDate);
-        if (error == DocumentService.NotFoundMessage) return NotFound();
+        var (found, error) = await _documentService.UpdateMetadataAsync(id, request.ClassifiedType, request.DocumentDate);
+        if (!found) return NotFound();
         if (error is not null)
             return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
 
