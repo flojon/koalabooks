@@ -81,4 +81,38 @@ public class CustomerInvoiceServiceGetPdfTests : IDisposable
 
         Assert.Null(bytes);
     }
+
+    [Fact]
+    public async Task GetPdfAsync_ReturnsNull_ForCrossTenantInvoice()
+    {
+        var otherOrg = new Organisation { Name = "Other Org", Slug = "other-org-inv-pdf" };
+        _db.Organisations.Add(otherOrg);
+        await _db.SaveChangesAsync();
+
+        var otherFiscalYear = new FiscalYear
+        {
+            OrganisationId = otherOrg.Id, Name = "2026",
+            StartDate = new DateOnly(2026, 1, 1), EndDate = new DateOnly(2026, 12, 31)
+        };
+        _db.FiscalYears.Add(otherFiscalYear);
+        await _db.SaveChangesAsync();
+
+        _currentUser.OrganisationId = otherOrg.Id;
+        var (otherOrgInvoice, error) = await new CustomerInvoiceService(_db).CreateAsync(
+            new CustomerInvoice
+            {
+                FiscalYearId = otherFiscalYear.Id,
+                CustomerName = "Other Acme AB",
+                InvoiceDate = new DateOnly(2026, 7, 1),
+                DueDate = new DateOnly(2026, 7, 31),
+            },
+            [new CustomerInvoiceLine { Description = "Konsulttjänst", Quantity = 1, UnitPrice = 1000, VatRate = 25 }]);
+        Assert.Null(error);
+
+        _currentUser.OrganisationId = _db.Organisations.Single(o => o.Slug == "test-org-inv-pdf").Id;
+        var service = new CustomerInvoiceService(_db);
+        var bytes = await service.GetPdfAsync(otherOrgInvoice!.Id);
+
+        Assert.Null(bytes);
+    }
 }
