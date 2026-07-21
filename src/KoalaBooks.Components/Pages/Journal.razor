@@ -24,7 +24,6 @@
 }
 else
 {
-<UnsavedChangesGuard IsDirty="_isDirty" />
 <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
     <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
     <select @bind="_selectedFiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:220px;">
@@ -43,29 +42,9 @@ else
     </select>
     @if (_activeFiscalYear is not null && _selectedFiscalYearId == _activeFiscalYear.Id)
     {
-        <button class="btn btn-primary" @onclick="NewEntry">+ Ny verifikation</button>
+        <button class="btn btn-primary" @onclick="OpenNewEntryDialogAsync">+ Ny verifikation</button>
     }
 </div>
-
-@if (_showForm)
-{
-    <div class="card">
-        <h3>Ny verifikation</h3>
-
-        <JournalEntryForm Accounts="_accounts"
-                          Date="_formDate" DateChanged="d => _formDate = d"
-                          Description="@_formDescription" DescriptionChanged="d => _formDescription = d"
-                          Lines="_formLines"
-                          IsBalancedChanged="b => _isBalanced = b"
-                          DirtyChanged="MarkDirty" />
-
-        <div style="margin-top:1rem; display:flex; gap:0.5rem;">
-            <button class="btn btn-success" @onclick="SaveAndPost" disabled="@(!_isBalanced)">💾 Bokför</button>
-            <button class="btn btn-secondary" @onclick="SaveAsDraft" disabled="@(!_isBalanced)">Spara som utkast</button>
-            <button class="btn btn-secondary" @onclick="CancelForm">Avbryt</button>
-        </div>
-    </div>
-}
 
 @if (_isReloading)
 {
@@ -291,7 +270,7 @@ else
     </tbody>
 </table>
 
-@if (!FilteredEntries.Any() && !_showForm)
+@if (!FilteredEntries.Any())
 {
     <MudAlert Severity="Severity.Info" Class="mt-4">
         @if (_entries.Any())
@@ -333,16 +312,7 @@ else
             : _entries;
     private List<Account> _accounts = [];
     private List<JournalEntry> _entries = [];
-    private bool _showForm;
     private bool _isLoading;
-    private DateTime _formDate = DateTime.Today;
-    private string _formDescription = "";
-    private List<JournalEntryForm.LineModel> _formLines = [];
-    private bool _isBalanced;
-
-    // Unsaved-changes guard for the new-entry form; cleared on save, cancel, or fresh open.
-    private bool _isDirty;
-    private void MarkDirty() => _isDirty = true;
     private HashSet<int> _linkedJournalEntryIds = [];
 
     // Attachment panel
@@ -389,66 +359,29 @@ else
         _isLoading = false;
     }
 
-    private void NewEntry()
+    private async Task OpenNewEntryDialogAsync()
     {
-        _formDate = DateTime.Today;
-        _formDescription = "";
-        _formLines = [new(), new()];
-        _showForm = true;
-        _isDirty = false;
-    }
-
-    private void CancelForm()
-    {
-        _showForm = false;
-        _isDirty = false;
-    }
-
-    private async Task SaveAndPost() => await SaveEntryAsync(post: true);
-
-    private async Task SaveAsDraft() => await SaveEntryAsync(post: false);
-
-    private async Task SaveEntryAsync(bool post)
-    {
-        var entry = new JournalEntry
+        var parameters = new DialogParameters<NewJournalEntryDialog>
         {
-            Date = DateOnly.FromDateTime(_formDate),
-            Description = _formDescription,
-            FiscalYearId = _activeFiscalYear!.Id,
-            Lines = _formLines.Select(l => new JournalEntryLine
-            {
-                AccountId = l.AccountId,
-                DebitAmount = l.DebitAmount,
-                CreditAmount = l.CreditAmount
-            }).ToList()
+            { x => x.Accounts, _accounts },
+            { x => x.FiscalYearId, _activeFiscalYear!.Id }
         };
-
-        var (result, error) = await JournalEntryService.CreateAsync(entry);
-        if (error is not null)
+        var dialogRef = await DialogService.ShowAsync<NewJournalEntryDialog>(
+            "Ny verifikation", parameters, DialogDefaults.NoDismiss);
+        var result = await dialogRef.Result;
+        if (result is { Canceled: false } && result.Data is NewJournalEntryDialog.NewEntryResult r)
         {
-            Snackbar.Add(error, Severity.Error);
-            return;
-        }
-
-        if (post)
-        {
-            // Create and post are separate calls with no wrapping transaction. If post fails
-            // here, the entry is left as a draft — it's recoverable via the Review page, not lost.
-            var postError = await JournalEntryService.PostAsync(result!.Id);
-            if (postError is not null)
+            Snackbar.Add(r.Posted
+                ? $"Verifikation #{r.Entry.EntryNumber} bokförd."
+                : $"Verifikation #{r.Entry.EntryNumber} sparad som utkast.",
+                Severity.Success);
+            if (r.FailedFiles.Count > 0)
             {
-                Snackbar.Add(postError, Severity.Error);
-                return;
+                Snackbar.Add($"Kunde inte bifoga: {string.Join(", ", r.FailedFiles)}. Försök igen via bilaga-panelen.",
+                    Severity.Warning);
             }
+            await ReloadEntriesAsync();
         }
-
-        Snackbar.Add(post
-            ? $"Verifikation #{result!.EntryNumber} bokförd."
-            : $"Verifikation #{result!.EntryNumber} sparad som utkast.",
-            Severity.Success);
-        _showForm = false;
-        _isDirty = false;
-        await ReloadEntriesAsync();
     }
 
     private async Task LoadForSelectedYearAsync()
@@ -464,8 +397,6 @@ else
     {
         SelectionContext.Set(_selectedFiscalYearId);
         _selectedMonthStr = "";
-        _showForm = false;
-        _isDirty = false;
         _attachmentEntryId = null;
         _attachmentMeta = [];
         _convertingEntryId = null;
