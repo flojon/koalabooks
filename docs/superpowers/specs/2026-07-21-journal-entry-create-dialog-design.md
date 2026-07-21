@@ -31,16 +31,21 @@ no `Visible`/`@ref`).
   field, same as today's inline usage.
 - **State:** `_date` (`DateTime`, starts `DateTime.Today`), `_description`
   (`string`, starts `""`), `_lines` (`List<JournalEntryForm.LineModel>`,
-  starts `[new(), new()]`), `_isBalanced` (`bool`), `_pendingFiles`
-  (`List<IBrowserFile>`, starts empty), `_error` (`string?`), `_saving`
-  (`bool`).
+  starts `[new(), new()]`), `_isBalanced` (`bool`), `_isDirty` (`bool`,
+  mirroring `ClassifyDocumentDialog`'s self-contained dirty tracking — see
+  "Unsaved-changes guard" below), `_pendingFiles` (`List<IBrowserFile>`,
+  starts empty), `_error` (`string?`), `_saving` (`bool`).
 - **Body**, top to bottom:
-  1. The existing `<JournalEntryForm>` component, unchanged — same
+  1. `<UnsavedChangesGuard IsDirty="_isDirty" />`, exactly as
+     `ClassifyDocumentDialog.razor:8` does — self-contained inside the
+     dialog, not threaded to the host page (see "Unsaved-changes guard"
+     below).
+  2. The existing `<JournalEntryForm>` component, unchanged — same
      `Accounts`/`Date`/`DateChanged`/`Description`/`DescriptionChanged`/
-     `Lines`/`IsBalancedChanged` wiring as today's inline usage. Its
-     `DirtyChanged` callback is **not** wired to anything (see "Dropped:
-     page-level unsaved-changes guard" below).
-  2. A `MudFileUpload<IReadOnlyList<IBrowserFile>>` (mirroring
+     `Lines`/`IsBalancedChanged` wiring as today's inline usage, plus
+     `DirtyChanged="MarkDirty"` where `private void MarkDirty() => _isDirty
+     = true;` (identical to `ClassifyDocumentDialog.razor:239`).
+  3. A `MudFileUpload<IReadOnlyList<IBrowserFile>>` (mirroring
      `Inbox.razor`'s upload control — `CustomContent` with a
      `MudButton`/`Icons.Material.Filled.AttachFile`, no drag-and-drop
      `SelectedTemplate` needed since it only appends to `_pendingFiles`,
@@ -50,11 +55,11 @@ no `Visible`/`@ref`).
      upload time (matching `UploadAttachmentAsync`'s limit, not the
      Inbox's stricter type/count limits — this is a general attachment,
      not an inbox intake).
-  3. A simple chip list under the upload button, one row per
+  4. A simple chip list under the upload button, one row per
      `_pendingFiles` entry (`file.Name` + a small "✕" remove button that
      splices it out of the list before submit).
-  4. `_error`, if set, as `MudAlert Severity="Error"`.
-  5. `DialogActions`: "💾 Bokför" (`SaveAndPostAsync`), "Spara som utkast"
+  5. `_error`, if set, as `MudAlert Severity="Error"`.
+  6. `DialogActions`: "💾 Bokför" (`SaveAndPostAsync`), "Spara som utkast"
      (`SaveAsDraftAsync`), "Avbryt" (`MudDialog.Cancel`, `disabled="@_saving"`)
      — same three actions/labels as today's inline buttons, both save
      buttons `disabled="@(!_isBalanced || _saving)"`.
@@ -134,20 +139,29 @@ private async Task OpenNewEntryDialogAsync()
   check (line 294) both drop the now-gone `_showForm` reference — the
   guard becomes just `!FilteredEntries.Any()`.
 
-### Dropped: page-level unsaved-changes guard
+### Unsaved-changes guard: moves into the dialog, doesn't drop
 
-`_isDirty`/`MarkDirty`/`<UnsavedChangesGuard>` exist today *only* to warn
-before navigating away from a dirty inline new-entry form (confirmed: no
-other field on the page sets `_isDirty`). None of the three existing
-dialogs (`ReversalPreviewDialog`, `ClassifyDocumentDialog`,
-`PreviewDocumentDialog`) wire this kind of navigation guard through to
-their host page — losing in-progress dialog input on navigation is the
-accepted behavior for this codebase's dialog convention.
-`DialogDefaults.NoDismiss` still blocks accidental backdrop-click/Escape
-loss, which covers the more common accident. Bolting a bespoke
-dirty-tracking bridge onto just this one dialog to preserve the old
-inline-only guard would be inconsistent with every other dialog in the
-app, so it's dropped rather than threaded through.
+Today's `_isDirty`/`MarkDirty`/`<UnsavedChangesGuard>` on `Journal.razor`
+exist only to warn before navigating away from a dirty inline new-entry
+form (confirmed: no other field on the page sets `_isDirty`). That
+page-level wiring is removed along with the rest of `_showForm`'s state —
+but the protection itself isn't dropped, it moves inside the dialog.
+
+`ClassifyDocumentDialog.razor:8` already establishes the pattern for this
+exact situation (a dialog holding in-progress, non-autosaved user input):
+a **self-contained** `<UnsavedChangesGuard IsDirty="_isDirty" />`, with its
+own local `_isDirty`/`MarkDirty` driven by its form fields' `:after`/
+`DirtyChanged` callbacks — not threaded through to the host page at all.
+`NewJournalEntryDialog` follows that same pattern: `JournalEntryForm`
+already exposes a `DirtyChanged` callback for exactly this purpose
+(`JournalEntryForm.razor:111`, fired on every date/description/line edit),
+so wiring `DirtyChanged="MarkDirty"` and adding the guard is a few lines,
+not a bespoke bridge. Without it, a user mid-entry (possibly with staged
+attachments) who clicks a nav link or closes the tab would silently lose
+their input — a regression from today's inline form that the
+`ClassifyDocumentDialog` precedent shows isn't necessary.
+`DialogDefaults.NoDismiss` continues to separately block backdrop-click/
+Escape loss, same as today.
 
 ## Error handling
 
@@ -164,9 +178,36 @@ app, so it's dropped rather than threaded through.
 
 ## Testing
 
-No bUnit/component-level tests exist for any dialog in this codebase today
-(confirmed during #210's dialog-service migration). This follows the same
-convention — manual Playwright verification:
+`#210`'s design doc (2026-07-11) noted no bUnit/component-level tests
+existed for any dialog — that's now stale: `PreviewDocumentDialogTests.cs`
+and `UnsavedChangesConfirmDialogTests.cs` (added 2026-07-20) render dialogs
+directly via a `MudDialogProvider`-hosted bUnit context and already cover
+`ClassifyDocumentDialog`. `NewJournalEntryDialog` gets a bUnit suite
+following that same pattern, plus manual Playwright verification for the
+end-to-end upload/attachment flow (bUnit can't easily drive real
+`IBrowserFile` uploads).
+
+**bUnit** (`tests/KoalaBooks.ComponentTests/`, mirroring
+`PreviewDocumentDialogTests.cs`'s harness):
+
+- Renders with `Accounts`/`FiscalYearId` supplied — dialog shows
+  `JournalEntryForm` with two empty lines, both save buttons disabled
+  until balanced.
+- Editing a line (or date/description) marks the dialog dirty; confirm
+  this is observable the same way `ClassifyDocumentDialog`'s tests
+  exercise its own `_isDirty` (e.g. via `UnsavedChangesGuard`'s
+  `NavigationLock.ConfirmExternalNavigation` binding, or a lower-level
+  check on the dialog's dirty state if the guard itself isn't easily
+  assertable in bUnit).
+- `CreateAsync` failure (stub `IJournalEntryService`): dialog stays open,
+  `_error` renders as `MudAlert Severity="Error"`.
+- `CreateAsync`/`PostAsync` success with stubbed `DocumentService`:
+  dialog closes with `DialogResult.Ok` carrying a `NewEntryResult` whose
+  `Entry`/`Posted`/`FailedFiles` match the stubbed outcomes (including the
+  partial-failure case, `FailedFiles` non-empty but dialog still closes).
+
+**Manual Playwright** (unchanged from the original plan, still needed for
+what bUnit can't cover):
 
 - Open dialog via "+ Ny verifikation", create an entry with zero
   attachments (both Bokför and Spara som utkast paths) — confirm identical
