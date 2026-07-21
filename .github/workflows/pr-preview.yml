@@ -67,6 +67,7 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/secrets
             SECRET_FILE=/opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
+            APP_USER_SECRET_FILE=/opt/koalabooks/pr-${PR_NUMBER}/secrets/app_user_password
             # The volume can outlive the secrets file (e.g. dir recreated without `down -v`).
             VOLUME_EXISTS=false
             if [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=pr-${PR_NUMBER}" --filter "label=com.docker.compose.volume=postgres-data")" ]; then
@@ -82,6 +83,13 @@ jobs:
               # uid or the container can't read its own secret and crash-loops.
               sudo chown 1654:1654 "$SECRET_FILE"
               NEW_SECRET=true
+            fi
+            APP_USER_NEW_SECRET=false
+            if [ ! -f "$APP_USER_SECRET_FILE" ]; then
+              openssl rand -hex 24 > "$APP_USER_SECRET_FILE"
+              chmod 600 "$APP_USER_SECRET_FILE"
+              sudo chown 1654:1654 "$APP_USER_SECRET_FILE"
+              APP_USER_NEW_SECRET=true
             fi
             sed \
               -e "s/__PR_NUMBER__/${PR_NUMBER}/g" \
@@ -102,6 +110,18 @@ jobs:
               printf '%s\n' \
                 "SET log_statement = 'none';" \
                 "ALTER USER koalabooks WITH PASSWORD '$(cat "$SECRET_FILE")';" \
+                | docker exec -i pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks
+            fi
+            if [ "$APP_USER_NEW_SECRET" = true ] && [ "$VOLUME_EXISTS" = true ]; then
+              # Same desync scenario as above (issue #195), for the app_user role.
+              # Pre-#323 volumes have no app_user role yet; without ON_ERROR_STOP,
+              # psql reports that error and still exits 0, so it doesn't fail this
+              # deploy. Those volumes are recreated per the plan's Manual Rollout
+              # section, not fixed up here.
+              docker compose -p pr-${PR_NUMBER} up -d --wait --wait-timeout 60 postgres
+              printf '%s\n' \
+                "SET log_statement = 'none';" \
+                "ALTER USER app_user WITH PASSWORD '$(cat "$APP_USER_SECRET_FILE")';" \
                 | docker exec -i pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks
             fi
             docker compose -p pr-${PR_NUMBER} up -d
