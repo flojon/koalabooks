@@ -48,6 +48,8 @@ public static async Task<FiscalYear?> ResolveSeedAsync(
 
 Each page calls this once in `OnInitializedAsync`. For 9 of the 10 pages this is a direct drop-in with no `extraFallback`. Journal passes its existing "latest open year" fallback (`_activeFiscalYear`) as `extraFallback`, preserving its current fallback chain (last-selected → default → latest open → latest overall).
 
+**Behavior change to confirm:** Accounts, BankImport, CustomerInvoices, and SupplierInvoices (the PR #303 "open years" pages) currently have *no* final fallback — today their seed logic is just `seed ??= await FiscalYearService.GetDefaultFiscalYearAsync();`, so if no default fiscal year is set, `seed` stays null and the page renders with nothing preselected/loaded. `ResolveSeedAsync`'s unconditional `?? candidates.FirstOrDefault()` tail (needed for TrialBalance/BalanceSheet/IncomeStatement/VatReport/GeneralLedger, which already have it, and for Journal via `extraFallback`) means these 4 pages gain a new "fall back to the first candidate" behavior as a side effect of the extraction. Likely an improvement (no more blank selector when no default is set), but it's a real behavior change, not a pure drop-in — call it out in the PR description and add a test case for "no last-selected, no default fiscal year" on one of these 4 pages to confirm the new fallback fires as intended.
+
 ### 3. Per-page changes
 
 Each page keeps:
@@ -56,6 +58,8 @@ Each page keeps:
 - Its own fiscal-year list fetch (`GetOpenFiscalYearsAsync()` for the 4 open-years pages, `GetAllAsync()` for the 6 all-years pages). Accounts keeps its existing inline open-year filter since it separately needs `allYears` for its copy-accounts panel.
 
 Markup changes from the inline `<select>` block to `<FiscalYearSelector FiscalYears="..." SelectedFiscalYearId="..." SelectedFiscalYearIdChanged="OnFiscalYearChangedAsync" />`.
+
+**Width mismatch to handle:** the component's default (`Width="200px"`) only matches TrialBalance/BalanceSheet/IncomeStatement/VatReport/GeneralLedger. Accounts, BankImport, CustomerInvoices, SupplierInvoices, and Journal currently render their `<select>` at `width:220px`. Those 5 pages must pass `Width="220px"` explicitly, or the extraction silently shrinks their selector by 20px.
 
 ### 4. Testing
 
