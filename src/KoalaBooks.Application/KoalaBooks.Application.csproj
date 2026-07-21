@@ -12,7 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Hangfire.Core" Version="1.8.24" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
 
   <PropertyGroup>
