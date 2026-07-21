@@ -1,4 +1,3 @@
-using KoalaBooks.Application.Services;
 using KoalaBooks.Domain;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
@@ -50,10 +49,10 @@ public class MfaServiceTests : IDisposable
         var (userManager, mfaService) = GetServices(scope);
         var user = await CreateUserAsync(userManager, "enrol@test.com");
 
-        var enrollment = await mfaService.BeginEnrollmentAsync(user);
+        var enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
         var code = TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", ""));
 
-        var result = await mfaService.ConfirmEnrollmentAsync(user, code);
+        var result = await mfaService.ConfirmEnrollmentAsync(user.Id, code);
 
         Assert.True(result.Succeeded);
         Assert.Null(result.Error);
@@ -68,8 +67,8 @@ public class MfaServiceTests : IDisposable
         var (userManager, mfaService) = GetServices(scope);
         var user = await CreateUserAsync(userManager, "wrongcode@test.com");
 
-        await mfaService.BeginEnrollmentAsync(user);
-        var result = await mfaService.ConfirmEnrollmentAsync(user, "000000");
+        await mfaService.BeginEnrollmentAsync(user.Id);
+        var result = await mfaService.ConfirmEnrollmentAsync(user.Id, "000000");
 
         Assert.False(result.Succeeded);
         Assert.NotNull(result.Error);
@@ -82,10 +81,10 @@ public class MfaServiceTests : IDisposable
         using var scope = _sp.CreateScope();
         var (userManager, mfaService) = GetServices(scope);
         var user = await CreateUserAsync(userManager, "disable@test.com");
-        var enrollment = await mfaService.BeginEnrollmentAsync(user);
-        await mfaService.ConfirmEnrollmentAsync(user, TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", "")));
+        var enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
+        await mfaService.ConfirmEnrollmentAsync(user.Id, TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", "")));
 
-        var disabled = await mfaService.DisableAsync(user, "ValidPass123!");
+        var disabled = await mfaService.DisableAsync(user.Id, "ValidPass123!");
 
         Assert.True(disabled);
         Assert.False(await userManager.GetTwoFactorEnabledAsync(user));
@@ -97,13 +96,28 @@ public class MfaServiceTests : IDisposable
         using var scope = _sp.CreateScope();
         var (userManager, mfaService) = GetServices(scope);
         var user = await CreateUserAsync(userManager, "wrongpw@test.com");
-        var enrollment = await mfaService.BeginEnrollmentAsync(user);
-        await mfaService.ConfirmEnrollmentAsync(user, TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", "")));
+        var enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
+        await mfaService.ConfirmEnrollmentAsync(user.Id, TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", "")));
 
-        var disabled = await mfaService.DisableAsync(user, "NotThePassword1!");
+        var disabled = await mfaService.DisableAsync(user.Id, "NotThePassword1!");
 
         Assert.False(disabled);
         Assert.True(await userManager.GetTwoFactorEnabledAsync(user));
+    }
+
+    [Fact]
+    public async Task IsEnabled_ReflectsTwoFactorState_BeforeAndAfterEnrollment()
+    {
+        using var scope = _sp.CreateScope();
+        var (userManager, mfaService) = GetServices(scope);
+        var user = await CreateUserAsync(userManager, "isenabled@test.com");
+
+        Assert.False(await mfaService.IsEnabledAsync(user.Id));
+
+        var enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
+        await mfaService.ConfirmEnrollmentAsync(user.Id, TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", "")));
+
+        Assert.True(await mfaService.IsEnabledAsync(user.Id));
     }
 
     public void Dispose()

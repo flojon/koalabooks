@@ -1,4 +1,5 @@
 using System.Text;
+using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
 
@@ -14,8 +15,19 @@ public class MfaService : IMfaService
         _userManager = userManager;
     }
 
-    public async Task<MfaEnrollmentInfo> BeginEnrollmentAsync(ApplicationUser user)
+    public async Task<bool> IsEnabledAsync(string userId)
     {
+        var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"User '{userId}' was not found.");
+
+        return await _userManager.GetTwoFactorEnabledAsync(user).ConfigureAwait(false);
+    }
+
+    public async Task<MfaEnrollmentInfo> BeginEnrollmentAsync(string userId)
+    {
+        var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"User '{userId}' was not found.");
+
         await _userManager.ResetAuthenticatorKeyAsync(user).ConfigureAwait(false);
         var unformattedKey = await _userManager.GetAuthenticatorKeyAsync(user).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Authenticator key was not generated.");
@@ -27,8 +39,11 @@ public class MfaService : IMfaService
         return new MfaEnrollmentInfo(FormatKey(unformattedKey), qrCodeDataUri);
     }
 
-    public async Task<MfaConfirmResult> ConfirmEnrollmentAsync(ApplicationUser user, string code)
+    public async Task<MfaConfirmResult> ConfirmEnrollmentAsync(string userId, string code)
     {
+        var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"User '{userId}' was not found.");
+
         var normalized = code.Replace(" ", "").Replace("-", "");
         var isValid = await _userManager.VerifyTwoFactorTokenAsync(
             user, TokenOptions.DefaultAuthenticatorProvider, normalized).ConfigureAwait(false);
@@ -42,8 +57,11 @@ public class MfaService : IMfaService
         return new MfaConfirmResult(true, null, (codes ?? []).ToArray());
     }
 
-    public async Task<bool> DisableAsync(ApplicationUser user, string password)
+    public async Task<bool> DisableAsync(string userId, string password)
     {
+        var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"User '{userId}' was not found.");
+
         if (!await _userManager.CheckPasswordAsync(user, password).ConfigureAwait(false))
             return false;
 
