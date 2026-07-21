@@ -113,7 +113,7 @@ jobs:
                 | docker exec -i pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks
             fi
             if [ "$APP_USER_NEW_SECRET" = true ] && [ "$VOLUME_EXISTS" = true ]; then
-              # Same desync scenario as above (issue #195), for the app_user role.
+              # Same desync scenario as above, for the app_user role.
               # Pre-#323 volumes have no app_user role yet; without ON_ERROR_STOP,
               # psql reports that error and still exits 0, so it doesn't fail this
               # deploy. Those volumes are recreated per the plan's Manual Rollout
