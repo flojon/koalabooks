@@ -26,13 +26,7 @@ else
 {
 <UnsavedChangesGuard IsDirty="_isDirty" />
 <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
-    <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
-    <select @bind="_selectedFiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:220px;">
-        @foreach (var fy in _allFiscalYears)
-        {
-            <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
-        }
-    </select>
+    <FiscalYearSelector FiscalYears="_allFiscalYears" @bind-SelectedFiscalYearId="_selectedFiscalYearId" @bind-SelectedFiscalYearId:after="OnFiscalYearChangedAsync" Width="220px" />
     <label style="font-weight:600; color:#475569;">Period:</label>
     <select @bind="_selectedMonthStr" style="width:180px;">
         <option value="">Hela året</option>
@@ -379,12 +373,9 @@ else
             return;
         }
 
-        FiscalYear? seed = null;
-        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
-            seed = _allFiscalYears.FirstOrDefault(f => f.Id == lastId);
-        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync() ?? _activeFiscalYear ?? _allFiscalYears.First();
+        var seed = await SelectionContext.ResolveSeedAsync(FiscalYearService, _allFiscalYears, _activeFiscalYear);
 
-        _selectedFiscalYearId = seed.Id;
+        _selectedFiscalYearId = seed!.Id;
         await LoadForSelectedYearAsync();
         _isLoading = false;
     }
