@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -247,5 +248,52 @@ public class RateLimitTests
             c.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("192.168.1.2");
         });
         Assert.Equal(200, allowed.Response.StatusCode);
+    }
+}
+
+/// <summary>
+/// Verifies the login page redirects into the MFA verify step instead of
+/// completing sign-in when the user has TwoFactorEnabled set.
+/// </summary>
+public class MfaLoginRedirectTests
+{
+    [Fact]
+    public async Task Login_UserWithTwoFactorEnabled_RedirectsToVerifyPage()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                // EmailConfirmed is required alongside TwoFactorEnabled: SignInManager only sets
+                // RequiresTwoFactor when the user has at least one usable two-factor token provider,
+                // and the built-in Email provider needs a confirmed address to qualify.
+                var user = new ApplicationUser { UserName = "mfauser@test.com", Email = "mfauser@test.com", EmailConfirmed = true };
+                await userManager.CreateAsync(user, "ValidPass123!");
+                await userManager.SetTwoFactorEnabledAsync(user, true);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var token = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+
+            var form = new Dictionary<string, string>
+            {
+                ["Email"] = "mfauser@test.com",
+                ["Password"] = "ValidPass123!",
+                ["__RequestVerificationToken"] = token
+            };
+            var response = await client.PostAsync("/account/login", new FormUrlEncodedContent(form));
+
+            Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            Assert.StartsWith("/account/mfa/verify", response.Headers.Location!.OriginalString);
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
     }
 }

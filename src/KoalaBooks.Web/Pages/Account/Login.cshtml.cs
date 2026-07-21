@@ -30,6 +30,9 @@ public class LoginModel : PageModel
         if (result.Succeeded)
             return LocalRedirect(ReturnUrl ?? "/");
 
+        if (result.RequiresTwoFactor)
+            return Redirect($"/account/mfa/verify?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/")}&rememberMe={RememberMe}");
+
         ErrorMessage = result.IsLockedOut
             ? "Kontot är tillfälligt låst. Försök igen om 15 minuter."
             : "Felaktig e-postadress eller lösenord.";
