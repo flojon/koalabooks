@@ -1,0 +1,141 @@
+@* src/KoalaBooks.Components/Shared/NewJournalEntryDialog.razor *@
+@using KoalaBooks.Domain.Entities
+@using KoalaBooks.Domain.Enums
+@using KoalaBooks.Domain.Interfaces
+@using MudBlazor
+@using Microsoft.AspNetCore.Components.Forms
+
+<UnsavedChangesGuard IsDirty="_isDirty" />
+
+<MudDialog Style="max-width:640px; width:95vw;">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Ny verifikation</MudText>
+    </TitleContent>
+    <DialogContent>
+        <JournalEntryForm Accounts="Accounts"
+                          Date="_date" DateChanged="d => _date = d"
+                          Description="@_description" DescriptionChanged="d => _description = d"
+                          Lines="_lines"
+                          IsBalancedChanged="b => _isBalanced = b"
+                          DirtyChanged="MarkDirty" />
+
+        <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="files => _pendingFiles.AddRange(files)">
+            <CustomContent>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AttachFile"
+                           OnClick="@context.OpenFilePickerAsync">
+                    Bifoga fil
+                </MudButton>
+            </CustomContent>
+        </MudFileUpload>
+
+        @if (_pendingFiles.Count > 0)
+        {
+            <div style="display:flex; flex-wrap:wrap; gap:0.4rem; margin-top:0.5rem;">
+                @for (int i = 0; i < _pendingFiles.Count; i++)
+                {
+                    var idx = i;
+                    <span style="display:inline-flex; align-items:center; gap:0.35rem; background:#f1f5f9; border-radius:1rem; padding:0.15rem 0.6rem; font-size:0.8rem;">
+                        @_pendingFiles[idx].Name
+                        <button type="button" class="btn btn-sm" style="padding:0 0.25rem; line-height:1;"
+                                @onclick="() => _pendingFiles.RemoveAt(idx)">✕</button>
+                    </span>
+                }
+            </div>
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <button class="btn btn-secondary" @onclick="MudDialog.Cancel" disabled="@_saving">Avbryt</button>
+        <button class="btn btn-secondary" @onclick="SaveAsDraftAsync" disabled="@(!_isBalanced || _saving)">Spara som utkast</button>
+        <button class="btn btn-success" @onclick="SaveAndPostAsync" disabled="@(!_isBalanced || _saving)">💾 Bokför</button>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public record NewEntryResult(JournalEntry Entry, bool Posted, List<string> FailedFiles);
+
+    [Parameter, EditorRequired] public List<Account> Accounts { get; set; } = [];
+    [Parameter, EditorRequired] public int FiscalYearId { get; set; }
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Inject] private IJournalEntryService JournalEntryService { get; set; } = default!;
+    [Inject] private IDocumentService DocumentService { get; set; } = default!;
+
+    private DateTime _date = DateTime.Today;
+    private string _description = "";
+    private List<JournalEntryForm.LineModel> _lines = [new(), new()];
+    private bool _isBalanced;
+    private bool _isDirty;
+    private List<IBrowserFile> _pendingFiles = [];
+    private List<string> _failedFiles = [];
+    private string? _error;
+    private bool _saving;
+
+    private void MarkDirty() => _isDirty = true;
+
+    private async Task SaveAndPostAsync() => await SaveAsync(post: true);
+
+    private async Task SaveAsDraftAsync() => await SaveAsync(post: false);
+
+    private async Task SaveAsync(bool post)
+    {
+        if (_saving) return;
+        _error = null;
+        _saving = true;
+        try
+        {
+            var entry = new JournalEntry
+            {
+                Date = DateOnly.FromDateTime(_date),
+                Description = _description,
+                FiscalYearId = FiscalYearId,
+                Lines = _lines.Select(l => new JournalEntryLine
+                {
+                    AccountId = l.AccountId,
+                    DebitAmount = l.DebitAmount,
+                    CreditAmount = l.CreditAmount
+                }).ToList()
+            };
+
+            var (result, error) = await JournalEntryService.CreateAsync(entry);
+            if (error is not null)
+            {
+                _error = error;
+                return;
+            }
+
+            if (post)
+            {
+                // Create and post are separate calls with no wrapping transaction, matching
+                // Journal.razor's previous inline SaveEntryAsync behavior.
+                var postError = await JournalEntryService.PostAsync(result!.Id);
+                if (postError is not null)
+                {
+                    _error = postError;
+                    return;
+                }
+            }
+
+            const long maxBytes = 10 * 1024 * 1024;
+            _failedFiles = [];
+            foreach (var file in _pendingFiles)
+            {
+                var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+                var (added, _) = await DocumentService.UploadAndLinkAsync(
+                    file.Name, contentType, () => file.OpenReadStream(maxBytes),
+                    DocumentEntityType.JournalEntry, result!.Id);
+                if (added is null)
+                {
+                    _failedFiles.Add(file.Name);
+                }
+            }
+
+            MudDialog.Close(DialogResult.Ok(new NewEntryResult(result!, post, _failedFiles)));
+        }
+        finally { _saving = false; }
+    }
+}
