@@ -355,6 +355,7 @@ public class DocumentServiceTests : IDisposable
         var supplierSvc = new SupplierInvoiceService(_fx.Db, TestFixture.MakeTenant(_fx.OrganisationId));
         var fy = _fx.CreateFiscalYear();
         var (expense, payable, _, _, _) = _fx.CreateStandardAccounts(fy.Id);
+        var vat = _fx.CreateAccount(fy.Id, "2641", "Ingående moms", AccountClass.Asset);
 
         var invoice = new SupplierInvoice
         {
@@ -371,7 +372,7 @@ public class DocumentServiceTests : IDisposable
         var (doc, _) = await docSvc.UploadAsync("faktura.pdf", "application/pdf", () => new MemoryStream([1]));
         await docSvc.LinkAsync(doc!.Id, DocumentEntityType.SupplierInvoice, created!.Id);
 
-        var (posted, err) = await supplierSvc.PostAsync(created.Id, expense.Id, payable.Id, null);
+        var (posted, err) = await supplierSvc.PostAsync(created.Id, expense.Id, payable.Id, vat.Id);
         Assert.Null(err);
 
         var linked = await docSvc.GetLinkedAsync(DocumentEntityType.JournalEntry, posted!.JournalEntryId!.Value);

@@ -277,6 +277,25 @@ public class SupplierInvoicesRemainingVerbsApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Fact]
+    public async Task FromEntry_MissingRequiredField_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+
+        var body = new
+        {
+            // journalEntryId omitted
+            supplierName = "Nope",
+            invoiceDate = "2025-03-01",
+            dueDate = "2025-03-31",
+            amountExclVat = 80m,
+            vatAmount = 20m,
+            totalAmount = 100m
+        };
+        var response = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/supplier-invoices/from-entry", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     // ── post ───────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -346,6 +365,52 @@ public class SupplierInvoicesRemainingVerbsApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Post_AlreadyPosted_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+        var invoiceId = await CreateInvoiceAsync(client);
+
+        var body = new
+        {
+            expenseAccountId = _expenseAccountId,
+            payableAccountId = _payableAccountId,
+            vatAccountId = _vatAccountId
+        };
+        var first = await client.PostAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}/post", body);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var second = await client.PostAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}/post", body);
+        Assert.Equal(HttpStatusCode.BadRequest, second.StatusCode);
+    }
+
+    [Fact]
+    public async Task Post_NonZeroVatWithoutVatAccount_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+        var invoiceId = await CreateInvoiceAsync(client); // CreateInvoiceAsync gives a non-zero vatAmount
+
+        var body = new
+        {
+            expenseAccountId = _expenseAccountId,
+            payableAccountId = _payableAccountId,
+            vatAccountId = (int?)null
+        };
+        var response = await client.PostAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}/post", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Post_MissingRequiredField_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+        var invoiceId = await CreateInvoiceAsync(client);
+
+        var body = new { vatAccountId = _vatAccountId }; // expenseAccountId/payableAccountId omitted
+        var response = await client.PostAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}/post", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     // ── mark-paid ──────────────────────────────────────────────────────────────
 
     [Fact]
@@ -403,6 +468,36 @@ public class SupplierInvoicesRemainingVerbsApiTests : IAsyncLifetime
         var reloaded = await verifyDb.BankTransactions.IgnoreQueryFilters().FirstAsync(b => b.Id == bankTxId);
         Assert.Equal(BankTransactionStatus.Matched, reloaded.Status);
         Assert.NotNull(reloaded.JournalEntryId);
+    }
+
+    [Fact]
+    public async Task MarkAsPaid_AlreadyPaid_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+        var invoiceId = await CreateInvoiceAsync(client);
+
+        var body = new
+        {
+            paidDate = "2025-03-15",
+            bankAccountId = _cashAccountId,
+            payableAccountId = _payableAccountId
+        };
+        var first = await client.PostAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}/mark-paid", body);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var second = await client.PostAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}/mark-paid", body);
+        Assert.Equal(HttpStatusCode.BadRequest, second.StatusCode);
+    }
+
+    [Fact]
+    public async Task MarkAsPaid_MissingRequiredField_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+        var invoiceId = await CreateInvoiceAsync(client);
+
+        var body = new { bankAccountId = _cashAccountId, payableAccountId = _payableAccountId }; // paidDate omitted
+        var response = await client.PostAsJsonAsync($"/api/v1/supplier-invoices/{invoiceId}/mark-paid", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
