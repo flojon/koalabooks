@@ -156,8 +156,92 @@ public class SupplierInvoicesController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("fiscal-years/{fiscalYearId:int}/supplier-invoices/from-entry")]
+    [ProducesResponseType<SupplierInvoiceResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CreateFromEntry(int fiscalYearId, [FromBody] SupplierInvoiceFromEntryRequest request)
+    {
+        var fy = await _fiscalYearService.GetByIdAsync(fiscalYearId);
+        if (fy is null) return NotFound();
+
+        var invoice = new SupplierInvoice
+        {
+            FiscalYearId = fiscalYearId,
+            SupplierName = request.SupplierName,
+            InvoiceNumber = request.InvoiceNumber,
+            InvoiceDate = request.InvoiceDate!.Value,
+            DueDate = request.DueDate!.Value,
+            AmountExclVat = request.AmountExclVat,
+            VatAmount = request.VatAmount,
+            TotalAmount = request.TotalAmount!.Value,
+            Notes = request.Notes
+        };
+
+        var (created, error) = await _supplierInvoiceService.CreateFromEntryAsync(request.JournalEntryId!.Value, invoice);
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return CreatedAtAction(nameof(GetById), new { id = created!.Id }, MapInvoice(created));
+    }
+
+    [HttpPost("supplier-invoices/{id:int}/post")]
+    [ProducesResponseType<SupplierInvoiceResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Post(int id, [FromBody] PostSupplierInvoiceRequest request)
+    {
+        var (updated, error) = await _supplierInvoiceService.PostAsync(
+            id, request.ExpenseAccountId!.Value, request.PayableAccountId!.Value, request.VatAccountId);
+        if (error == SupplierInvoiceService.NotFoundMessage)
+            return NotFound();
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return Ok(MapInvoice(updated!));
+    }
+
+    [HttpPost("supplier-invoices/{id:int}/mark-paid")]
+    [ProducesResponseType<SupplierInvoiceResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> MarkAsPaid(int id, [FromBody] MarkSupplierInvoicePaidRequest request)
+    {
+        var (updated, error) = await _supplierInvoiceService.MarkAsPaidAsync(
+            id, request.PaidDate!.Value, request.BankAccountId!.Value, request.PayableAccountId!.Value,
+            request.LinkBankTransactionId);
+        if (error == SupplierInvoiceService.NotFoundMessage)
+            return NotFound();
+        if (error is not null)
+            return Problem(detail: error, statusCode: StatusCodes.Status400BadRequest);
+
+        return Ok(MapInvoice(updated!));
+    }
+
+    [HttpGet("supplier-invoices/{id:int}/find-matching-bank-tx")]
+    [ProducesResponseType<List<BankTransactionResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> FindMatchingBankTransactions(int id)
+    {
+        var invoice = await _supplierInvoiceService.GetByIdAsync(id);
+        if (invoice is null) return NotFound();
+
+        var matches = await _supplierInvoiceService.FindMatchingBankTransactionsAsync(
+            invoice.FiscalYearId, invoice.TotalAmount, invoice.InvoiceDate, invoice.DueDate);
+
+        return Ok(matches.Select(MapBankTransaction).ToList());
+    }
+
     private static SupplierInvoiceResponse MapInvoice(SupplierInvoice s) =>
         new(s.Id, s.FiscalYearId, s.SupplierName, s.InvoiceNumber, s.InvoiceDate, s.DueDate,
             s.AmountExclVat, s.VatAmount, s.TotalAmount, s.Notes, s.IsPaid, s.PaidDate,
             s.JournalEntryId, s.PaymentJournalEntryId, s.CreatedAt);
+
+    private static BankTransactionResponse MapBankTransaction(BankTransaction b) =>
+        new(b.Id, b.AccountId, b.Account?.AccountNumber ?? "", b.Date, b.Amount, b.Description,
+            b.Reference, b.Status, b.JournalEntryId);
 }
