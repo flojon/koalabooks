@@ -249,15 +249,6 @@ if (!app.Environment.IsEnvironment("Testing"))
         app.Services.GetRequiredService<IServiceScopeFactory>()));
 }
 
-app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, ICustomerInvoiceService svc) =>
-{
-    var invoice = await svc.GetByIdAsync(id);
-    if (invoice is null) return Results.NotFound();
-    var bytes = KoalaBooks.Application.Services.CustomerInvoicePdfGenerator.Generate(invoice);
-    var filename = $"Faktura-{invoice.InvoiceNumber}.pdf";
-    return Results.File(bytes, "application/pdf", filename);
-}).RequireAuthorization();
-
 // Auto-migrate and seed on startup
 using (var scope = app.Services.CreateScope())
 {
