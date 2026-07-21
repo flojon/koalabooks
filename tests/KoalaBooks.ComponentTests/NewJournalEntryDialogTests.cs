@@ -1,8 +1,10 @@
 using System.Linq;
+using System.Reflection;
 using KoalaBooks.Components.Shared;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
+using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor;
 using MudBlazor.Services;
@@ -11,10 +13,11 @@ namespace KoalaBooks.ComponentTests;
 
 // MudDialog only renders its content when hosted by a real MudDialogProvider/IDialogService
 // (see PreviewDocumentDialogTests.cs), so these tests open the dialog the same way
-// Journal.razor does. File-attachment scenarios (staging/removing/upload-failure) are not
-// covered here — bUnit cannot reliably drive a real IBrowserFile selection through
-// MudFileUpload's wrapped <InputFile> in this codebase's test setup; that's covered by
-// manual Playwright verification instead (see the plan's Global Constraints).
+// Journal.razor does. bUnit cannot reliably drive a real IBrowserFile selection through
+// MudFileUpload's wrapped <InputFile> in this codebase's test setup, so file-attachment
+// scenarios below invoke the dialog's file-handling internals directly via reflection
+// (OnFilesSelected/_pendingFiles) instead of simulating an <input type=file> pick. Manual
+// Playwright verification still covers the real browser upload path end-to-end.
 public class NewJournalEntryDialogTests : BunitContext, IAsyncLifetime
 {
     private readonly IJournalEntryService _journalEntryService = Substitute.For<IJournalEntryService>();
@@ -149,5 +152,89 @@ public class NewJournalEntryDialogTests : BunitContext, IAsyncLifetime
         var data = Assert.IsType<NewJournalEntryDialog.NewEntryResult>(result!.Data);
         Assert.False(data.Posted);
         await _journalEntryService.DidNotReceive().PostAsync(Arg.Any<int>());
+    }
+
+    [Fact]
+    public async Task ClickingBokfor_WhenPostFailsThenRetried_DoesNotRecreateTheEntry()
+    {
+        var created = new JournalEntry { Id = 58, EntryNumber = 15, Description = "x", FiscalYearId = 7 };
+        _journalEntryService.CreateAsync(Arg.Any<JournalEntry>()).Returns((created, (string?)null));
+        _journalEntryService.PostAsync(58).Returns("Kunde inte bokföra.", (string?)null);
+        var (comp, dialogReference) = await OpenDialogAsync();
+        await BalanceLinesAsync(comp);
+
+        await comp.InvokeAsync(() => FindButton(comp, "💾 Bokför").Click());
+        Assert.False(dialogReference.Result.IsCompleted);
+        Assert.Contains("Kunde inte bokföra.", comp.Markup);
+
+        await comp.InvokeAsync(() => FindButton(comp, "💾 Bokför").Click());
+
+        var result = await dialogReference.Result;
+        Assert.False(result!.Canceled);
+        await _journalEntryService.Received(1).CreateAsync(Arg.Any<JournalEntry>());
+        await _journalEntryService.Received(2).PostAsync(58);
+    }
+
+    [Fact]
+    public async Task SelectingSameFileTwice_DoesNotDuplicateInPendingList()
+    {
+        var (comp, _) = await OpenDialogAsync();
+        var file = new FakeBrowserFile("kvitto.png", 1024);
+
+        // Simulates FilesChanged firing with an overlapping/duplicate set — whether MudFileUpload
+        // re-emits the full accumulated selection or just the delta on a repeated pick.
+        await SelectFilesAsync(comp, file, file);
+        await SelectFilesAsync(comp, file);
+
+        Assert.Single(GetPendingFiles(comp));
+    }
+
+    [Fact]
+    public async Task ClickingBokfor_WithOversizedFile_SkipsUploadAndReportsAsFailed()
+    {
+        var created = new JournalEntry { Id = 57, EntryNumber = 14, Description = "x", FiscalYearId = 7 };
+        _journalEntryService.CreateAsync(Arg.Any<JournalEntry>()).Returns((created, (string?)null));
+        _journalEntryService.PostAsync(57).Returns((string?)null);
+        var (comp, dialogReference) = await OpenDialogAsync();
+        await BalanceLinesAsync(comp);
+        var tooLarge = new FakeBrowserFile("stor-fil.pdf", 11 * 1024 * 1024);
+        await SelectFilesAsync(comp, tooLarge);
+
+        await comp.InvokeAsync(() => FindButton(comp, "💾 Bokför").Click());
+
+        var result = await dialogReference.Result;
+        var data = Assert.IsType<NewJournalEntryDialog.NewEntryResult>(result!.Data);
+        Assert.Contains("stor-fil.pdf", data.FailedFiles);
+        await _documentService.DidNotReceive().UploadAndLinkAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Func<Stream>>(), Arg.Any<DocumentEntityType>(), Arg.Any<int>());
+    }
+
+    private static async Task SelectFilesAsync(IRenderedComponent<MudDialogProvider> comp, params IBrowserFile[] files)
+    {
+        var dialog = comp.FindComponent<NewJournalEntryDialog>().Instance;
+        var method = typeof(NewJournalEntryDialog).GetMethod("OnFilesSelected", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        await comp.InvokeAsync(() => method.Invoke(dialog, [(IReadOnlyList<IBrowserFile>)files]));
+    }
+
+    private static List<IBrowserFile> GetPendingFiles(IRenderedComponent<MudDialogProvider> comp)
+    {
+        var dialog = comp.FindComponent<NewJournalEntryDialog>().Instance;
+        var field = typeof(NewJournalEntryDialog).GetField("_pendingFiles", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (List<IBrowserFile>)field.GetValue(dialog)!;
+    }
+
+    private sealed class FakeBrowserFile(string name, long size) : IBrowserFile
+    {
+        public string Name { get; } = name;
+        public DateTimeOffset LastModified => DateTimeOffset.UtcNow;
+        public long Size { get; } = size;
+        public string ContentType => "application/octet-stream";
+
+        public Stream OpenReadStream(long maxAllowedSize = 512000, CancellationToken cancellationToken = default)
+        {
+            if (Size > maxAllowedSize)
+                throw new IOException("Supplied file exceeds the maximum allowed size.");
+            return new MemoryStream(new byte[Size]);
+        }
     }
 }

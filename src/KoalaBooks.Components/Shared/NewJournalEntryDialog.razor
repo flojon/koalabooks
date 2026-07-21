@@ -19,7 +19,7 @@
                           IsBalancedChanged="b => _isBalanced = b"
                           DirtyChanged="MarkDirty" />
 
-        <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="files => _pendingFiles.AddRange(files)">
+        <MudFileUpload T="IReadOnlyList<IBrowserFile>" FilesChanged="OnFilesSelected">
             <CustomContent>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AttachFile"
                            OnClick="@context.OpenFilePickerAsync">
@@ -75,7 +75,25 @@
     private string? _error;
     private bool _saving;
 
+    // Set once CreateAsync succeeds, so a retry after a later PostAsync/upload failure
+    // doesn't create a duplicate draft entry.
+    private JournalEntry? _createdEntry;
+
     private void MarkDirty() => _isDirty = true;
+
+    private void OnFilesSelected(IReadOnlyList<IBrowserFile> files)
+    {
+        // MudFileUpload's FilesChanged semantics for repeated picker invocations aren't
+        // guaranteed here (full accumulated selection vs. just the new delta) — dedupe by
+        // name+size so re-picking doesn't produce duplicate entries either way.
+        foreach (var file in files)
+        {
+            if (!_pendingFiles.Any(f => f.Name == file.Name && f.Size == file.Size))
+            {
+                _pendingFiles.Add(file);
+            }
+        }
+    }
 
     private async Task SaveAndPostAsync() => await SaveAsync(post: true);
 
@@ -88,24 +106,30 @@
         _saving = true;
         try
         {
-            var entry = new JournalEntry
+            var result = _createdEntry;
+            if (result is null)
             {
-                Date = DateOnly.FromDateTime(_date),
-                Description = _description,
-                FiscalYearId = FiscalYearId,
-                Lines = _lines.Select(l => new JournalEntryLine
+                var entry = new JournalEntry
                 {
-                    AccountId = l.AccountId,
-                    DebitAmount = l.DebitAmount,
-                    CreditAmount = l.CreditAmount
-                }).ToList()
-            };
+                    Date = DateOnly.FromDateTime(_date),
+                    Description = _description,
+                    FiscalYearId = FiscalYearId,
+                    Lines = _lines.Select(l => new JournalEntryLine
+                    {
+                        AccountId = l.AccountId,
+                        DebitAmount = l.DebitAmount,
+                        CreditAmount = l.CreditAmount
+                    }).ToList()
+                };
 
-            var (result, error) = await JournalEntryService.CreateAsync(entry);
-            if (error is not null)
-            {
-                _error = error;
-                return;
+                var (created, error) = await JournalEntryService.CreateAsync(entry);
+                if (error is not null)
+                {
+                    _error = error;
+                    return;
+                }
+                result = created;
+                _createdEntry = result;
             }
 
             if (post)
@@ -124,6 +148,11 @@
             _failedFiles = [];
             foreach (var file in _pendingFiles)
             {
+                if (file.Size > maxBytes)
+                {
+                    _failedFiles.Add(file.Name);
+                    continue;
+                }
                 var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
                 var (added, _) = await DocumentService.UploadAndLinkAsync(
                     file.Name, contentType, () => file.OpenReadStream(maxBytes),
