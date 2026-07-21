@@ -17,6 +17,8 @@ public class DocumentService(
     IBackgroundJobRunService backgroundJobRunService,
     ICurrentUser currentUser) : IDocumentService
 {
+    public const string NotFoundMessage = "Dokumentet hittades inte.";
+
     private const long MaxBytes = 10 * 1024 * 1024;
     private const long ZipMaxBytes = 500 * 1024 * 1024;
     private const int ZipMaxEntries = 500;
@@ -115,7 +117,7 @@ public class DocumentService(
     public virtual async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
     {
         var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
-        if (doc is null) return "Dokumentet hittades inte.";
+        if (doc is null) return NotFoundMessage;
         doc.ClassifiedType = classifiedType;
         doc.DocumentDate = documentDate;
         return await SaveChangesResolvingConcurrencyAsync().ConfigureAwait(false);
@@ -134,7 +136,7 @@ public class DocumentService(
         {
             var entry = ex.Entries.Single();
             var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
-            if (databaseValues is null) return "Dokumentet hittades inte.";
+            if (databaseValues is null) return NotFoundMessage;
 
             // Refresh only the concurrency token, not the whole entity — this method never
             // touches SuggestedType/ExtractionStatus, so don't let their stale tracked values overwrite the DB.
@@ -273,14 +275,14 @@ public class DocumentService(
         }
     }
 
-    public async Task LinkAsync(int documentId, DocumentEntityType entityType, int entityId)
+    public async Task<bool> LinkAsync(int documentId, DocumentEntityType entityType, int entityId)
     {
         var doc = await db.Documents
             .Include(d => d.JournalEntries)
             .Include(d => d.SupplierInvoices)
             .Include(d => d.CustomerInvoices)
             .FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
-        if (doc is null) return;
+        if (doc is null) return false;
 
         switch (entityType)
         {
@@ -301,6 +303,7 @@ public class DocumentService(
                 break;
         }
         await db.SaveChangesAsync().ConfigureAwait(false);
+        return true;
     }
 
     public async Task<(Document? Doc, string? Error)> UploadAndLinkAsync(

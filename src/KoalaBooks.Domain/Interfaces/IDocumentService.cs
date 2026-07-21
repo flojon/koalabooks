@@ -54,7 +54,7 @@ public interface IDocumentService
     Task<Dictionary<int, int>> GetCountsForJournalEntriesAsync(IEnumerable<int> entryIds);
     Task<(string ContentType, byte[] Data, string FileName)?> GetDownloadAsync(int documentId);
     Task<bool> DeleteAsync(int documentId);
-    Task LinkAsync(int documentId, DocumentEntityType entityType, int entityId);
+    Task<bool> LinkAsync(int documentId, DocumentEntityType entityType, int entityId);
     Task<(Document? Doc, string? Error)> UploadAndLinkAsync(
         string fileName, string contentType, Func<Stream> openData, DocumentEntityType entityType, int entityId);
     Task<(int? RunId, string? Error)> UploadZipAsync(string fileName, Func<Stream> openZipData);
