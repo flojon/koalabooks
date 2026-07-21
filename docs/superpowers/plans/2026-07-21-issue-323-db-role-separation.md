@@ -12,7 +12,7 @@
 
 - Role names: `koalabooks` (existing, privileged/migrator) and `app_user` (new, restricted runtime role) — exact names from issue #323.
 - `app_user` must never be superuser and must own no tables (grants only, via `ALTER DEFAULT PRIVILEGES`).
-- Existing 38 test call sites of `PostgresContainerFixture.CreateUniqueDatabase()` must keep compiling and passing unchanged — this plan is additive to that fixture, not a rewrite.
+- Existing 21 test call sites (across 15 files) of `PostgresContainerFixture.CreateUniqueDatabase()` must keep compiling and passing unchanged — this plan is additive to that fixture, not a rewrite.
 - `docker-entrypoint-initdb.d` scripts (both Compose and Aspire's `WithInitFiles`) only run against a **brand-new, empty** data volume — they will not retroactively touch prod's or any developer's or any existing PR-preview's already-initialized volume. Every task that adds one must call this out.
 - No secrets committed to git. Passwords flow only through Compose `secrets:`/`/run/secrets/*` files or Aspire secret parameters, never hardcoded in `.sql`/`.sh` files.
 
@@ -54,7 +54,11 @@ if [ -n "${APP_USER_PASSWORD_FILE:-}" ]; then
 fi
 
 if [ -z "${APP_USER_PASSWORD:-}" ]; then
-    echo "01-create-app-user.sh: APP_USER_PASSWORD(_FILE) not set, skipping app_user creation" >&2
+    # This is fatal, not a skip: docker-entrypoint.sh runs with `set -e`, so a
+    # nonzero exit here aborts the whole container startup. That's intentional -
+    # coming up without app_user would silently defeat the point of this role
+    # separation, so we fail closed instead of booting Postgres without it.
+    echo "01-create-app-user.sh: APP_USER_PASSWORD(_FILE) not set, aborting Postgres startup" >&2
     exit 1
 fi
 
@@ -282,7 +286,9 @@ secrets:
 
 - [ ] **Step 2: Check the PR-preview deploy workflow generates the new secret file**
 
-Read `.github/workflows/pr-preview.yml` and confirm where it writes `secrets/postgres_password` per-PR (per reference memory `reference_pr_preview_infra`, it's generated via `openssl rand -hex 24`). Add an equivalent step writing `secrets/app_user_password` the same way, right next to the existing one.
+Read `.github/workflows/pr-preview.yml` and confirm where it writes `secrets/postgres_password` per-PR (per reference memory `reference_pr_preview_infra`, it's generated via `openssl rand -hex 24`). Add an equivalent step writing `secrets/app_user_password` the same way, right next to the existing one, tracking its own `APP_USER_NEW_SECRET` flag (mirroring the existing `NEW_SECRET` flag but for this file).
+
+**Also update the volume/password desync-sync block** (the `if [ "$NEW_SECRET" = true ] && [ "$VOLUME_EXISTS" = true ]` block that runs `ALTER USER koalabooks WITH PASSWORD ...`). This exact mechanism — a regenerated secret file paired with a pre-existing data volume/role — is what caused the incident tracked in `project_pr_preview_volume_password_desync_incident` (issue #195), and it applies equally to `app_user`: if the `app_user_password` file is ever regenerated (e.g. secrets directory wiped) while the volume/role persists, the role's actual DB password silently diverges from the new file and the app fails to connect. Extend that block (or add a parallel one gated on `APP_USER_NEW_SECRET && VOLUME_EXISTS`) to also run `ALTER USER app_user WITH PASSWORD '$(cat "$APP_USER_SECRET_FILE")';` in the same `psql` session, guarding the whole statement with `IF EXISTS`-style handling (or just accept it errors harmlessly) for the case where `app_user` doesn't exist yet on an old pre-#323 volume — that case is already covered by the Manual Rollout section's "recreate the preview" guidance, not by this sync block.
 
 - [ ] **Step 3: Validate the compose file parses**
 
@@ -407,11 +413,11 @@ with:
 // Unpooled: AppDbContext's scoped ICurrentUser ctor dependency can't be resolved by a
 // pooled context's activator, which only has access to the root provider.
 //
-// Two roles (issue #323): "koalabooks" is the privileged/migrator role that owns the
-// schema and runs EF Core migrations plus Hangfire's own job-storage schema. "app_user"
-// is a non-superuser, no-DDL role used for every request-scoped EF Core query, so that a
-// future RLS layer (#163) has something to actually enforce against instead of being
-// bypassed by a superuser connection.
+// Two roles: "koalabooks" is the privileged/migrator role that owns the schema and runs
+// EF Core migrations plus Hangfire's own job-storage schema. "app_user" is a
+// non-superuser, no-DDL role used for every request-scoped EF Core query, so that a
+// future row-level-security layer has something to actually enforce against instead of
+// being bypassed by a superuser connection.
 var migratorConnectionString = builder.Configuration.GetConnectionString("koalabooks")!;
 var migratorPasswordFile = Environment.GetEnvironmentVariable("KOALABOOKS_DB_PASSWORD_FILE");
 if (!string.IsNullOrEmpty(migratorPasswordFile))
@@ -424,7 +430,7 @@ if (!string.IsNullOrEmpty(migratorPasswordFile))
 
 // Falls back to the migrator connection when koalabooks_app isn't configured, e.g. under
 // the "Testing" environment's WebApplicationFactory harness, which only ever sets
-// ConnectionStrings:koalabooks (see DevelopmentStartupTests.cs) and relies on EnsureCreated,
+// ConnectionStrings:koalabooks (see WebApiFactory.cs) and relies on EnsureCreated,
 // not the restricted role.
 var appConnectionString = builder.Configuration.GetConnectionString("koalabooks_app") ?? migratorConnectionString;
 var appPasswordFile = Environment.GetEnvironmentVariable("KOALABOOKS_APP_DB_PASSWORD_FILE");
@@ -528,8 +534,8 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
 {
     public AppDbContext CreateDbContext(string[] args)
     {
-        // dotnet ef tooling always runs as the privileged/migrator role (issue #323) -
-        // it needs DDL rights the runtime app_user role intentionally doesn't have.
+        // dotnet ef tooling always runs as the privileged/migrator role - it needs DDL
+        // rights the runtime app_user role intentionally doesn't have.
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         optionsBuilder.UseNpgsql("Host=localhost;Database=KoalaBooks;Username=postgres;Password=postgres");
         return new AppDbContext(optionsBuilder.Options, new LocalCurrentUser());
@@ -739,8 +745,9 @@ internal static class PostgresContainerFixture
 
     /// <summary>
     /// Non-superuser connection to a database created via CreateUniqueDatabase(), distinct
-    /// from the superuser connection used for schema setup. Lets RLS tests (#163) verify
-    /// enforcement actually happens instead of being silently bypassed by a superuser session.
+    /// from the superuser connection used for schema setup. Lets row-level-security tests
+    /// verify enforcement actually happens instead of being silently bypassed by a superuser
+    /// session.
     /// </summary>
     public static string CreateAppUserConnectionString(string dbName)
     {
@@ -773,7 +780,7 @@ Expected: both tests PASS.
 - [ ] **Step 5: Run the full test suite to confirm no regressions**
 
 Run: `dotnet test tests/KoalaBooks.Tests`
-Expected: all tests pass (the 38 existing `CreateUniqueDatabase()` call sites are unaffected since that method's signature and superuser behavior didn't change).
+Expected: all tests pass (the 21 existing `CreateUniqueDatabase()` call sites are unaffected since that method's signature and superuser behavior didn't change).
 
 - [ ] **Step 6: Commit**
 
