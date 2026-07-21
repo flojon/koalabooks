@@ -61,6 +61,43 @@ public class BackgroundJobRunServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetByIdAsync_ReturnsMatchingRun()
+    {
+        var svc = _fx.MakeBackgroundJobRunService();
+        var run = await svc.CreateRunAsync(BackgroundJobType.SieImport, totalCount: 5);
+
+        var found = await svc.GetByIdAsync(run.Id);
+
+        Assert.NotNull(found);
+        Assert.Equal(run.Id, found!.Id);
+        Assert.Equal(BackgroundJobType.SieImport, found.JobType);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_UnknownRunId_ReturnsNull()
+    {
+        var svc = _fx.MakeBackgroundJobRunService();
+        var found = await svc.GetByIdAsync(999_999);
+        Assert.Null(found);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_AnotherOrganisationsRunId_ReturnsNull()
+    {
+        var svc = _fx.MakeBackgroundJobRunService();
+        var run = await svc.CreateRunAsync(BackgroundJobType.SieImport);
+
+        var otherOrg = new Organisation { Name = "Other Org", Slug = "other-org" };
+        _fx.Db.Organisations.Add(otherOrg);
+        await _fx.Db.SaveChangesAsync();
+        _fx.SetActiveTenant(otherOrg.Id);
+
+        var found = await svc.GetByIdAsync(run.Id);
+
+        Assert.Null(found);
+    }
+
+    [Fact]
     public async Task AcknowledgeAsync_UnknownRunId_NoOpsWithoutThrowing()
     {
         var svc = _fx.MakeBackgroundJobRunService();

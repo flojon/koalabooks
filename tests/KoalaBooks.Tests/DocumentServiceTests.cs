@@ -86,14 +86,59 @@ public class DocumentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LinkAsync_RejectsCrossTenantEntity()
+    {
+        var svc = _fx.MakeDocumentService();
+        var (doc, _) = await svc.UploadAsync("a.pdf", "application/pdf", () => new MemoryStream([1]));
+
+        int entryOtherId;
+        await using (var otherDb = new AppDbContext(_fx.Options, TestFixture.MakeTenant(0)))
+        {
+            var otherOrg = new Organisation { Name = "Other Org", Slug = "other-org" };
+            otherDb.Organisations.Add(otherOrg);
+            await otherDb.SaveChangesAsync();
+
+            await using var otherTenantDb = new AppDbContext(_fx.Options, TestFixture.MakeTenant(otherOrg.Id));
+            var otherJeSvc = new JournalEntryService(otherTenantDb, TestFixture.MakeTenant(otherOrg.Id));
+            var fyOther = new FiscalYear { Name = "Other FY", StartDate = new DateOnly(2026, 1, 1), EndDate = new DateOnly(2026, 12, 31), OrganisationId = otherOrg.Id };
+            otherTenantDb.FiscalYears.Add(fyOther);
+            await otherTenantDb.SaveChangesAsync();
+            var debitO = new Account { AccountNumber = "1910", Name = "Kassa", AccountClass = AccountClass.Asset, FiscalYearId = fyOther.Id };
+            var creditO = new Account { AccountNumber = "2440", Name = "Leverantörsskulder", AccountClass = AccountClass.Liability, FiscalYearId = fyOther.Id };
+            otherTenantDb.Accounts.AddRange(debitO, creditO);
+            await otherTenantDb.SaveChangesAsync();
+
+            var entry = new JournalEntry
+            {
+                Date = new DateOnly(2026, 6, 15),
+                Description = "other org entry",
+                FiscalYearId = fyOther.Id,
+                Lines = [
+                    new() { AccountId = debitO.Id, DebitAmount = 50m, CreditAmount = 0 },
+                    new() { AccountId = creditO.Id, DebitAmount = 0, CreditAmount = 50m }
+                ]
+            };
+            var (created, error) = await otherJeSvc.CreateAsync(entry);
+            Assert.Null(error);
+            entryOtherId = created!.Id;
+        }
+
+        // svc's underlying context has never seen entryOtherId, so this exercises the real
+        // database-level query filter, not a change-tracker shortcut.
+        var outcome = await svc.LinkAsync(doc!.Id, DocumentEntityType.JournalEntry, entryOtherId);
+        Assert.Equal(LinkOutcome.EntityNotFound, outcome);
+    }
+
+    [Fact]
     public async Task UpdateMetadataAsync_SetsTypeAndDate()
     {
         var svc = _fx.MakeDocumentService();
         var (doc, _) = await svc.UploadAsync("unknown.pdf", "application/pdf", () => new MemoryStream());
         var date = new DateOnly(2026, 3, 15);
 
-        var err = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
+        var (found, err) = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
 
+        Assert.True(found);
         Assert.Null(err);
         var pending = await svc.GetPendingAsync();
         var updated = pending.First(d => d.Id == doc.Id);
@@ -119,8 +164,9 @@ public class DocumentServiceTests : IDisposable
         }
 
         var date = new DateOnly(2026, 3, 15);
-        var err = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
+        var (found, err) = await svc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", date);
 
+        Assert.True(found);
         Assert.Null(err);
 
         // Verify through a fresh DbContext — _fx.Db still has the stale tracked instance.
@@ -185,8 +231,9 @@ public class DocumentServiceTests : IDisposable
             collidingDb, new DbDocumentStorage(collidingDb), new NoOpDocumentExtractionQueue(),
             new NoOpZipImportQueue(), new BackgroundJobRunService(collidingDb, options, collidingTenant), collidingTenant);
 
-        var err = await collidingSvc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", new DateOnly(2026, 3, 15));
+        var (found, err) = await collidingSvc.UpdateMetadataAsync(doc!.Id, "CustomerInvoice", new DateOnly(2026, 3, 15));
 
+        Assert.True(found);
         Assert.Equal("Kunde inte spara just nu. Försök igen.", err);
     }
 

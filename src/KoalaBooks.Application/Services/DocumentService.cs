@@ -17,6 +17,8 @@ public class DocumentService(
     IBackgroundJobRunService backgroundJobRunService,
     ICurrentUser currentUser) : IDocumentService
 {
+    private const string NotFoundMessage = "Dokumentet hittades inte.";
+
     private const long MaxBytes = 10 * 1024 * 1024;
     private const long ZipMaxBytes = 500 * 1024 * 1024;
     private const int ZipMaxEntries = 500;
@@ -112,10 +114,10 @@ public class DocumentService(
         return (doc, null);
     }
 
-    public virtual async Task<string?> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
+    public virtual async Task<(bool Found, string? Error)> UpdateMetadataAsync(int documentId, string? classifiedType, DateOnly? documentDate)
     {
         var doc = await db.Documents.FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
-        if (doc is null) return "Dokumentet hittades inte.";
+        if (doc is null) return (false, NotFoundMessage);
         doc.ClassifiedType = classifiedType;
         doc.DocumentDate = documentDate;
         return await SaveChangesResolvingConcurrencyAsync().ConfigureAwait(false);
@@ -123,18 +125,21 @@ public class DocumentService(
 
     // Scoped AppDbContext lives for the whole Blazor circuit, so a Document tracked earlier
     // (e.g. by UploadAsync) can go stale once the background extraction job updates it.
-    private async Task<string?> SaveChangesResolvingConcurrencyAsync()
+    // Found is false only when the row disappeared entirely (not merely stale) — callers
+    // that need to distinguish "not found" from "found but failed to save" should check it
+    // instead of pattern-matching Error's text.
+    private async Task<(bool Found, string? Error)> SaveChangesResolvingConcurrencyAsync()
     {
         try
         {
             await db.SaveChangesAsync().ConfigureAwait(false);
-            return null;
+            return (true, null);
         }
         catch (DbUpdateConcurrencyException ex)
         {
             var entry = ex.Entries.Single();
             var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
-            if (databaseValues is null) return "Dokumentet hittades inte.";
+            if (databaseValues is null) return (false, NotFoundMessage);
 
             // Refresh only the concurrency token, not the whole entity — this method never
             // touches SuggestedType/ExtractionStatus, so don't let their stale tracked values overwrite the DB.
@@ -143,13 +148,13 @@ public class DocumentService(
             try
             {
                 await db.SaveChangesAsync().ConfigureAwait(false);
-                return null;
+                return (true, null);
             }
             catch (DbUpdateConcurrencyException)
             {
                 // A second collision on the same save is rare enough not to warrant looping —
                 // surface it and let the user retry instead of crashing the circuit.
-                return "Kunde inte spara just nu. Försök igen.";
+                return (true, "Kunde inte spara just nu. Försök igen.");
             }
         }
     }
@@ -273,34 +278,78 @@ public class DocumentService(
         }
     }
 
-    public async Task LinkAsync(int documentId, DocumentEntityType entityType, int entityId)
+    // Resolves the document and the target entity in one pass so callers (the REST
+    // controller) don't need a separate existence pre-check — that would both cost an
+    // extra query and leave a TOCTOU gap between the check and this method's own lookup.
+    public async Task<LinkOutcome> LinkAsync(int documentId, DocumentEntityType entityType, int entityId)
     {
         var doc = await db.Documents
             .Include(d => d.JournalEntries)
             .Include(d => d.SupplierInvoices)
             .Include(d => d.CustomerInvoices)
             .FirstOrDefaultAsync(d => d.Id == documentId).ConfigureAwait(false);
-        if (doc is null) return;
+        if (doc is null) return LinkOutcome.DocumentNotFound;
 
+        bool entityFound;
         switch (entityType)
         {
             case DocumentEntityType.JournalEntry:
                 var entry = await db.JournalEntries.FindAsync(entityId).ConfigureAwait(false);
-                if (entry is not null && !doc.JournalEntries.Any(j => j.Id == entityId))
-                    doc.JournalEntries.Add(entry);
+                entityFound = entry is not null;
+                if (entityFound && !doc.JournalEntries.Any(j => j.Id == entityId))
+                    doc.JournalEntries.Add(entry!);
                 break;
             case DocumentEntityType.SupplierInvoice:
                 var inv = await db.SupplierInvoices.FindAsync(entityId).ConfigureAwait(false);
-                if (inv is not null && !doc.SupplierInvoices.Any(s => s.Id == entityId))
-                    doc.SupplierInvoices.Add(inv);
+                entityFound = inv is not null;
+                if (entityFound && !doc.SupplierInvoices.Any(s => s.Id == entityId))
+                    doc.SupplierInvoices.Add(inv!);
                 break;
             case DocumentEntityType.CustomerInvoice:
                 var cinv = await db.CustomerInvoices.FindAsync(entityId).ConfigureAwait(false);
-                if (cinv is not null && !doc.CustomerInvoices.Any(c => c.Id == entityId))
-                    doc.CustomerInvoices.Add(cinv);
+                entityFound = cinv is not null;
+                if (entityFound && !doc.CustomerInvoices.Any(c => c.Id == entityId))
+                    doc.CustomerInvoices.Add(cinv!);
+                break;
+            default:
+                entityFound = false;
                 break;
         }
-        await db.SaveChangesAsync().ConfigureAwait(false);
+        if (!entityFound) return LinkOutcome.EntityNotFound;
+
+        var saved = await SaveChangesRetryingConcurrencyAsync().ConfigureAwait(false);
+        return saved ? LinkOutcome.Linked : LinkOutcome.ConcurrencyConflict;
+    }
+
+    // Same staleness risk as SaveChangesResolvingConcurrencyAsync, but a Link save can
+    // have multiple stale entries at once (the Document and/or the newly-fetched target
+    // entity), so this refreshes every conflicting entry's xmin rather than assuming one.
+    private async Task<bool> SaveChangesRetryingConcurrencyAsync()
+    {
+        try
+        {
+            await db.SaveChangesAsync().ConfigureAwait(false);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            foreach (var entry in ex.Entries)
+            {
+                var databaseValues = await entry.GetDatabaseValuesAsync().ConfigureAwait(false);
+                if (databaseValues is null) continue;
+                entry.Property("xmin").OriginalValue = databaseValues["xmin"];
+            }
+
+            try
+            {
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                return true;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return false;
+            }
+        }
     }
 
     public async Task<(Document? Doc, string? Error)> UploadAndLinkAsync(

@@ -145,7 +145,7 @@
     {
         var type = string.IsNullOrEmpty(_type) ? null : _type;
         var date = DateOnly.FromDateTime(_documentDate);
-        var err = await DocumentService.UpdateMetadataAsync(Doc.Id, type, date);
+        var (_, err) = await DocumentService.UpdateMetadataAsync(Doc.Id, type, date);
         if (err is not null) { _error = err; return false; }
         Doc.ClassifiedType = type;
         Doc.DocumentDate = date;
