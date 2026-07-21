@@ -4,7 +4,7 @@ using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using QuestDocument = QuestPDF.Fluent.Document;
 
-namespace KoalaBooks.Web.Services;
+namespace KoalaBooks.Application.Services;
 
 public static class CustomerInvoicePdfGenerator
 {

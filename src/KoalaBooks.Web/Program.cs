@@ -253,7 +253,7 @@ app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, ICustomerInvoiceSer
 {
     var invoice = await svc.GetByIdAsync(id);
     if (invoice is null) return Results.NotFound();
-    var bytes = KoalaBooks.Web.Services.CustomerInvoicePdfGenerator.Generate(invoice);
+    var bytes = KoalaBooks.Application.Services.CustomerInvoicePdfGenerator.Generate(invoice);
     var filename = $"Faktura-{invoice.InvoiceNumber}.pdf";
     return Results.File(bytes, "application/pdf", filename);
 }).RequireAuthorization();
