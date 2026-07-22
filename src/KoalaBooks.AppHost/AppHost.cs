@@ -24,6 +24,8 @@ builder.AddProject<Projects.KoalaBooks_Web>("koalabooks-web")
         ctx.EnvironmentVariables["ConnectionStrings__koalabooks_app"] = ReferenceExpression.Create(
             $"Host={endpoint.Property(EndpointProperty.Host)};Port={endpoint.Property(EndpointProperty.Port)};Database=koalabooks;Username=app_user;Password={appUserPassword.Resource}");
     })
+    // Matches DemoDataSeeder.DemoUserEmail, so a fresh `aspire start` gets a working Admin login.
+    .WithEnvironment("AdminSeed__Email", "admin@koalabooks.local")
     .WaitFor(postgres);
 
 builder.Build().Run();
