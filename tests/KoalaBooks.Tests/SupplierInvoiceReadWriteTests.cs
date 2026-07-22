@@ -1,4 +1,5 @@
 using KoalaBooks.Domain.Entities;
+using KoalaBooks.Domain.Enums;
 
 namespace KoalaBooks.Tests;
 
@@ -77,7 +78,8 @@ public class SupplierInvoiceReadWriteTests : IDisposable
     {
         var (created, _) = await _f.SupplierInvoiceService.CreateAsync(MakeInvoice());
         var (_, liability, _, _, expense) = _f.CreateStandardAccounts(_fy.Id);
-        var (posted, postError) = await _f.SupplierInvoiceService.PostAsync(created!.Id, expense.Id, liability.Id, null);
+        var vat = _f.CreateAccount(_fy.Id, "2641", "Ingående moms", AccountClass.Asset);
+        var (posted, postError) = await _f.SupplierInvoiceService.PostAsync(created!.Id, expense.Id, liability.Id, vat.Id);
         Assert.Null(postError);
         Assert.NotNull(posted);
 

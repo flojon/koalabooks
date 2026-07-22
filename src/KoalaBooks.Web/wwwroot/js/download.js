@@ -1,5 +1,9 @@
 window.koala = {
-    focusId: (id) => document.getElementById(id)?.focus()
+    // Deferred to the next animation frame: under WebAssembly render mode, the .NET call
+    // and the browser's own native Tab-focus-move default action race on the same task, and
+    // the native action wins, silently overwriting this focus. Waiting a frame lets any
+    // pending native default action settle first.
+    focusId: (id) => requestAnimationFrame(() => document.getElementById(id)?.focus())
 };
 
 // Revokes a blob URL once we're reasonably sure it's no longer needed: either

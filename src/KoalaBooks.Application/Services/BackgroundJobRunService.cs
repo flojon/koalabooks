@@ -39,6 +39,17 @@ public class BackgroundJobRunService(
             .ToListAsync().ConfigureAwait(false);
     }
 
+    // Callers polling a single run by id (e.g. a REST status-poll endpoint hit repeatedly
+    // over independent requests) have the same staleness concern as GetOpenRunsAsync — a
+    // fresh AppDbContext instead of the ambient ctor-injected one.
+    public async Task<BackgroundJobRun?> GetByIdAsync(int runId)
+    {
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+        await using var freshDb = new AppDbContext(dbOptions, currentUser);
+#pragma warning restore CA2007
+        return await freshDb.BackgroundJobRuns.FirstOrDefaultAsync(r => r.Id == runId).ConfigureAwait(false);
+    }
+
     public async Task AcknowledgeAsync(int runId)
     {
 #pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
