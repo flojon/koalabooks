@@ -116,7 +116,7 @@ public class TenantIsolationTests : IDisposable
         IJournalEntryService service = new JournalEntryService(dbB, TestFixture.MakeTenant(_orgBId));
         var results = await service.GetByFiscalYearAsync(fyA.Id);
 
-        Assert.Empty(results);
+        Assert.Empty(results.Items);
     }
 
     [Fact]
