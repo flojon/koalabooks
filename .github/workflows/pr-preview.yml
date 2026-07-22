@@ -107,9 +107,11 @@ jobs:
               /opt/koalabooks/docker-compose.pr-preview.yml \
               > /opt/koalabooks/pr-${PR_NUMBER}/docker-compose.yml
             # docker-compose.yml mounts ./db-init relative to the per-PR directory,
-            # so the shared template copied above needs to land there too.
-            mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/db-init
-            cp -f /opt/koalabooks/db-init/* /opt/koalabooks/pr-${PR_NUMBER}/db-init/
+            # so the shared template copied above needs to land there too. A prior
+            # compose run may have auto-created this as a root-owned bind-mount
+            # point, so use sudo rather than assume the deploy user can write to it.
+            sudo mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/db-init
+            sudo cp -f /opt/koalabooks/db-init/* /opt/koalabooks/pr-${PR_NUMBER}/db-init/
             printf 'pr-%s.books.koalasoft.se {\n    reverse_proxy pr-%s-web-1:8080\n}\n' \
               "${PR_NUMBER}" "${PR_NUMBER}" \
               > /opt/koalabooks/caddy-snippets/pr-${PR_NUMBER}.caddy
