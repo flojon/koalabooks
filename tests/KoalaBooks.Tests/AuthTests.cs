@@ -297,3 +297,62 @@ public class MfaLoginRedirectTests
         }
     }
 }
+
+/// <summary>
+/// End-to-end regression test: enrol MFA, log in with password, redirect to
+/// the verify page, submit a valid TOTP code, and land signed in at ReturnUrl.
+/// </summary>
+public class MfaFullLoginFlowTests
+{
+    [Fact]
+    public async Task Login_WithValidTotpCode_CompletesSignIn()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            MfaEnrollmentInfo enrollment;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                var mfaService = scope.ServiceProvider.GetRequiredService<IMfaService>();
+                var user = new ApplicationUser { UserName = "fulle2e@test.com", Email = "fulle2e@test.com", EmailConfirmed = true };
+                await userManager.CreateAsync(user, "ValidPass123!");
+                enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
+                var firstCode = TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", ""));
+                await mfaService.ConfirmEnrollmentAsync(user.Id, firstCode);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var loginToken = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+            var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["Email"] = "fulle2e@test.com",
+                ["Password"] = "ValidPass123!",
+                ["__RequestVerificationToken"] = loginToken
+            }));
+            Assert.StartsWith("/account/mfa/verify", loginResponse.Headers.Location!.OriginalString);
+
+            var verifyPage = await client.GetAsync(loginResponse.Headers.Location);
+            var verifyToken = OidcTestHelpers.ExtractAntiforgeryToken(await verifyPage.Content.ReadAsStringAsync());
+            var verifyCode = TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", ""));
+            var verifyResponse = await client.PostAsync(loginResponse.Headers.Location, new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["Code"] = verifyCode,
+                ["ReturnUrl"] = "/",
+                ["RememberMe"] = "false",
+                ["UseRecoveryCode"] = "false",
+                ["__RequestVerificationToken"] = verifyToken
+            }));
+
+            Assert.Equal(HttpStatusCode.Redirect, verifyResponse.StatusCode);
+            Assert.Equal("/", verifyResponse.Headers.Location!.OriginalString);
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
+    }
+}
