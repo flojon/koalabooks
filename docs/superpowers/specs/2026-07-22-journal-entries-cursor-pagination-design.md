@@ -86,22 +86,27 @@ public class PagedResult<T>
 ```csharp
 Task<PagedResult<JournalEntry>> GetByFiscalYearAsync(
     int fiscalYearId, DateOnly? from = null, DateOnly? to = null,
+    string? search = null,
     JournalEntrySortBy sortBy = JournalEntrySortBy.EntryNumber,
     int page = 1, int pageSize = 50);
 ```
 
-A new extension method, `IJournalEntryServiceExtensions.GetAllByFiscalYearAsync`,
-loops `GetByFiscalYearAsync` (page size 200, default `EntryNumber` sort) until
-the accumulated item count reaches `TotalCount`, returning a flat
-`List<JournalEntry>` for callers that genuinely want the whole set rather
-than a page of it.
+`search`, when provided, filters to entries whose `EntryNumber` exactly
+matches (if `search` parses as an integer) or whose `Description` contains
+it (case-insensitive). This exists so every caller — including a picker
+that previously wanted "the whole fiscal year" — can stay page-bounded by
+searching instead of materializing the full set. There is deliberately no
+"get everything" escape hatch (no `IJournalEntryServiceExtensions`,
+no loop-until-`TotalCount` helper): every caller of `GetByFiscalYearAsync`,
+across both the InteractiveServer and WASM/InteractiveAuto render paths,
+is expected to work against a single bounded page.
 
 ### Application (`JournalEntryService`)
 
 ```csharp
 public async Task<PagedResult<JournalEntry>> GetByFiscalYearAsync(
     int fiscalYearId, DateOnly? from, DateOnly? to,
-    JournalEntrySortBy sortBy, int page, int pageSize)
+    string? search, JournalEntrySortBy sortBy, int page, int pageSize)
 {
     var query = _db.JournalEntries
         .Include(j => j.Lines).ThenInclude(l => l.Account)
@@ -109,6 +114,14 @@ public async Task<PagedResult<JournalEntry>> GetByFiscalYearAsync(
 
     if (from.HasValue) query = query.Where(j => j.Date >= from.Value);
     if (to.HasValue) query = query.Where(j => j.Date <= to.Value);
+
+    if (!string.IsNullOrWhiteSpace(search))
+    {
+        var s = search.Trim();
+        query = int.TryParse(s, out var entryNumber)
+            ? query.Where(j => j.EntryNumber == entryNumber || EF.Functions.ILike(j.Description, $"%{s}%"))
+            : query.Where(j => EF.Functions.ILike(j.Description, $"%{s}%"));
+    }
 
     query = sortBy switch
     {
@@ -133,14 +146,17 @@ of the fiscal year's entries.
 
 `Web/Models/Api/PagedResult<T>` (Items/Page/PageSize/TotalCount) already
 exists and matches the Domain type's shape — the wire format is unchanged.
-`JournalEntriesController.GetByFiscalYear` gains one new query parameter:
+`JournalEntriesController.GetByFiscalYear` gains two new query parameters:
 
 ```
 GET /api/v1/fiscal-years/{fiscalYearId}/journal-entries
-    ?from=&to=&sortBy=entryNumber|date&page=&pageSize=
+    ?from=&to=&search=&sortBy=entryNumber|date&page=&pageSize=
 ```
 
 - `sortBy` defaults to `entryNumber`; unrecognized values → `400 Bad Request`.
+- `search` is optional and passed through as-is to
+  `GetByFiscalYearAsync` (entry-number exact match or description
+  substring, per above).
 - `pageSize` stays server-clamped to 1–200 (unchanged), independent of the
   UI's 25/50/100 selector — external API consumers aren't restricted to
   those three values.
@@ -163,35 +179,33 @@ GET /api/v1/fiscal-years/{fiscalYearId}/journal-entries
 
 ### `ClassifyDocumentDialog.razor`
 
-No UX change — it's a full-list picker (autocomplete for linking a document
-to a journal entry), not a paginated grid. It switches to the new
-`GetAllByFiscalYearAsync` extension helper to keep loading the complete set
-of linkable entries for the fiscal year.
+UX change: the linkable-entry picker is currently a plain `<select>`
+(`ClassifyDocumentDialog.razor:187-193`) populated from
+`_linkableEntries`, a full-fiscal-year load (`:290`). It becomes a
+`MudAutocomplete<JournalEntry>` with a debounced `SearchFunc`
+(`MinCharacters="0"` so it's browsable before typing, `DebounceInterval`
+per Mud defaults) that calls
+`GetByFiscalYearAsync(_fiscalYear.Id, search: text, page: 1, pageSize: 20)`
+on each keystroke and renders the returned page as the option list. There
+is no local `_linkableEntries` list anymore, no "load everything up
+front," and no loading spinner gating the whole dialog — each keystroke's
+request is its own bounded page. `ToStringFunc` renders
+`#{EntryNumber} {Date:yyyy-MM-dd} — {Description}`, matching the current
+option text.
 
 ### WASM client (`JournalEntryApiService`)
 
 Updated to match the new `IJournalEntryService.GetByFiscalYearAsync`
-signature: passes `from/to/sortBy/page/pageSize` through as query params
-against the REST endpoint, and parses the (unchanged-shape)
-`PagedResult<JournalEntryResponse>` response into the Domain `PagedResult<JournalEntry>`.
-
-Today `JournalEntryApiService.GetByFiscalYearAsync` hardcodes
-`pageSize=200` and returns `.Items` as if it were the complete set — this
-is currently dead code (`Journal.razor` and `ClassifyDocumentDialog.razor`'s
-host, `Inbox.razor`, both run `InteractiveServer` with no `@rendermode`, so
-`IJournalEntryService` resolves to the Domain-layer service, not this WASM
-client), but it's a latent trap: if either page ever gains
-`@rendermode InteractiveAuto` (as `Review.razor` already has, and the
-broader WASM migration intends), a fiscal year with more than 200 entries
-would silently lose entries with no error. `IJournalEntryServiceExtensions`
-must therefore be usable from the WASM client too — either by referencing
-the same extension against `IJournalEntryService` (if the Client project can
-take a dependency on the Domain interface package, which it already does
-for other Domain types), or by adding an equivalent
-`GetAllByFiscalYearAsync` loop directly on `JournalEntryApiService`. Either
-way, `ClassifyDocumentDialog.razor`'s full-list load must resolve to a
-loop-to-completion call under both render modes, not a single
-`pageSize=200` page.
+signature: passes `from/to/search/sortBy/page/pageSize` through as query
+params against the REST endpoint, and parses the (unchanged-shape)
+`PagedResult<JournalEntryResponse>` response into the Domain
+`PagedResult<JournalEntry>`. Since no caller anywhere (Domain, Web, or
+Client) needs "the whole fiscal year" anymore, this becomes a direct,
+unremarkable 1:1 mapping of the paged endpoint — the previous
+`pageSize=200`-as-stand-in-for-everything hack
+(`JournalEntryApiService.cs:13-19` today) is deleted outright rather than
+patched, closing the InteractiveAuto truncation risk by removing the
+pattern instead of chasing it into a second layer.
 
 ## Out of scope
 
@@ -213,6 +227,10 @@ the #122 program convention:
 - A `from`/`to` range (simulating the month filter) returns the correct
   slice with correct `TotalCount`, and paging through multiple pages under
   a filter produces no duplicate or missing entries.
+- `search` matching an exact `EntryNumber` returns that entry; `search`
+  matching a `Description` substring (case-insensitive) returns the
+  matching entries; a `search` matching neither returns an empty page
+  with `TotalCount: 0`, not an error.
 - `page`/`pageSize` clamping behaves as before (`pageSize` 1–200, `page`
   minimum 1).
 - Unit/service-level test (or an EF query assertion) confirming the query
