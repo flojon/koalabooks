@@ -10,9 +10,7 @@ using System.Text.Json;
 
 namespace KoalaBooks.Tests;
 
-// Covers the OrganisationsController endpoints added for issue #122 (Organisation profile stream):
-// GET current organisation and PUT update. Kept in its own file per the program plan's guidance
-// (each new controller gets its own test file).
+// Covers the OrganisationsController endpoints: GET current organisation and PUT update.
 public class OrganisationApiTests : IAsyncLifetime
 {
     private WebApiFactory _factory = null!;
