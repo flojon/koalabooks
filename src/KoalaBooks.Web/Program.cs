@@ -6,7 +6,6 @@ using Hangfire.PostgreSql;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
-using KoalaBooks.Web.Components;
 using KoalaBooks.Web.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
@@ -14,8 +13,6 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using MudBlazor;
-using MudBlazor.Services;
 using Npgsql;
 using OpenIddict.Abstractions;
 using QuestPDF.Infrastructure;
@@ -204,23 +201,10 @@ builder.Services.AddScoped<IBackgroundJobRunService, BackgroundJobRunService>();
 builder.Services.AddScoped<IDocumentProvider, WebDocumentProvider>();
 builder.Services.AddSingleton<IVatReportCsvExporter, VatReportCsvExporter>();
 
-builder.Services.AddMudServices(config =>
-{
-    config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight;
-    config.SnackbarConfiguration.MaxDisplayedSnackbars = 3;
-    config.SnackbarConfiguration.VisibleStateDuration = 3000;
-    config.SnackbarConfiguration.HideTransitionDuration = 300;
-    config.SnackbarConfiguration.ShowTransitionDuration = 300;
-});
-
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.Services.AddRazorPages();
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents()
-    .AddInteractiveWebAssemblyComponents()
-    .AddAuthenticationStateSerialization(options => options.SerializeAllClaims = true);
 
 builder.Services.AddAuthorization();
 
@@ -351,14 +335,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
-app.MapStaticAssets();
 app.MapRazorPages();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode()
-    .AddInteractiveWebAssemblyRenderMode()
-    .AddAdditionalAssemblies(
-        typeof(KoalaBooks.Components.Pages.Home).Assembly,
-        typeof(KoalaBooks.Client._Imports).Assembly);
 
 app.MapOpenApi();
 if (app.Environment.IsDevelopment())
