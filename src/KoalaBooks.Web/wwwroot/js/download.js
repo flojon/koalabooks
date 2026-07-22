@@ -44,7 +44,15 @@ window.koala.downloadFileFromStream = async function (streamRef, fileName, conte
 
     if (openInNewTab) {
         if (newWindow) {
-            newWindow.location.href = url;
+            // Embed via an iframe instead of navigating the window to the blob
+            // URL: navigating replaces the document (and the title we just set)
+            // with the browser's native PDF viewer, which has no title of its
+            // own since blob URLs carry no filename.
+            newWindow.document.body.style.margin = '0';
+            const iframe = newWindow.document.createElement('iframe');
+            iframe.src = url;
+            iframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none';
+            newWindow.document.body.appendChild(iframe);
         } else {
             // Popup was blocked; fall back to opening after the fact.
             window.open(url, '_blank');
