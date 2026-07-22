@@ -1,5 +1,4 @@
 using KoalaBooks.Domain;
-using KoalaBooks.Domain.Auth;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
