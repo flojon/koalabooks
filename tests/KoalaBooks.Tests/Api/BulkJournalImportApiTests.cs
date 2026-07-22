@@ -176,11 +176,71 @@ public class BulkJournalImportApiTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
+        // The failure body must surface which entry broke the batch (index 1, the unbalanced
+        // one) — a caller building a bulk-import UI has no other way to point the user at the
+        // offending row. Regression test for a bug where this reached the client as a bare
+        // ProblemDetails with the index silently discarded.
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(json.GetProperty("success").GetBoolean());
+        Assert.Equal(1, json.GetProperty("failedEntryIndex").GetInt32());
+        Assert.False(string.IsNullOrEmpty(json.GetProperty("error").GetString()));
+        Assert.Equal(0, json.GetProperty("createdEntryIds").GetArrayLength());
+
         // Neither the valid entry before the bad one, nor the valid entry after it, should
         // have been persisted — the whole batch rolls back on the first failure.
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var count = await db.JournalEntries.IgnoreQueryFilters().CountAsync(j => j.FiscalYearId == _fiscalYearId);
+        Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task Import_EntryReferencingAccountFromAnotherFiscalYear_Returns400AndPersistsNothing()
+    {
+        // Regression test for CreateManyAsync's hoisted-query path: the valid account-id set
+        // is fetched once for the whole batch, so a wrong FiscalYearId leak in that single
+        // query would silently let entries through for every request, not just occasionally.
+        var (_, otherFiscalYearId) = await SeedSecondTenantAsync();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Accounts.Add(new Account
+            {
+                AccountNumber = "1910", Name = "Cash", AccountClass = AccountClass.Asset,
+                FiscalYearId = otherFiscalYearId, IsActive = true
+            });
+            await db.SaveChangesAsync();
+            var otherAccount = await db.Accounts.IgnoreQueryFilters()
+                .SingleAsync(a => a.FiscalYearId == otherFiscalYearId);
+
+            var client = await AuthenticatedClientAsync();
+            var response = await client.PostAsJsonAsync(
+                $"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries/bulk-import",
+                new
+                {
+                    entries = new[]
+                    {
+                        new
+                        {
+                            date = "2025-06-01",
+                            description = "Cross-tenant account",
+                            lines = new[]
+                            {
+                                new { accountId = otherAccount.Id, debitAmount = 100m, creditAmount = 0m },
+                                new { accountId = _revenueAccountId, debitAmount = 0m, creditAmount = 100m }
+                            }
+                        }
+                    }
+                });
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(0, json.GetProperty("failedEntryIndex").GetInt32());
+        }
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var count = await verifyDb.JournalEntries.IgnoreQueryFilters().CountAsync(j => j.FiscalYearId == _fiscalYearId);
         Assert.Equal(0, count);
     }
 

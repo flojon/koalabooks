@@ -21,36 +21,34 @@ public class BulkJournalImportService(AppDbContext db, IJournalEntryService jour
 
     private async Task<BulkJournalImportResult> ImportInTransactionAsync(int fiscalYearId, List<BulkJournalEntryInput> entries)
     {
-        using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning disable CA2007 // await using's variable is used below; ConfigureAwait would strip its members
+        await using var tx = await db.Database.BeginTransactionAsync().ConfigureAwait(false);
+#pragma warning restore CA2007
 
-        var createdIds = new List<int>();
-        for (var i = 0; i < entries.Count; i++)
+        var journalEntries = entries.Select(input => new JournalEntry
         {
-            var input = entries[i];
-            var entry = new JournalEntry
+            FiscalYearId = fiscalYearId,
+            Date = input.Date,
+            Description = input.Description,
+            Lines = input.Lines.Select(l => new JournalEntryLine
             {
-                FiscalYearId = fiscalYearId,
-                Date = input.Date,
-                Description = input.Description,
-                Lines = input.Lines.Select(l => new JournalEntryLine
-                {
-                    AccountId = l.AccountId,
-                    DebitAmount = l.DebitAmount,
-                    CreditAmount = l.CreditAmount
-                }).ToList()
-            };
+                AccountId = l.AccountId,
+                DebitAmount = l.DebitAmount,
+                CreditAmount = l.CreditAmount
+            }).ToList()
+        }).ToList();
 
-            var (created, error) = await journalEntryService.CreateAsync(entry).ConfigureAwait(false);
-            if (error is not null)
-            {
-                await tx.RollbackAsync().ConfigureAwait(false);
-                return new BulkJournalImportResult(false, error, i, []);
-            }
-
-            createdIds.Add(created!.Id);
+        // CreateManyAsync validates every entry before adding any of them to the context, so
+        // a validation failure leaves nothing to roll back here — the rollback only matters
+        // if SaveChangesAsync itself fails after validation passes.
+        var (created, error, failedIndex) = await journalEntryService.CreateManyAsync(fiscalYearId, journalEntries).ConfigureAwait(false);
+        if (error is not null)
+        {
+            await tx.RollbackAsync().ConfigureAwait(false);
+            return new BulkJournalImportResult(false, error, failedIndex, []);
         }
 
         await tx.CommitAsync().ConfigureAwait(false);
-        return new BulkJournalImportResult(true, null, null, createdIds);
+        return new BulkJournalImportResult(true, null, null, created.Select(e => e.Id).ToList());
     }
 }

@@ -22,7 +22,7 @@ public class BulkJournalImportController : ControllerBase
 
     [HttpPost("fiscal-years/{fiscalYearId:int}/journal-entries/bulk-import")]
     [ProducesResponseType<BulkJournalImportResultResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<BulkJournalImportResultResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Import(int fiscalYearId, [FromBody] BulkJournalImportRequest request)
@@ -37,9 +37,9 @@ public class BulkJournalImportController : ControllerBase
             .ToList();
 
         var result = await _bulkJournalImportService.ImportAsync(fiscalYearId, entries);
-        if (!result.Success)
-            return Problem(detail: result.Error, statusCode: StatusCodes.Status400BadRequest);
-
-        return Ok(new BulkJournalImportResultResponse(result.Success, result.Error, result.FailedEntryIndex, result.CreatedEntryIds));
+        var response = new BulkJournalImportResultResponse(result.Success, result.Error, result.FailedEntryIndex, result.CreatedEntryIds);
+        // FailedEntryIndex is the whole point of the all-or-nothing contract, so the failure
+        // body carries the full result rather than a bare ProblemDetails that would drop it.
+        return result.Success ? Ok(response) : StatusCode(StatusCodes.Status400BadRequest, response);
     }
 }
