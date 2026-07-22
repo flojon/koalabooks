@@ -226,7 +226,6 @@ else
         if (_data is null) return;
         var fyName = string.Concat((SelectedFy?.Name ?? "").Split(Path.GetInvalidFileNameChars()));
         var bytes = CsvExporter.Build(_data, fyName, FromDate, ToDate);
-        var base64 = Convert.ToBase64String(bytes);
         var period = (FromDate, ToDate) switch
         {
             ({ } f, { } t) => $"_{f:yyyyMMdd}-{t:yyyyMMdd}",
@@ -235,6 +234,9 @@ else
             _ => ""
         };
         var fileName = $"momsredovisning_{fyName}{period}.csv";
-        await JS.InvokeVoidAsync("downloadFileFromBase64", base64, fileName);
+
+        using var stream = new MemoryStream(bytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        await JS.InvokeVoidAsync("koala.downloadFileFromStream", streamRef, fileName, "text/csv", false);
     }
 }
