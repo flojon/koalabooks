@@ -1,0 +1,28 @@
+@using KoalaBooks.Domain.Entities
+
+<label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
+<select @bind="SelectedFiscalYearId" @bind:after="OnChangedAsync" style="width:@Width;">
+    @foreach (var fy in FiscalYears)
+    {
+        <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
+    }
+</select>
+
+@code {
+    [Parameter, EditorRequired]
+    public List<FiscalYear> FiscalYears { get; set; } = [];
+
+    [Parameter]
+    public int SelectedFiscalYearId { get; set; }
+
+    [Parameter]
+    public EventCallback<int> SelectedFiscalYearIdChanged { get; set; }
+
+    [Parameter]
+    public string Width { get; set; } = "200px";
+
+    private async Task OnChangedAsync()
+    {
+        await SelectedFiscalYearIdChanged.InvokeAsync(SelectedFiscalYearId);
+    }
+}

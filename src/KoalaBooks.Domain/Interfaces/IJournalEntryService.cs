@@ -10,6 +10,7 @@ public interface IJournalEntryService
     Task<int> CountDraftsForOrganisationAsync();
     Task<JournalEntry?> GetByIdAsync(int id);
     Task<(JournalEntry? Entry, string? Error)> CreateAsync(JournalEntry entry);
+    Task<(List<JournalEntry> Created, string? Error, int? FailedEntryIndex)> CreateManyAsync(int fiscalYearId, List<JournalEntry> entries);
     Task<(JournalEntry? Entry, string? Error)> UpdateAsync(JournalEntry entry);
     Task<string?> PostAsync(int entryId);
     Task<string?> DeleteDraftAsync(int entryId);

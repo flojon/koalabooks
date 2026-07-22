@@ -7,6 +7,7 @@ public record BankTransactionResponse(
     int Id,
     int AccountId,
     string AccountNumber,
+    string AccountName,
     DateOnly Date,
     decimal Amount,
     string Description,

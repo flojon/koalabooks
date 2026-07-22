@@ -36,6 +36,12 @@ public class CustomerInvoiceService : ICustomerInvoiceService
             .FirstOrDefaultAsync(i => i.Id == id).ConfigureAwait(false);
     }
 
+    public async Task<byte[]?> GetPdfAsync(int id)
+    {
+        var invoice = await GetByIdAsync(id).ConfigureAwait(false);
+        return invoice is null ? null : CustomerInvoicePdfGenerator.Generate(invoice);
+    }
+
     public async Task<(CustomerInvoice? Invoice, string? Error)> CreateAsync(
         CustomerInvoice invoice, List<CustomerInvoiceLine> lines)
     {
@@ -132,25 +138,32 @@ public class CustomerInvoiceService : ICustomerInvoiceService
 
         journalLines.Add(new() { AccountId = revenueAccountId, DebitAmount = 0, CreditAmount = invoice.AmountExclVat });
 
-        using var tx = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
-        var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId).ConfigureAwait(false);
-        var journalEntry = new JournalEntry
+        // Wrapped in the execution strategy because EnrichNpgsqlDbContext enables a retrying
+        // strategy, which refuses user-initiated transactions run outside of it.
+        JournalEntry journalEntry = null!;
+        var postStrategy = _db.Database.CreateExecutionStrategy();
+        await postStrategy.ExecuteAsync(async () =>
         {
-            EntryNumber = entryNumber,
-            Date = invoice.InvoiceDate,
-            Description = $"Kundfaktura {invoice.CustomerName} #{invoice.InvoiceNumber}",
-            FiscalYearId = invoice.FiscalYearId,
-            IsPosted = true,
-            Status = JournalEntryStatus.Posted,
-            CreatedAt = DateTime.UtcNow,
-            Lines = journalLines
-        };
+            using var tx = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
+            var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId).ConfigureAwait(false);
+            journalEntry = new JournalEntry
+            {
+                EntryNumber = entryNumber,
+                Date = invoice.InvoiceDate,
+                Description = $"Kundfaktura {invoice.CustomerName} #{invoice.InvoiceNumber}",
+                FiscalYearId = invoice.FiscalYearId,
+                IsPosted = true,
+                Status = JournalEntryStatus.Posted,
+                CreatedAt = DateTime.UtcNow,
+                Lines = journalLines
+            };
 
-        _db.JournalEntries.Add(journalEntry);
-        invoice.IsPosted = true;
-        invoice.JournalEntry = journalEntry;
-        await _db.SaveChangesAsync().ConfigureAwait(false);
-        await tx.CommitAsync().ConfigureAwait(false);
+            _db.JournalEntries.Add(journalEntry);
+            invoice.IsPosted = true;
+            invoice.JournalEntry = journalEntry;
+            await _db.SaveChangesAsync().ConfigureAwait(false);
+            await tx.CommitAsync().ConfigureAwait(false);
+        }).ConfigureAwait(false);
 
         // Propagate document links to the new journal entry
         var docs = await _db.Documents
@@ -206,41 +219,48 @@ public class CustomerInvoiceService : ICustomerInvoiceService
         if (validCount < 2)
             return (null, "Ett eller flera konton tillhör inte detta räkenskapsår.");
 
-        using var tx = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
-        var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId).ConfigureAwait(false);
-        var paymentEntry = new JournalEntry
+        // Wrapped in the execution strategy because EnrichNpgsqlDbContext enables a retrying
+        // strategy, which refuses user-initiated transactions run outside of it.
+        var markPaidStrategy = _db.Database.CreateExecutionStrategy();
+        await markPaidStrategy.ExecuteAsync(async () =>
         {
-            EntryNumber = entryNumber,
-            Date = paidDate,
-            Description = $"Inbetalning {invoice.CustomerName} #{invoice.InvoiceNumber}",
-            FiscalYearId = invoice.FiscalYearId,
-            IsPosted = true,
-            Status = JournalEntryStatus.Posted,
-            CreatedAt = DateTime.UtcNow,
-            Lines =
-            [
-                new() { AccountId = bankAccountId,        DebitAmount = invoice.TotalAmount, CreditAmount = 0 },
-                new() { AccountId = receivableAccountId,  DebitAmount = 0, CreditAmount = invoice.TotalAmount }
-            ]
-        };
-
-        _db.JournalEntries.Add(paymentEntry);
-        invoice.IsPaid = true;
-        invoice.PaidDate = paidDate;
-        invoice.PaymentJournalEntry = paymentEntry;
-
-        if (linkBankTransactionId.HasValue)
-        {
-            var bankTx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == linkBankTransactionId.Value).ConfigureAwait(false);
-            if (bankTx is not null)
+            using var tx = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
+            var entryNumber = await _db.NextEntryNumberAsync(invoice.FiscalYearId).ConfigureAwait(false);
+            var paymentEntry = new JournalEntry
             {
-                bankTx.JournalEntry = paymentEntry;
-                bankTx.Status = BankTransactionStatus.Matched;
-            }
-        }
+                EntryNumber = entryNumber,
+                Date = paidDate,
+                Description = $"Inbetalning {invoice.CustomerName} #{invoice.InvoiceNumber}",
+                FiscalYearId = invoice.FiscalYearId,
+                IsPosted = true,
+                Status = JournalEntryStatus.Posted,
+                CreatedAt = DateTime.UtcNow,
+                Lines =
+                [
+                    new() { AccountId = bankAccountId,        DebitAmount = invoice.TotalAmount, CreditAmount = 0 },
+                    new() { AccountId = receivableAccountId,  DebitAmount = 0, CreditAmount = invoice.TotalAmount }
+                ]
+            };
 
-        await _db.SaveChangesAsync().ConfigureAwait(false);
-        await tx.CommitAsync().ConfigureAwait(false);
+            _db.JournalEntries.Add(paymentEntry);
+            invoice.IsPaid = true;
+            invoice.PaidDate = paidDate;
+            invoice.PaymentJournalEntry = paymentEntry;
+
+            if (linkBankTransactionId.HasValue)
+            {
+                var bankTx = await _db.BankTransactions.FirstOrDefaultAsync(b => b.Id == linkBankTransactionId.Value).ConfigureAwait(false);
+                if (bankTx is not null)
+                {
+                    bankTx.JournalEntry = paymentEntry;
+                    bankTx.Status = BankTransactionStatus.Matched;
+                }
+            }
+
+            await _db.SaveChangesAsync().ConfigureAwait(false);
+            await tx.CommitAsync().ConfigureAwait(false);
+        }).ConfigureAwait(false);
+
         return (invoice, null);
     }
 

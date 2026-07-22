@@ -22,6 +22,11 @@ public class CustomerService : ICustomerService
             .ToListAsync().ConfigureAwait(false);
     }
 
+    public async Task<Customer?> GetByIdAsync(int id)
+    {
+        return await _db.Customers.FirstOrDefaultAsync(c => c.Id == id).ConfigureAwait(false);
+    }
+
     public async Task<(Customer? Customer, string? Error)> CreateAsync(Customer customer)
     {
         if (string.IsNullOrWhiteSpace(customer.Name))

@@ -19,7 +19,9 @@ services:
 
     environment:
       - ConnectionStrings__koalabooks=Host=postgres;Port=5432;Database=koalabooks;Username=koalabooks
+      - ConnectionStrings__koalabooks_app=Host=postgres;Port=5432;Database=koalabooks;Username=app_user
       - KOALABOOKS_DB_PASSWORD_FILE=/run/secrets/postgres_password
+      - KOALABOOKS_APP_DB_PASSWORD_FILE=/run/secrets/app_user_password
       - ASPNETCORE_ENVIRONMENT=Production
       # Stopgap admin bootstrap until there's a real role-management UI.
       - AdminSeed__Email=jonas@floden.co
@@ -31,6 +33,7 @@ services:
       - AspireDashboard__OidcClientSecret=${ASPIRE_DASHBOARD_OIDC_CLIENT_SECRET}
     secrets:
       - postgres_password
+      - app_user_password
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,10 +47,13 @@ services:
       POSTGRES_USER: koalabooks
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: koalabooks
+      APP_USER_PASSWORD_FILE: /run/secrets/app_user_password
     secrets:
       - postgres_password
+      - app_user_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U koalabooks"]
       interval: 5s
@@ -86,3 +92,5 @@ secrets:
   # bind-mounts it preserving host ownership and ignores mode/uid/gid outside Swarm.
   postgres_password:
     file: ./secrets/postgres_password
+  app_user_password:
+    file: ./secrets/app_user_password

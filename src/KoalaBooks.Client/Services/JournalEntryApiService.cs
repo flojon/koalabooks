@@ -87,6 +87,10 @@ public class JournalEntryApiService(HttpClient http) : IJournalEntryService
         throw new NotSupportedException(
             "Reversal preview has no REST endpoint yet; not needed by the WASM-rendered /review page.");
 
+    public Task<(List<JournalEntry> Created, string? Error, int? FailedEntryIndex)> CreateManyAsync(int fiscalYearId, List<JournalEntry> entries) =>
+        throw new NotSupportedException(
+            "Bulk import goes through BulkJournalImportController/IBulkJournalImportService, not IJournalEntryService; not needed from the WASM render tree.");
+
     private async Task<(JournalEntry? Entry, string? Error)> ToResultAsync(HttpResponseMessage response)
     {
         if (!response.IsSuccessStatusCode)

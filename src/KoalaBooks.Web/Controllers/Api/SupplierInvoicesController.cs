@@ -242,6 +242,6 @@ public class SupplierInvoicesController : ControllerBase
             s.JournalEntryId, s.PaymentJournalEntryId, s.CreatedAt);
 
     private static BankTransactionResponse MapBankTransaction(BankTransaction b) =>
-        new(b.Id, b.AccountId, b.Account?.AccountNumber ?? "", b.Date, b.Amount, b.Description,
+        new(b.Id, b.AccountId, b.Account?.AccountNumber ?? "", b.Account?.Name ?? "", b.Date, b.Amount, b.Description,
             b.Reference, b.Status, b.JournalEntryId);
 }
