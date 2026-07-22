@@ -97,7 +97,12 @@ jobs:
             APP_USER_NEW_SECRET=false
             if [ ! -f "$APP_USER_SECRET_FILE" ]; then
               openssl rand -hex 24 > "$APP_USER_SECRET_FILE"
-              chmod 600 "$APP_USER_SECRET_FILE"
+              # Unlike postgres_password (read via POSTGRES_PASSWORD_FILE while the
+              # postgres container is still root, before it gosu's to the postgres
+              # user), this file is read by db-init/01-create-app-user.sh, which
+              # runs *after* that privilege drop - so it must be world-readable
+              # rather than locked to uid 1654 like the web-only secret above.
+              chmod 644 "$APP_USER_SECRET_FILE"
               sudo chown 1654:1654 "$APP_USER_SECRET_FILE"
               APP_USER_NEW_SECRET=true
             fi
