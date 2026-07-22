@@ -92,6 +92,24 @@ public class NewJournalEntryDialogTests : BunitContext, IAsyncLifetime
     }
 
     [Fact]
+    public async Task ExtraEmptyLine_DoesNotBlockSave_AndIsFilteredOutOnSave()
+    {
+        JournalEntry? captured = null;
+        var created = new JournalEntry { Id = 60, EntryNumber = 16, Description = "x", FiscalYearId = 7 };
+        _journalEntryService.CreateAsync(Arg.Do<JournalEntry>(e => captured = e)).Returns((created, (string?)null));
+        _journalEntryService.PostAsync(60).Returns((string?)null);
+        var (comp, dialogReference) = await OpenDialogAsync();
+        await BalanceLinesAsync(comp);
+        await comp.InvokeAsync(() => FindButton(comp, "+ Lägg till rad").Click());
+
+        await comp.InvokeAsync(() => FindButton(comp, "💾 Bokför").Click());
+
+        var result = await dialogReference.Result;
+        Assert.False(result!.Canceled);
+        Assert.Equal(2, captured!.Lines.Count);
+    }
+
+    [Fact]
     public async Task EditingDescription_MarksDialogDirty()
     {
         var (comp, _) = await OpenDialogAsync();
