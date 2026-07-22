@@ -73,22 +73,15 @@ public class JournalEntryService : IJournalEntryService, IJournalEntryReportingS
         var fiscalYear = await _db.FiscalYears.FindAsync(entry.FiscalYearId).ConfigureAwait(false);
         if (fiscalYear is null)
             return (null, "Fiscal year not found.");
-        if (fiscalYear.IsClosed)
-            return (null, "Cannot add entries to a closed fiscal year.");
-
-        if (entry.Date < fiscalYear.StartDate || entry.Date > fiscalYear.EndDate)
-            return (null, $"Entry date {entry.Date} is outside the fiscal year ({fiscalYear.StartDate} – {fiscalYear.EndDate}).");
 
         var fiscalYearAccountIds = await _db.Accounts
             .Where(a => a.FiscalYearId == entry.FiscalYearId)
             .Select(a => a.Id)
             .ToHashSetAsync().ConfigureAwait(false);
-        var invalidAccountIds = entry.Lines
-            .Where(l => !fiscalYearAccountIds.Contains(l.AccountId))
-            .Select(l => l.AccountId)
-            .ToList();
-        if (invalidAccountIds.Count > 0)
-            return (null, "One or more line items reference accounts that do not exist in this fiscal year.");
+
+        var fiscalYearError = ValidateAgainstFiscalYear(entry, fiscalYear, fiscalYearAccountIds);
+        if (fiscalYearError is not null)
+            return (null, fiscalYearError);
 
         // Assign next entry number
         var maxNumber = await _db.JournalEntries
@@ -100,6 +93,67 @@ public class JournalEntryService : IJournalEntryService, IJournalEntryReportingS
         _db.JournalEntries.Add(entry);
         await _db.SaveChangesAsync().ConfigureAwait(false);
         return (entry, null);
+    }
+
+    // Batch counterpart of CreateAsync for callers that create many entries against the same
+    // fiscal year in one go (e.g. BulkJournalImportService): the fiscal year row, the valid
+    // account-id set, and the next entry number are each fetched once instead of once per
+    // entry. All entries are validated up front — nothing is added to the context, and no
+    // entry number is assigned, until every entry passes — so a failure part-way through the
+    // batch leaves nothing to roll back.
+    public async Task<(List<JournalEntry> Created, string? Error, int? FailedEntryIndex)> CreateManyAsync(
+        int fiscalYearId, List<JournalEntry> entries)
+    {
+        if (entries.Count == 0)
+            return ([], null, null);
+
+        var fiscalYear = await _db.FiscalYears.FindAsync(fiscalYearId).ConfigureAwait(false);
+        if (fiscalYear is null)
+            return ([], "Fiscal year not found.", 0);
+
+        var fiscalYearAccountIds = await _db.Accounts
+            .Where(a => a.FiscalYearId == fiscalYearId)
+            .Select(a => a.Id)
+            .ToHashSetAsync().ConfigureAwait(false);
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var error = ValidateEntry(entries[i]) ?? ValidateAgainstFiscalYear(entries[i], fiscalYear, fiscalYearAccountIds);
+            if (error is not null)
+                return ([], error, i);
+        }
+
+        var nextEntryNumber = (await _db.JournalEntries
+            .Where(j => j.FiscalYearId == fiscalYearId)
+            .MaxAsync(j => (int?)j.EntryNumber).ConfigureAwait(false) ?? 0) + 1;
+
+        foreach (var entry in entries)
+        {
+            entry.EntryNumber = nextEntryNumber++;
+            entry.CreatedAt = DateTime.UtcNow;
+            _db.JournalEntries.Add(entry);
+        }
+
+        await _db.SaveChangesAsync().ConfigureAwait(false);
+        return (entries, null, null);
+    }
+
+    private static string? ValidateAgainstFiscalYear(JournalEntry entry, FiscalYear fiscalYear, HashSet<int> fiscalYearAccountIds)
+    {
+        if (fiscalYear.IsClosed)
+            return "Cannot add entries to a closed fiscal year.";
+
+        if (entry.Date < fiscalYear.StartDate || entry.Date > fiscalYear.EndDate)
+            return $"Entry date {entry.Date} is outside the fiscal year ({fiscalYear.StartDate} – {fiscalYear.EndDate}).";
+
+        var invalidAccountIds = entry.Lines
+            .Where(l => !fiscalYearAccountIds.Contains(l.AccountId))
+            .Select(l => l.AccountId)
+            .ToList();
+        if (invalidAccountIds.Count > 0)
+            return "One or more line items reference accounts that do not exist in this fiscal year.";
+
+        return null;
     }
 
     public async Task<(JournalEntry? Entry, string? Error)> UpdateAsync(JournalEntry entry)

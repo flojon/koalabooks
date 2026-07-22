@@ -87,6 +87,9 @@ if (!builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddScoped<KoalaBooks.Application.Jobs.ZipImportJob>();
     builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IZipImportQueue,
         KoalaBooks.Application.Jobs.HangfireZipImportQueue>();
+    builder.Services.AddScoped<KoalaBooks.Application.Jobs.SieImportJob>();
+    builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.ISieImportQueue,
+        KoalaBooks.Application.Jobs.HangfireSieImportQueue>();
 }
 else
 {
@@ -94,6 +97,8 @@ else
         KoalaBooks.Application.Jobs.NoOpDocumentExtractionQueue>();
     builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IZipImportQueue,
         KoalaBooks.Application.Jobs.NoOpZipImportQueue>();
+    builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.ISieImportQueue,
+        KoalaBooks.Application.Jobs.NoOpSieImportQueue>();
 }
 
 builder.Services.AddHttpContextAccessor();
@@ -169,12 +174,14 @@ builder.Services.AddOpenIddict()
     });
 
 builder.Services.AddScoped<ISieImportService, SieImportService>();
+builder.Services.AddScoped<ISieImportUploadService, SieImportUploadService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IFiscalYearService, FiscalYearService>();
 builder.Services.AddScoped<FiscalYearSelectionContext>();
 builder.Services.AddScoped<JournalEntryService>();
 builder.Services.AddScoped<IJournalEntryService>(sp => sp.GetRequiredService<JournalEntryService>());
 builder.Services.AddScoped<IJournalEntryReportingService>(sp => sp.GetRequiredService<JournalEntryService>());
+builder.Services.AddScoped<IBulkJournalImportService, BulkJournalImportService>();
 builder.Services.AddScoped<IVoucherGapService, VoucherGapService>();
 builder.Services.AddScoped<ISieExportService, SieExportService>();
 builder.Services.AddScoped<IYearEndClosingService, YearEndClosingService>();
