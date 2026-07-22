@@ -34,7 +34,7 @@ public class DocumentsController : ControllerBase
     }
 
     [HttpGet("documents/pending")]
-    [ProducesResponseType<PagedResult<DocumentResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<KoalaBooks.Web.Models.Api.PagedResult<DocumentResponse>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetPending(
         [FromQuery] string? typeFilter,
@@ -53,7 +53,7 @@ public class DocumentsController : ControllerBase
             typeFilter, (page - 1) * pageSize, pageSize, sortBy, sortAsc, fiscalYearStart, fiscalYearEnd, undatedOnly);
         var totalCount = await _documentService.GetPendingCountAsync(typeFilter, fiscalYearStart, fiscalYearEnd, undatedOnly);
 
-        return Ok(new PagedResult<DocumentResponse>
+        return Ok(new KoalaBooks.Web.Models.Api.PagedResult<DocumentResponse>
         {
             Items = docs.Select(MapDocument).ToList(),
             Page = page,

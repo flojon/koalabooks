@@ -23,7 +23,7 @@ public class CustomerInvoicesController : ControllerBase
     }
 
     [HttpGet("fiscal-years/{fiscalYearId:int}/customer-invoices")]
-    [ProducesResponseType<PagedResult<CustomerInvoiceResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<KoalaBooks.Web.Models.Api.PagedResult<CustomerInvoiceResponse>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetByFiscalYear(
@@ -38,7 +38,7 @@ public class CustomerInvoicesController : ControllerBase
         var all = await _customerInvoiceService.GetAllAsync(fiscalYearId);
         var items = all.Skip((page - 1) * pageSize).Take(pageSize).Select(MapInvoice).ToList();
 
-        return Ok(new PagedResult<CustomerInvoiceResponse>
+        return Ok(new KoalaBooks.Web.Models.Api.PagedResult<CustomerInvoiceResponse>
         {
             Items = items,
             Page = page,
