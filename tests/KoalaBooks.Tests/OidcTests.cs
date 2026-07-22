@@ -22,6 +22,14 @@ internal static class OidcTestHelpers
 {
     public static string ExtractAntiforgeryToken(string html) =>
         Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+
+    public static (string Verifier, string Challenge) GeneratePkcePair()
+    {
+        var verifier = WebEncoders.Base64UrlEncode(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        var challenge = WebEncoders.Base64UrlEncode(
+            System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        return (verifier, challenge);
+    }
 }
 
 // Reproduces a production incident where dashboard.koalasoft.se returned 500: the token endpoint
@@ -338,15 +346,14 @@ public class WasmClientSeedingTests : IDisposable
     }
 }
 
-// #292: proves the WASM client can bridge its ambient Identity cookie session to a bearer
-// token via the cookie grant, without ever going through AddOidcAuthentication()'s
-// RemoteAuthenticationService (whose DI-slot conflict with AddAuthenticationStateDeserialization()
-// is what #292 is about). The minted token both authenticates against the API and carries org_id
-// for tenant scoping, same as the password/authorization_code grants.
-public class OidcCookieGrantForWasmClientTests
+// Proves the WASM client's real flow end-to-end: authorization_code + PKCE against the
+// ambient Identity cookie's login page, redeeming the code without a client_secret (public
+// client). Replaces the deleted #292 cookie-bridge grant test — same access-token/org_id
+// assertions, different transport.
+public class OidcAuthorizationCodePkceForWasmClientTests
 {
     [Fact]
-    public async Task CookieGrant_ForWasmClient_ReturnsAccessTokenWithOrgId()
+    public async Task AuthorizationCodeWithPkce_ForWasmClient_ReturnsAccessTokenWithOrgId()
     {
         var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
         try
@@ -356,6 +363,8 @@ public class OidcCookieGrantForWasmClientTests
 
             const string email = "wasm-user@test.com";
             const string password = "ValidPass123!";
+            var baseUri = new Uri("https://books.koalasoft.se/");
+            var redirectUri = new Uri(baseUri, "authentication/login-callback");
             int orgId;
 
             using (var scope = factory.Services.CreateScope())
@@ -372,7 +381,7 @@ public class OidcCookieGrantForWasmClientTests
                     password);
                 Assert.True(created.Succeeded);
 
-                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri("http://localhost:5000/"));
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, baseUri);
             }
 
             var loginPage = await client.GetAsync("/account/login");
@@ -387,18 +396,27 @@ public class OidcCookieGrantForWasmClientTests
                 }));
             Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
 
-            using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
-            {
-                Content = new FormUrlEncodedContent(new Dictionary<string, string>
-                {
-                    ["grant_type"] = WasmCookieBridge.GrantType,
-                    ["client_id"] = WasmClientSeeder.ClientId,
-                    ["scope"] = "email profile",
-                })
-            };
-            tokenRequest.Headers.Add(WasmCookieBridge.CsrfHeaderName, WasmCookieBridge.CsrfHeaderValue);
+            var (verifier, challenge) = OidcTestHelpers.GeneratePkcePair();
 
-            var tokenResponse = await client.SendAsync(tokenRequest);
+            var authorizeResponse = await client.GetAsync(
+                $"/connect/authorize?client_id={WasmClientSeeder.ClientId}&response_type=code" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile" +
+                $"&code_challenge={challenge}&code_challenge_method=S256");
+            Assert.Equal(HttpStatusCode.Redirect, authorizeResponse.StatusCode);
+
+            var code = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["code"].ToString();
+            Assert.False(string.IsNullOrEmpty(code));
+
+            var tokenResponse = await client.PostAsync("/connect/token", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["grant_type"] = "authorization_code",
+                    ["code"] = code,
+                    ["redirect_uri"] = redirectUri.ToString(),
+                    ["client_id"] = WasmClientSeeder.ClientId,
+                    ["code_verifier"] = verifier,
+                }));
+
             var body = await tokenResponse.Content.ReadAsStringAsync();
             Assert.True(tokenResponse.IsSuccessStatusCode, body);
 
@@ -417,7 +435,7 @@ public class OidcCookieGrantForWasmClientTests
     }
 
     [Fact]
-    public async Task CookieGrant_WithoutCsrfHeader_IsRejected()
+    public async Task AuthorizationCode_WithoutCodeVerifier_IsRejected()
     {
         var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
         try
@@ -427,6 +445,8 @@ public class OidcCookieGrantForWasmClientTests
 
             const string email = "wasm-user-2@test.com";
             const string password = "ValidPass123!";
+            var baseUri = new Uri("https://books.koalasoft.se/");
+            var redirectUri = new Uri(baseUri, "authentication/login-callback");
 
             using (var scope = factory.Services.CreateScope())
             {
@@ -435,7 +455,7 @@ public class OidcCookieGrantForWasmClientTests
                     new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true }, password);
                 Assert.True(created.Succeeded);
 
-                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri("http://localhost:5000/"));
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, baseUri);
             }
 
             var loginPage = await client.GetAsync("/account/login");
@@ -450,18 +470,26 @@ public class OidcCookieGrantForWasmClientTests
                 }));
             Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
 
-            // No X-KoalaBooks-Csrf header this time.
+            var (_, challenge) = OidcTestHelpers.GeneratePkcePair();
+
+            var authorizeResponse = await client.GetAsync(
+                $"/connect/authorize?client_id={WasmClientSeeder.ClientId}&response_type=code" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile" +
+                $"&code_challenge={challenge}&code_challenge_method=S256");
+            var code = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["code"].ToString();
+
+            // No code_verifier this time - PKCE requires it.
             var tokenResponse = await client.PostAsync("/connect/token", new FormUrlEncodedContent(
                 new Dictionary<string, string>
                 {
-                    ["grant_type"] = WasmCookieBridge.GrantType,
+                    ["grant_type"] = "authorization_code",
+                    ["code"] = code,
+                    ["redirect_uri"] = redirectUri.ToString(),
                     ["client_id"] = WasmClientSeeder.ClientId,
-                    ["scope"] = "email profile",
                 }));
 
             var body = await tokenResponse.Content.ReadAsStringAsync();
             Assert.False(tokenResponse.IsSuccessStatusCode, body);
-            Assert.Contains("invalid_request", body);
         }
         finally
         {

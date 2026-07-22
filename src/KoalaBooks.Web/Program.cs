@@ -1,6 +1,5 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain;
-using KoalaBooks.Domain.Auth;
 using Scalar.AspNetCore;
 using Hangfire;
 using Hangfire.PostgreSql;
@@ -141,8 +140,7 @@ builder.Services.AddOpenIddict()
         options.SetEndSessionEndpointUris("/connect/logout");
         options.AllowPasswordFlow()
                .AllowRefreshTokenFlow()
-               .AllowAuthorizationCodeFlow()
-               .AllowCustomFlow(WasmCookieBridge.GrantType);
+               .AllowAuthorizationCodeFlow();
         // Scopes other than "openid"/"offline_access" must be registered here, or OpenIddict
         // rejects them with invalid_scope even when the client has the matching permission.
         options.RegisterScopes(
