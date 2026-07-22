@@ -429,6 +429,8 @@ public class CustomerInvoicesApiTests : IAsyncLifetime
         var items = json.EnumerateArray().ToList();
         Assert.Single(items);
         Assert.Equal("Inbetalning Acme", items[0].GetProperty("description").GetString());
+        Assert.Equal("1930", items[0].GetProperty("accountNumber").GetString());
+        Assert.Equal("Bank", items[0].GetProperty("accountName").GetString());
     }
 
     [Fact]

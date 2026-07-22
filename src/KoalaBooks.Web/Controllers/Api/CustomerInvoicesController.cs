@@ -144,7 +144,7 @@ public class CustomerInvoicesController : ControllerBase
             fiscalYearId, invoiceTotal, invoiceDate, dueDate);
 
         return Ok(matches.Select(b => new BankTransactionResponse(
-            b.Id, b.AccountId, b.Account.AccountNumber, b.Date, b.Amount, b.Description, b.Reference, b.Status, b.JournalEntryId)).ToList());
+            b.Id, b.AccountId, b.Account.AccountNumber, b.Account.Name, b.Date, b.Amount, b.Description, b.Reference, b.Status, b.JournalEntryId)).ToList());
     }
 
     [HttpDelete("customer-invoices/{id:int}")]

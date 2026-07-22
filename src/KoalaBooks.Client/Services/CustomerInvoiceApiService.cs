@@ -66,15 +66,14 @@ public class CustomerInvoiceApiService(HttpClient http) : ICustomerInvoiceServic
                   $"?invoiceTotal={invoiceTotal}&invoiceDate={invoiceDate:yyyy-MM-dd}&dueDate={dueDate:yyyy-MM-dd}";
         var result = await http.GetFromJsonAsync<List<BankTransactionMatchDto>>(url, ApiJson.Options).ConfigureAwait(false);
 
-        // The endpoint returns BankTransactionResponse shape (flat AccountNumber string,
-        // no Account nav, no OrganisationId/ImportedAt) — deserializing straight into
-        // BankTransaction would silently leave the required Account nav null. Map by hand
-        // instead; Account.Name isn't in the DTO so it's approximated from the number.
+        // The endpoint returns BankTransactionResponse shape (flat AccountNumber/AccountName
+        // strings, no Account nav, no OrganisationId/ImportedAt) — deserializing straight into
+        // BankTransaction would silently leave the required Account nav null. Map by hand instead.
         return (result ?? []).Select(b => new BankTransaction
         {
             Id = b.Id,
             AccountId = b.AccountId,
-            Account = new Account { AccountNumber = b.AccountNumber, Name = b.AccountNumber },
+            Account = new Account { AccountNumber = b.AccountNumber, Name = b.AccountName },
             Date = b.Date,
             Amount = b.Amount,
             Description = b.Description,
@@ -85,7 +84,7 @@ public class CustomerInvoiceApiService(HttpClient http) : ICustomerInvoiceServic
     }
 
     private record BankTransactionMatchDto(
-        int Id, int AccountId, string AccountNumber, DateOnly Date, decimal Amount,
+        int Id, int AccountId, string AccountNumber, string AccountName, DateOnly Date, decimal Amount,
         string Description, string? Reference, BankTransactionStatus Status, int? JournalEntryId);
 
     public async Task<(CustomerInvoice? Invoice, string? Error)> MarkAsPaidAsync(
