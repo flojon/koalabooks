@@ -50,6 +50,15 @@ jobs:
           source: "docker-compose.pr-preview.yml"
           target: /opt/koalabooks
 
+      - name: Copy db-init scripts to VM
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "db-init/*"
+          target: /opt/koalabooks/db-init
+
       - name: Deploy PR environment
         uses: appleboy/ssh-action@v1
         env:
@@ -96,6 +105,10 @@ jobs:
               -e "s/__OWNER__/${OWNER}/g" \
               /opt/koalabooks/docker-compose.pr-preview.yml \
               > /opt/koalabooks/pr-${PR_NUMBER}/docker-compose.yml
+            # docker-compose.yml mounts ./db-init relative to the per-PR directory,
+            # so the shared template copied above needs to land there too.
+            mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/db-init
+            cp -f /opt/koalabooks/db-init/* /opt/koalabooks/pr-${PR_NUMBER}/db-init/
             printf 'pr-%s.books.koalasoft.se {\n    reverse_proxy pr-%s-web-1:8080\n}\n' \
               "${PR_NUMBER}" "${PR_NUMBER}" \
               > /opt/koalabooks/caddy-snippets/pr-${PR_NUMBER}.caddy
