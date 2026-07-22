@@ -66,6 +66,8 @@
         public int AccountId { get; set; }
         public decimal DebitAmount { get; set; }
         public decimal CreditAmount { get; set; }
+
+        public bool IsEmpty => AccountId == 0 && DebitAmount == 0 && CreditAmount == 0;
     }
 
     [Parameter, EditorRequired] public List<Account> Accounts { get; set; } = [];
@@ -81,7 +83,7 @@
 
     private decimal TotalDebit => Lines.Sum(l => l.DebitAmount);
     private decimal TotalCredit => Lines.Sum(l => l.CreditAmount);
-    private bool AllLinesHaveAccount => Lines.All(l => l.AccountId > 0);
+    private bool AllLinesHaveAccount => Lines.Where(l => !l.IsEmpty).All(l => l.AccountId > 0);
     private bool IsBalanced => TotalDebit > 0 && TotalDebit == TotalCredit && AllLinesHaveAccount;
 
     protected override void OnInitialized()

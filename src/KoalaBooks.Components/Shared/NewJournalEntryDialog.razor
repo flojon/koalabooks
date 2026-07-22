@@ -114,7 +114,7 @@
                     Date = DateOnly.FromDateTime(_date),
                     Description = _description,
                     FiscalYearId = FiscalYearId,
-                    Lines = _lines.Select(l => new JournalEntryLine
+                    Lines = _lines.Where(l => !l.IsEmpty).Select(l => new JournalEntryLine
                     {
                         AccountId = l.AccountId,
                         DebitAmount = l.DebitAmount,
