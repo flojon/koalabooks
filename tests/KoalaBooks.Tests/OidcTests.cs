@@ -259,6 +259,7 @@ public class WasmClientSeedingTests : IDisposable
 {
     private readonly ServiceProvider _sp;
     private readonly string _dbName;
+    private static readonly Uri BaseUri = new("https://books.koalasoft.se/");
 
     public WasmClientSeedingTests()
     {
@@ -278,10 +279,10 @@ public class WasmClientSeedingTests : IDisposable
     }
 
     [Fact]
-    public async Task SeedAsync_CreatesPublicClientForCookieGrant()
+    public async Task SeedAsync_CreatesPublicClientWithAuthorizationCodeAndPkce()
     {
         using var scope = _sp.CreateScope();
-        await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, BaseUri);
 
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var app = await manager.FindByClientIdAsync(WasmClientSeeder.ClientId);
@@ -291,21 +292,39 @@ public class WasmClientSeedingTests : IDisposable
         await manager.PopulateAsync(descriptor, app);
 
         Assert.Equal(OpenIddictConstants.ClientTypes.Public, descriptor.ClientType);
-        Assert.Contains(
-            OpenIddictConstants.Permissions.Prefixes.GrantType + WasmCookieBridge.GrantType,
+        Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Permissions.ResponseTypes.Code, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Permissions.Endpoints.Authorization, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Permissions.Endpoints.Token, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange, descriptor.Requirements);
+        Assert.DoesNotContain(
+            OpenIddictConstants.Permissions.Prefixes.GrantType + "urn:koalabooks:grant-type:cookie",
             descriptor.Permissions);
-        Assert.DoesNotContain(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
-        Assert.DoesNotContain(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange, descriptor.Requirements);
+    }
+
+    [Fact]
+    public async Task SeedAsync_RegistersLoginAndLogoutCallbackUris()
+    {
+        using var scope = _sp.CreateScope();
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, BaseUri);
+
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        var app = (await manager.FindByClientIdAsync(WasmClientSeeder.ClientId))!;
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(descriptor, app);
+
+        Assert.Contains(new Uri(BaseUri, "authentication/login-callback"), descriptor.RedirectUris);
+        Assert.Contains(new Uri(BaseUri, "authentication/logout-callback"), descriptor.PostLogoutRedirectUris);
     }
 
     [Fact]
     public async Task SeedAsync_IsIdempotent()
     {
         using (var scope = _sp.CreateScope())
-            await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+            await WasmClientSeeder.SeedAsync(scope.ServiceProvider, BaseUri);
 
         using (var scope = _sp.CreateScope())
-            await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+            await WasmClientSeeder.SeedAsync(scope.ServiceProvider, BaseUri);
 
         using var verifyScope = _sp.CreateScope();
         var manager = verifyScope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
@@ -353,7 +372,7 @@ public class OidcCookieGrantForWasmClientTests
                     password);
                 Assert.True(created.Succeeded);
 
-                await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri("http://localhost:5000/"));
             }
 
             var loginPage = await client.GetAsync("/account/login");
@@ -416,7 +435,7 @@ public class OidcCookieGrantForWasmClientTests
                     new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true }, password);
                 Assert.True(created.Succeeded);
 
-                await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri("http://localhost:5000/"));
             }
 
             var loginPage = await client.GetAsync("/account/login");

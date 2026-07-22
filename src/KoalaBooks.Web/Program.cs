@@ -320,7 +320,8 @@ using (var scope = app.Services.CreateScope())
             ?? "aspire-dashboard-dev-secret";
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);
 
-        await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+        var publicOrigin = builder.Configuration["PublicOrigin"] ?? "http://localhost:5000";
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri(publicOrigin));
 
         // Stopgap until there's a real UI to grant roles.
         await AdminRoleSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration["AdminSeed:Email"]);

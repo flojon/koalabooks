@@ -1,4 +1,3 @@
-using KoalaBooks.Domain.Auth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenIddict.Abstractions;
@@ -9,7 +8,7 @@ public static class WasmClientSeeder
 {
     public const string ClientId = "koalabooks-wasm";
 
-    public static async Task SeedAsync(IServiceProvider services)
+    public static async Task SeedAsync(IServiceProvider services, Uri baseUri)
     {
         var manager = services.GetRequiredService<IOpenIddictApplicationManager>();
         var logger = services.GetRequiredService<ILoggerFactory>()
@@ -22,12 +21,20 @@ public static class WasmClientSeeder
             DisplayName = "KoalaBooks WASM client",
             Permissions =
             {
+                OpenIddictConstants.Permissions.Endpoints.Authorization,
                 OpenIddictConstants.Permissions.Endpoints.Token,
-                OpenIddictConstants.Permissions.Prefixes.GrantType + WasmCookieBridge.GrantType,
+                OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
+                OpenIddictConstants.Permissions.ResponseTypes.Code,
                 OpenIddictConstants.Permissions.Scopes.Email,
                 OpenIddictConstants.Permissions.Scopes.Profile,
-            }
+            },
+            Requirements =
+            {
+                OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange,
+            },
         };
+        descriptor.RedirectUris.Add(new Uri(baseUri, "authentication/login-callback"));
+        descriptor.PostLogoutRedirectUris.Add(new Uri(baseUri, "authentication/logout-callback"));
 
         var existing = await manager.FindByClientIdAsync(ClientId).ConfigureAwait(false);
         if (existing is null)
