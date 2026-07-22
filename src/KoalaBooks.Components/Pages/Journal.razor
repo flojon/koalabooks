@@ -480,7 +480,7 @@ else
         var result = await JournalEntryService.GetByFiscalYearAsync(
             _selectedFiscalYearId, range?.From, range?.To,
             sortBy: _sortBy, page: _page, pageSize: _pageSize);
-        _entries = result.Items.Where(e => e.IsPosted).ToList();
+        _entries = result.Items.ToList();
         _totalCount = result.TotalCount;
         _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_selectedFiscalYearId);
         _knownSuppliers = await InvoiceService.GetSuppliersAsync(_selectedFiscalYearId);
