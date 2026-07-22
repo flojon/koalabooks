@@ -1,5 +1,6 @@
 <CascadingAuthenticationState>
     <Router AppAssembly="typeof(Routes).Assembly"
+            AdditionalAssemblies="AdditionalAssemblies"
             NotFoundPage="typeof(KoalaBooks.Components.Pages.NotFound)">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(KoalaBooks.Components.Layout.MainLayout)">
@@ -11,3 +12,7 @@
         </Found>
     </Router>
 </CascadingAuthenticationState>
+
+@code {
+    [Parameter] public IEnumerable<System.Reflection.Assembly>? AdditionalAssemblies { get; set; }
+}
