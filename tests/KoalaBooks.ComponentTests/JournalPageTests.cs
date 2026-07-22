@@ -1,4 +1,5 @@
 using KoalaBooks.Domain;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Components.Pages;
 using KoalaBooks.Domain.Entities;
@@ -28,7 +29,10 @@ public class JournalPageTests : BunitContext
 
         _fiscalYearService.GetAllAsync().Returns([ClosedFy2025, OpenFy2026]);
         _accountService.GetAllAsync(Arg.Any<int>()).Returns([]);
-        _journalEntryService.GetByFiscalYearAsync(Arg.Any<int>()).Returns([]);
+        _journalEntryService.GetByFiscalYearAsync(
+                Arg.Any<int>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<string?>(),
+                Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>())
+            .Returns(new PagedResult<JournalEntry> { Items = [], Page = 1, PageSize = 50, TotalCount = 0 });
         _invoiceService.GetLinkedJournalEntryIdsAsync(Arg.Any<int>()).Returns([]);
         _invoiceService.GetSuppliersAsync(Arg.Any<int>()).Returns([]);
         _documentService.GetCountsForJournalEntriesAsync(Arg.Any<IEnumerable<int>>()).Returns(new Dictionary<int, int>());
@@ -49,7 +53,9 @@ public class JournalPageTests : BunitContext
 
         Render<Journal>();
 
-        await _journalEntryService.Received(1).GetByFiscalYearAsync(ClosedFy2025.Id);
+        await _journalEntryService.Received(1).GetByFiscalYearAsync(
+            ClosedFy2025.Id, Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<string?>(),
+            Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>());
     }
 
     [Fact]
@@ -59,7 +65,9 @@ public class JournalPageTests : BunitContext
 
         Render<Journal>();
 
-        await _journalEntryService.Received(1).GetByFiscalYearAsync(OpenFy2026.Id);
+        await _journalEntryService.Received(1).GetByFiscalYearAsync(
+            OpenFy2026.Id, Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<string?>(),
+            Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>());
     }
 
     [Fact]
@@ -71,6 +79,8 @@ public class JournalPageTests : BunitContext
         cut.Find("select").Change(ClosedFy2025.Id.ToString());
 
         Assert.Equal(ClosedFy2025.Id, _selectionContext.LastSelectedFiscalYearId);
-        await _journalEntryService.Received(1).GetByFiscalYearAsync(ClosedFy2025.Id);
+        await _journalEntryService.Received(1).GetByFiscalYearAsync(
+            ClosedFy2025.Id, Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<string?>(),
+            Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>());
     }
 }
