@@ -6,7 +6,22 @@ namespace KoalaBooks.Tests;
 /// <summary>RFC 6238 TOTP, computed independently of ASP.NET Identity's provider to avoid testing the mock against itself.</summary>
 internal static class TotpTestHelper
 {
-    public static string GenerateCode(string base32Secret)
+    /// <summary>
+    /// Generates a code with a safety margin against the 30s step boundary: if the current
+    /// step is about to roll over, waits for the next one first so the code stays valid
+    /// through the network/DB round trips the caller still has to make before the server
+    /// verifies it.
+    /// </summary>
+    public static async Task<string> GenerateCodeAsync(string base32Secret)
+    {
+        var secondsIntoStep = DateTimeOffset.UtcNow.ToUnixTimeSeconds() % 30;
+        if (secondsIntoStep > 25)
+            await Task.Delay(TimeSpan.FromSeconds(30 - secondsIntoStep + 1));
+
+        return GenerateCode(base32Secret);
+    }
+
+    private static string GenerateCode(string base32Secret)
     {
         var secretBytes = Base32Decode(base32Secret);
         var counter = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 30;

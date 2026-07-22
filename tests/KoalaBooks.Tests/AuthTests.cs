@@ -321,7 +321,7 @@ public class MfaFullLoginFlowTests
                 var user = new ApplicationUser { UserName = "fulle2e@test.com", Email = "fulle2e@test.com", EmailConfirmed = true };
                 await userManager.CreateAsync(user, "ValidPass123!");
                 enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
-                var firstCode = TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", ""));
+                var firstCode = await TotpTestHelper.GenerateCodeAsync(enrollment.SharedKey.Replace(" ", ""));
                 await mfaService.ConfirmEnrollmentAsync(user.Id, firstCode);
             }
 
@@ -337,7 +337,7 @@ public class MfaFullLoginFlowTests
 
             var verifyPage = await client.GetAsync(loginResponse.Headers.Location);
             var verifyToken = OidcTestHelpers.ExtractAntiforgeryToken(await verifyPage.Content.ReadAsStringAsync());
-            var verifyCode = TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", ""));
+            var verifyCode = await TotpTestHelper.GenerateCodeAsync(enrollment.SharedKey.Replace(" ", ""));
             var verifyResponse = await client.PostAsync(loginResponse.Headers.Location, new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["Code"] = verifyCode,

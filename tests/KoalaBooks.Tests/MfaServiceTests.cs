@@ -50,7 +50,7 @@ public class MfaServiceTests : IDisposable
         var user = await CreateUserAsync(userManager, "enrol@test.com");
 
         var enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
-        var code = TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", ""));
+        var code = await TotpTestHelper.GenerateCodeAsync(enrollment.SharedKey.Replace(" ", ""));
 
         var result = await mfaService.ConfirmEnrollmentAsync(user.Id, code);
 
@@ -82,7 +82,7 @@ public class MfaServiceTests : IDisposable
         var (userManager, mfaService) = GetServices(scope);
         var user = await CreateUserAsync(userManager, "disable@test.com");
         var enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
-        await mfaService.ConfirmEnrollmentAsync(user.Id, TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", "")));
+        await mfaService.ConfirmEnrollmentAsync(user.Id, await TotpTestHelper.GenerateCodeAsync(enrollment.SharedKey.Replace(" ", "")));
 
         var disabled = await mfaService.DisableAsync(user.Id, "ValidPass123!");
 
@@ -97,7 +97,7 @@ public class MfaServiceTests : IDisposable
         var (userManager, mfaService) = GetServices(scope);
         var user = await CreateUserAsync(userManager, "wrongpw@test.com");
         var enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
-        await mfaService.ConfirmEnrollmentAsync(user.Id, TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", "")));
+        await mfaService.ConfirmEnrollmentAsync(user.Id, await TotpTestHelper.GenerateCodeAsync(enrollment.SharedKey.Replace(" ", "")));
 
         var disabled = await mfaService.DisableAsync(user.Id, "NotThePassword1!");
 
@@ -115,7 +115,7 @@ public class MfaServiceTests : IDisposable
         Assert.False(await mfaService.IsEnabledAsync(user.Id));
 
         var enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
-        await mfaService.ConfirmEnrollmentAsync(user.Id, TotpTestHelper.GenerateCode(enrollment.SharedKey.Replace(" ", "")));
+        await mfaService.ConfirmEnrollmentAsync(user.Id, await TotpTestHelper.GenerateCodeAsync(enrollment.SharedKey.Replace(" ", "")));
 
         Assert.True(await mfaService.IsEnabledAsync(user.Id));
     }

@@ -28,6 +28,9 @@ public class MfaService : IMfaService
         var user = await _userManager.FindByIdAsync(userId).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"User '{userId}' was not found.");
 
+        if (await _userManager.GetTwoFactorEnabledAsync(user).ConfigureAwait(false))
+            throw new InvalidOperationException("Two-factor authentication is already enabled; disable it before re-enrolling.");
+
         await _userManager.ResetAuthenticatorKeyAsync(user).ConfigureAwait(false);
         var unformattedKey = await _userManager.GetAuthenticatorKeyAsync(user).ConfigureAwait(false)
             ?? throw new InvalidOperationException("Authenticator key was not generated.");
