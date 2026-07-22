@@ -39,7 +39,10 @@ window.koala.downloadFileFromStream = async function (streamRef, fileName, conte
     }
 
     const buffer = await streamRef.arrayBuffer();
-    const blob = new Blob([buffer], { type: contentType });
+    // A File (not a plain Blob) is used because Chrome's built-in PDF viewer
+    // reads the File's name for its own in-content title bar; a nameless Blob
+    // falls back to showing the raw blob: URL there instead.
+    const blob = new File([buffer], fileName, { type: contentType });
     const url = URL.createObjectURL(blob);
 
     if (openInNewTab) {
