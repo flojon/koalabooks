@@ -175,6 +175,24 @@ signature: passes `from/to/sortBy/page/pageSize` through as query params
 against the REST endpoint, and parses the (unchanged-shape)
 `PagedResult<JournalEntryResponse>` response into the Domain `PagedResult<JournalEntry>`.
 
+Today `JournalEntryApiService.GetByFiscalYearAsync` hardcodes
+`pageSize=200` and returns `.Items` as if it were the complete set — this
+is currently dead code (`Journal.razor` and `ClassifyDocumentDialog.razor`'s
+host, `Inbox.razor`, both run `InteractiveServer` with no `@rendermode`, so
+`IJournalEntryService` resolves to the Domain-layer service, not this WASM
+client), but it's a latent trap: if either page ever gains
+`@rendermode InteractiveAuto` (as `Review.razor` already has, and the
+broader WASM migration intends), a fiscal year with more than 200 entries
+would silently lose entries with no error. `IJournalEntryServiceExtensions`
+must therefore be usable from the WASM client too — either by referencing
+the same extension against `IJournalEntryService` (if the Client project can
+take a dependency on the Domain interface package, which it already does
+for other Domain types), or by adding an equivalent
+`GetAllByFiscalYearAsync` loop directly on `JournalEntryApiService`. Either
+way, `ClassifyDocumentDialog.razor`'s full-list load must resolve to a
+loop-to-completion call under both render modes, not a single
+`pageSize=200` page.
+
 ## Out of scope
 
 `SupplierInvoicesController`/`BankTransactionsController` (and their backing
