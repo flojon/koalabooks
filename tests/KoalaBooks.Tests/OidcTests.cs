@@ -469,3 +469,70 @@ public class OidcCookieGrantForWasmClientTests
         }
     }
 }
+
+// Verifies RP-initiated logout actually terminates the server-side session: without this,
+// the SPA's local sign-out would leave the Identity cookie valid and a silent-renew would
+// re-authenticate the user without them noticing.
+public class OidcLogoutEndpointTests
+{
+    [Fact]
+    public async Task Logout_SignsOutCookie_SubsequentAuthorizeChallengesLogin()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            const string email = "logout-user@test.com";
+            const string password = "ValidPass123!";
+            var baseUri = new Uri("https://books.koalasoft.se/");
+            var redirectUri = new Uri(baseUri, "authentication/login-callback");
+            var postLogoutUri = new Uri(baseUri, "authentication/logout-callback");
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                var created = await userManager.CreateAsync(
+                    new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true }, password);
+                Assert.True(created.Succeeded);
+
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, baseUri);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var antiforgeryToken = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+
+            var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["Email"] = email,
+                    ["Password"] = password,
+                    ["__RequestVerificationToken"] = antiforgeryToken,
+                }));
+            Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
+
+            var authorizeUrl = $"/connect/authorize?client_id={WasmClientSeeder.ClientId}&response_type=code" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile" +
+                "&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256";
+
+            var authorizeBeforeLogout = await client.GetAsync(authorizeUrl);
+            Assert.Equal(HttpStatusCode.Redirect, authorizeBeforeLogout.StatusCode);
+            Assert.Contains("code=", authorizeBeforeLogout.Headers.Location!.Query);
+
+            var logoutResponse = await client.GetAsync(
+                $"/connect/logout?client_id={WasmClientSeeder.ClientId}" +
+                $"&post_logout_redirect_uri={Uri.EscapeDataString(postLogoutUri.ToString())}");
+            Assert.Equal(HttpStatusCode.Redirect, logoutResponse.StatusCode);
+            Assert.StartsWith(postLogoutUri.ToString(), logoutResponse.Headers.Location!.ToString());
+
+            var authorizeAfterLogout = await client.GetAsync(authorizeUrl);
+            Assert.Equal(HttpStatusCode.Redirect, authorizeAfterLogout.StatusCode);
+            Assert.Contains("/account/login", authorizeAfterLogout.Headers.Location!.ToString());
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
+    }
+}
