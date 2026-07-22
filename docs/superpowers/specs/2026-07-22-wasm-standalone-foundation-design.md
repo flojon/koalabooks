@@ -112,6 +112,10 @@ every other sub-project assumes the client is a real standalone SPA with working
 - Existing integration test suite (`WebApiFactory` + Testcontainers) continues to pass unmodified —
   it exercises `KoalaBooks.Web`'s API surface directly and shouldn't care about Components hosting
   being removed, but must be re-run to confirm no hidden coupling.
+- `tests/KoalaBooks.Tests/OidcTests.cs` asserts the *current* `WasmClientSeeder.ClientId` cookie-bridge
+  grant flow (client creation, `WasmCookieBridge.GrantType` token exchange) — these tests must be
+  rewritten to exercise the new `AuthorizationCode`/PKCE permissions instead of deleted outright,
+  since they're the only automated coverage of the OpenIddict client config.
 - Local/dev pass: run both projects behind the updated Caddy config (or Aspire, if it's used for
   local dev — check `KoalaBooks.AppHost`), confirm static files and proxied API paths both resolve
   correctly on the same origin.
