@@ -31,29 +31,31 @@ jobs:
         with:
           script: |
             const openSet = new Set('${{ steps.open-prs.outputs.result }}'.split(',').filter(Boolean));
-            try {
-              const { data: versions } = await github.rest.packages.getAllPackageVersionsForPackageOwnedByUser({
-                package_type: 'container',
-                package_name: 'koalabooks-web',
-                username: context.repo.owner,
-                per_page: 100,
-              });
-              for (const v of versions) {
-                const prTag = (v.metadata?.container?.tags ?? []).find(t => /^pr-\d+$/.test(t));
-                if (!prTag) continue;
-                const prNum = prTag.replace('pr-', '');
-                if (!openSet.has(prNum)) {
-                  console.log(`Deleting stale GHCR image ${prTag}`);
-                  await github.rest.packages.deletePackageVersionForUser({
-                    package_type: 'container',
-                    package_name: 'koalabooks-web',
-                    username: context.repo.owner,
-                    package_version_id: v.id,
-                  });
+            for (const packageName of ['koalabooks-web', 'koalabooks-client']) {
+              try {
+                const { data: versions } = await github.rest.packages.getAllPackageVersionsForPackageOwnedByUser({
+                  package_type: 'container',
+                  package_name: packageName,
+                  username: context.repo.owner,
+                  per_page: 100,
+                });
+                for (const v of versions) {
+                  const prTag = (v.metadata?.container?.tags ?? []).find(t => /^pr-\d+$/.test(t));
+                  if (!prTag) continue;
+                  const prNum = prTag.replace('pr-', '');
+                  if (!openSet.has(prNum)) {
+                    console.log(`Deleting stale GHCR image ${packageName}:${prTag}`);
+                    await github.rest.packages.deletePackageVersionForUser({
+                      package_type: 'container',
+                      package_name: packageName,
+                      username: context.repo.owner,
+                      package_version_id: v.id,
+                    });
+                  }
                 }
+              } catch (e) {
+                console.log(`GHCR cleanup error for ${packageName}: ${e.message}`);
               }
-            } catch (e) {
-              console.log(`GHCR cleanup error: ${e.message}`);
             }
 
       - name: Prune orphaned VM directories and Caddy snippets

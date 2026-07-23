@@ -11,12 +11,19 @@ services:
       - SEED_DEMO_DATA=true
       # Matches DemoDataSeeder.DemoUserEmail, so the demo user it creates gets Admin.
       - AdminSeed__Email=admin@koalabooks.local
+      - PublicOrigin=https://pr-__PR_NUMBER__.books.koalasoft.se
     secrets:
       - postgres_password
       - app_user_password
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - internal
+      - pr-previews
+
+  client:
+    image: ghcr.io/__OWNER__/koalabooks-client:pr-__PR_NUMBER__
     networks:
       - internal
       - pr-previews

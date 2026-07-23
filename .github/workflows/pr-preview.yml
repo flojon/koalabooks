@@ -42,6 +42,16 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
 
+      - name: Build and push PR client image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: src/KoalaBooks.Client/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/koalabooks-client:pr-${{ github.event.pull_request.number }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/koalabooks-client:buildcache
+
       - name: Copy compose template to VM
         uses: appleboy/scp-action@v1.0.0
         with:
@@ -118,8 +128,8 @@ jobs:
             # point, so use sudo rather than assume the deploy user can write to it.
             sudo mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/db-init
             sudo cp -f /opt/koalabooks/db-init/* /opt/koalabooks/pr-${PR_NUMBER}/db-init/
-            printf 'pr-%s.books.koalasoft.se {\n    reverse_proxy pr-%s-web-1:8080\n}\n' \
-              "${PR_NUMBER}" "${PR_NUMBER}" \
+            printf 'pr-%s.books.koalasoft.se {\n    @backend path /api/* /connect/* /hangfire /hangfire/*\n    reverse_proxy @backend pr-%s-web-1:8080\n    reverse_proxy pr-%s-client-1:80\n}\n' \
+              "${PR_NUMBER}" "${PR_NUMBER}" "${PR_NUMBER}" \
               > /opt/koalabooks/caddy-snippets/pr-${PR_NUMBER}.caddy
             cd /opt/koalabooks/pr-${PR_NUMBER}
             docker compose -p pr-${PR_NUMBER} pull
@@ -274,6 +284,7 @@ jobs:
               docker compose -p pr-${PR_NUMBER} down -v || true
             fi
             docker rmi ghcr.io/${OWNER}/koalabooks-web:pr-${PR_NUMBER} || true
+            docker rmi ghcr.io/${OWNER}/koalabooks-client:pr-${PR_NUMBER} || true
             rm -f /opt/koalabooks/caddy-snippets/pr-${PR_NUMBER}.caddy
             rm -rf /opt/koalabooks/pr-${PR_NUMBER}
             docker exec koalabooks-caddy-1 caddy reload --config /etc/caddy/Caddyfile
@@ -295,6 +306,34 @@ jobs:
                 await github.rest.packages.deletePackageVersionForUser({
                   package_type: 'container',
                   package_name: 'koalabooks-web',
+                  username: context.repo.owner,
+                  package_version_id: version.id,
+                });
+                console.log(`Deleted GHCR version for ${tag}`);
+              } else {
+                console.log(`No GHCR version found for ${tag}`);
+              }
+            } catch (e) {
+              console.log(`Could not delete GHCR version: ${e.message}`);
+            }
+
+      - name: Delete GHCR client package version
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const tag = `pr-${prNumber}`;
+            try {
+              const { data: versions } = await github.rest.packages.getAllPackageVersionsForPackageOwnedByUser({
+                package_type: 'container',
+                package_name: 'koalabooks-client',
+                username: context.repo.owner,
+              });
+              const version = versions.find(v => (v.metadata?.container?.tags ?? []).includes(tag));
+              if (version) {
+                await github.rest.packages.deletePackageVersionForUser({
+                  package_type: 'container',
+                  package_name: 'koalabooks-client',
                   username: context.repo.owner,
                   package_version_id: version.id,
                 });
