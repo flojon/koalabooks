@@ -26,10 +26,11 @@ public static class OpenIddictIdentityBuilder
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(scopes);
         // All claims (including org_id) go to the access token via the catch-all branch.
-        // Email and Name also go to the identity token for OIDC clients.
+        // Subject, Email, and Name also go to the identity token for OIDC clients — sub is
+        // OIDC-mandatory in the id_token, so omitting it stops OpenIddict from issuing one at all.
         principal.SetDestinations(claim => claim.Type switch
         {
-            OpenIddictConstants.Claims.Email or OpenIddictConstants.Claims.Name =>
+            OpenIddictConstants.Claims.Subject or OpenIddictConstants.Claims.Email or OpenIddictConstants.Claims.Name =>
                 [OpenIddictConstants.Destinations.AccessToken, OpenIddictConstants.Destinations.IdentityToken],
             _ => [OpenIddictConstants.Destinations.AccessToken]
         });
