@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Services;
 
+KoalaBooks.Client.TrimmerPreserve.Preserve();
+
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
 builder.Services.AddAuthorizationCore();
@@ -41,5 +43,11 @@ builder.Services.AddScoped<IJournalEntryService, JournalEntryApiService>();
 // is rendering, so they're needed even though no WASM page injects them directly.
 builder.Services.AddScoped<IBankImportService, BankImportApiService>();
 builder.Services.AddScoped<ISupplierInvoiceService, SupplierInvoiceApiService>();
+// #290: no WASM page injects these yet (render-mode flips are a separate follow-up),
+// but the REST endpoints they depend on now exist, so registering them here keeps
+// the DI-swap pattern consistent and ready for whenever a page needs them.
+builder.Services.AddScoped<ICustomerService, CustomerApiService>();
+builder.Services.AddScoped<ICustomerInvoiceService, CustomerInvoiceApiService>();
+builder.Services.AddScoped<ISieExportService, SieExportApiService>();
 
 await builder.Build().RunAsync();

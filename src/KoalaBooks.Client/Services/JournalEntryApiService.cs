@@ -9,13 +9,23 @@ namespace KoalaBooks.Client.Services;
 // browser sandbox, so this calls the REST API (api/v1) instead of AppDbContext.
 public class JournalEntryApiService(HttpClient http) : IJournalEntryService
 {
-    public async Task<List<JournalEntry>> GetByFiscalYearAsync(int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
+    public async Task<PagedResult<JournalEntry>> GetByFiscalYearAsync(
+        int fiscalYearId, DateOnly? from = null, DateOnly? to = null,
+        string? search = null,
+        JournalEntrySortBy sortBy = JournalEntrySortBy.EntryNumber,
+        int page = 1, int pageSize = 50)
     {
-        var query = BuildDateRangeQuery(from, to);
-        var page = await http.GetFromJsonAsync<PagedResult<JournalEntryResponse>>(
-            $"api/v1/fiscal-years/{fiscalYearId}/journal-entries?pageSize=200{query}", ApiJson.Options)
+        var query = BuildQuery(from, to, search, sortBy, page, pageSize);
+        var response = await http.GetFromJsonAsync<PagedResultResponse<JournalEntryResponse>>(
+            $"api/v1/fiscal-years/{fiscalYearId}/journal-entries?{query}", ApiJson.Options)
             .ConfigureAwait(false);
-        return page?.Items.Select(ToEntity).ToList() ?? [];
+        return new PagedResult<JournalEntry>
+        {
+            Items = response?.Items.Select(ToEntity).ToList() ?? [],
+            Page = response?.Page ?? page,
+            PageSize = response?.PageSize ?? pageSize,
+            TotalCount = response?.TotalCount ?? 0
+        };
     }
 
     public async Task<int> CountDraftsAsync(int fiscalYearId)
@@ -87,6 +97,10 @@ public class JournalEntryApiService(HttpClient http) : IJournalEntryService
         throw new NotSupportedException(
             "Reversal preview has no REST endpoint yet; not needed by the WASM-rendered /review page.");
 
+    public Task<(List<JournalEntry> Created, string? Error, int? FailedEntryIndex)> CreateManyAsync(int fiscalYearId, List<JournalEntry> entries) =>
+        throw new NotSupportedException(
+            "Bulk import goes through BulkJournalImportController/IBulkJournalImportService, not IJournalEntryService; not needed from the WASM render tree.");
+
     private async Task<(JournalEntry? Entry, string? Error)> ToResultAsync(HttpResponseMessage response)
     {
         if (!response.IsSuccessStatusCode)
@@ -96,12 +110,13 @@ public class JournalEntryApiService(HttpClient http) : IJournalEntryService
         return (entry is null ? null : ToEntity(entry), null);
     }
 
-    private static string BuildDateRangeQuery(DateOnly? from, DateOnly? to)
+    private static string BuildQuery(DateOnly? from, DateOnly? to, string? search, JournalEntrySortBy sortBy, int page, int pageSize)
     {
-        var parts = new List<string>();
+        var parts = new List<string> { $"page={page}", $"pageSize={pageSize}", $"sortBy={sortBy}" };
         if (from is not null) parts.Add($"from={from:yyyy-MM-dd}");
         if (to is not null) parts.Add($"to={to:yyyy-MM-dd}");
-        return parts.Count == 0 ? "" : "&" + string.Join("&", parts);
+        if (!string.IsNullOrWhiteSpace(search)) parts.Add($"search={Uri.EscapeDataString(search)}");
+        return string.Join("&", parts);
     }
 
     private static CreateOrUpdateLineRequest ToLineRequest(JournalEntryLine l) =>
@@ -132,7 +147,7 @@ public class JournalEntryApiService(HttpClient http) : IJournalEntryService
         }).ToList()
     };
 
-    private record PagedResult<T>(List<T> Items, int Page, int PageSize, int TotalCount);
+    private record PagedResultResponse<T>(List<T> Items, int Page, int PageSize, int TotalCount);
 
     private record CountResponse(int Count);
 

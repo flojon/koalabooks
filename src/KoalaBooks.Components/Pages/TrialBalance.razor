@@ -10,13 +10,7 @@
 @if (_fiscalYears.Any())
 {
     <div class="toolbar">
-        <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
-        <select @bind="SelectedFiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:200px;">
-            @foreach (var fy in _fiscalYears)
-            {
-                <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
-            }
-        </select>
+        <FiscalYearSelector FiscalYears="_fiscalYears" @bind-SelectedFiscalYearId="SelectedFiscalYearId" @bind-SelectedFiscalYearId:after="OnFiscalYearChangedAsync" />
     </div>
 
     <table>
@@ -79,10 +73,7 @@ else
     {
         _fiscalYears = await FiscalYearService.GetAllAsync();
 
-        FiscalYear? seed = null;
-        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
-            seed = _fiscalYears.FirstOrDefault(f => f.Id == lastId);
-        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync() ?? _fiscalYears.FirstOrDefault();
+        var seed = await SelectionContext.ResolveSeedAsync(FiscalYearService, _fiscalYears);
 
         if (seed is not null)
         {

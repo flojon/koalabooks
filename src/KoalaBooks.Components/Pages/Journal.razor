@@ -25,20 +25,25 @@
 else
 {
 <div class="toolbar" style="flex-wrap:wrap; gap:0.75rem;">
-    <label style="font-weight:600; color:#475569;">Räkenskapsår:</label>
-    <select @bind="_selectedFiscalYearId" @bind:after="OnFiscalYearChangedAsync" style="width:220px;">
-        @foreach (var fy in _allFiscalYears)
-        {
-            <option value="@fy.Id">@fy.Name (@fy.StartDate — @fy.EndDate)</option>
-        }
-    </select>
+    <FiscalYearSelector FiscalYears="_allFiscalYears" @bind-SelectedFiscalYearId="_selectedFiscalYearId" @bind-SelectedFiscalYearId:after="OnFiscalYearChangedAsync" Width="220px" />
     <label style="font-weight:600; color:#475569;">Period:</label>
-    <select @bind="_selectedMonthStr" style="width:180px;">
+    <select @bind="_selectedMonthStr" @bind:after="OnFilterChangedAsync" style="width:180px;">
         <option value="">Hela året</option>
         @foreach (var (month, label) in AvailableMonths())
         {
             <option value="@month">@label</option>
         }
+    </select>
+    <label style="font-weight:600; color:#475569;">Sortering:</label>
+    <select @bind="_sortBy" @bind:after="OnFilterChangedAsync" style="width:170px;">
+        <option value="@JournalEntrySortBy.EntryNumber">Verifikationsnummer</option>
+        <option value="@JournalEntrySortBy.Date">Datum</option>
+    </select>
+    <label style="font-weight:600; color:#475569;">Per sida:</label>
+    <select @bind="_pageSize" @bind:after="OnFilterChangedAsync" style="width:90px;">
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
     </select>
     @if (_activeFiscalYear is not null && _selectedFiscalYearId == _activeFiscalYear.Id)
     {
@@ -65,7 +70,7 @@ else
         </tr>
     </thead>
     <tbody>
-        @foreach (var entry in FilteredEntries)
+        @foreach (var entry in _entries)
         {
             var canConvert = !entry.IsClosingEntry
                 && !_linkedJournalEntryIds.Contains(entry.Id)
@@ -270,18 +275,33 @@ else
     </tbody>
 </table>
 
-@if (!FilteredEntries.Any())
+@if (!_entries.Any())
 {
     <MudAlert Severity="Severity.Info" Class="mt-4">
-        @if (_entries.Any())
-        {
-            <span>Inga verifikationer för vald period.</span>
-        }
-        else
+        @if (!_yearHasAnyEntries)
         {
             <span>Inga verifikationer ännu. @if (_activeFiscalYear is not null && _selectedFiscalYearId == _activeFiscalYear.Id) { <span>Klicka "Ny verifikation" för att skapa en.</span> }</span>
         }
+        else
+        {
+            <span>Inga verifikationer för vald period.</span>
+        }
     </MudAlert>
+}
+
+@if (_totalCount > 0)
+{
+    var totalPages = (int)Math.Ceiling(_totalCount / (double)_pageSize);
+    <div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.75rem; flex-wrap:wrap;">
+        <button class="btn btn-sm btn-secondary" disabled="@(_page <= 1)" @onclick="() => GoToPageAsync(_page - 1)">‹ Föregående</button>
+        @for (var p = 1; p <= totalPages; p++)
+        {
+            var pageNum = p;
+            <button class="btn btn-sm @(pageNum == _page ? "btn-primary" : "btn-secondary")" @onclick="() => GoToPageAsync(pageNum)">@pageNum</button>
+        }
+        <button class="btn btn-sm btn-secondary" disabled="@(_page >= totalPages)" @onclick="() => GoToPageAsync(_page + 1)">Nästa ›</button>
+        <span style="color:#64748b; font-size:0.85rem;">@_totalCount verifikationer</span>
+    </div>
 }
 
 }
@@ -306,12 +326,15 @@ else
     private FiscalYear? _selectedFiscalYear => _allFiscalYears.FirstOrDefault(f => f.Id == _selectedFiscalYearId);
     private string _selectedMonthStr = "";
     private int? SelectedMonth => string.IsNullOrEmpty(_selectedMonthStr) ? null : int.Parse(_selectedMonthStr);
-    private IEnumerable<JournalEntry> FilteredEntries =>
-        SelectedMonth.HasValue
-            ? _entries.Where(e => e.Date.Month == SelectedMonth.Value)
-            : _entries;
     private List<Account> _accounts = [];
     private List<JournalEntry> _entries = [];
+    private int _page = 1;
+    private int _pageSize = 50;
+    private JournalEntrySortBy _sortBy = JournalEntrySortBy.EntryNumber;
+    private int _totalCount;
+    // Whether the selected fiscal year has any entries at all, independent of the current
+    // month filter. Drives which empty-state message is shown (#343).
+    private bool _yearHasAnyEntries;
     private bool _isLoading;
     private HashSet<int> _linkedJournalEntryIds = [];
 
@@ -349,12 +372,9 @@ else
             return;
         }
 
-        FiscalYear? seed = null;
-        if (SelectionContext.LastSelectedFiscalYearId is { } lastId)
-            seed = _allFiscalYears.FirstOrDefault(f => f.Id == lastId);
-        seed ??= await FiscalYearService.GetDefaultFiscalYearAsync() ?? _activeFiscalYear ?? _allFiscalYears.First();
+        var seed = await SelectionContext.ResolveSeedAsync(FiscalYearService, _allFiscalYears, _activeFiscalYear);
 
-        _selectedFiscalYearId = seed.Id;
+        _selectedFiscalYearId = seed!.Id;
         await LoadForSelectedYearAsync();
         _isLoading = false;
     }
@@ -387,16 +407,74 @@ else
     private async Task LoadForSelectedYearAsync()
     {
         _accounts = (await AccountService.GetAllAsync(_selectedFiscalYearId)).Where(a => a.IsActive).ToList();
-        _entries = (await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId)).Where(e => e.IsPosted).ToList();
+        await LoadEntriesAsync();
+    }
+
+    private async Task LoadEntriesAsync()
+    {
+        var range = SelectedMonthRange();
+        var result = await JournalEntryService.GetByFiscalYearAsync(
+            _selectedFiscalYearId, range?.From, range?.To,
+            sortBy: _sortBy, page: _page, pageSize: _pageSize);
+        _entries = result.Items.ToList();
+        _totalCount = result.TotalCount;
+
+        if (range is null)
+        {
+            // Unfiltered query already tells us the year's real total.
+            _yearHasAnyEntries = _totalCount > 0;
+        }
+        else if (_totalCount > 0)
+        {
+            // This filtered view has entries, so the year certainly does too.
+            _yearHasAnyEntries = true;
+        }
+        else
+        {
+            // Filtered view is empty; need a separate unfiltered check to distinguish
+            // "year has no entries" from "this period has no entries".
+            var yearTotal = await JournalEntryService.GetByFiscalYearAsync(
+                _selectedFiscalYearId, sortBy: _sortBy, page: 1, pageSize: 1);
+            _yearHasAnyEntries = yearTotal.TotalCount > 0;
+        }
+
         _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_selectedFiscalYearId);
         _knownSuppliers = await InvoiceService.GetSuppliersAsync(_selectedFiscalYearId);
         _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
+    }
+
+    private (DateOnly From, DateOnly To)? SelectedMonthRange()
+    {
+        if (!SelectedMonth.HasValue || _selectedFiscalYear is null) return null;
+        var fy = _selectedFiscalYear;
+        var current = new DateOnly(fy.StartDate.Year, fy.StartDate.Month, 1);
+        var end = new DateOnly(fy.EndDate.Year, fy.EndDate.Month, 1);
+        while (current <= end)
+        {
+            if (current.Month == SelectedMonth.Value)
+                return (current, current.AddMonths(1).AddDays(-1));
+            current = current.AddMonths(1);
+        }
+        return null;
+    }
+
+    private async Task OnFilterChangedAsync()
+    {
+        _page = 1;
+        await LoadEntriesAsync();
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _page = page;
+        await LoadEntriesAsync();
     }
 
     private async Task OnFiscalYearChangedAsync()
     {
         SelectionContext.Set(_selectedFiscalYearId);
         _selectedMonthStr = "";
+        _page = 1;
         _attachmentEntryId = null;
         _attachmentMeta = [];
         _convertingEntryId = null;
@@ -405,11 +483,7 @@ else
         _isReloading = false;
     }
 
-    private async Task ReloadEntriesAsync()
-    {
-        _entries = (await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId)).Where(e => e.IsPosted).ToList();
-        _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
-    }
+    private async Task ReloadEntriesAsync() => await LoadEntriesAsync();
 
     private async Task StartReversalAsync(JournalEntry entry)
     {
@@ -497,9 +571,7 @@ else
 
             Snackbar.Add($"Faktura för {result!.SupplierName} skapad och kopplad till verifikation.", Severity.Success);
             _convertingEntryId = null;
-            _entries = (await JournalEntryService.GetByFiscalYearAsync(_selectedFiscalYearId)).Where(e => e.IsPosted).ToList();
-            _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_selectedFiscalYearId);
-            _knownSuppliers = await InvoiceService.GetSuppliersAsync(_selectedFiscalYearId);
+            await LoadEntriesAsync();
         }
         finally { _converting = false; }
     }

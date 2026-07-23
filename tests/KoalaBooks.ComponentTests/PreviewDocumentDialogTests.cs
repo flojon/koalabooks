@@ -96,7 +96,7 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
     public async Task ClickingBokfor_PersistsEditedFields_BeforeClosing()
     {
         _documentService.UpdateMetadataAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateOnly?>())
-            .Returns((string?)null);
+            .Returns((true, (string?)null));
         var doc = MakeDoc();
 
         var (comp, dialogReference) = await OpenDialogAsync(doc);
@@ -118,7 +118,7 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
     public async Task ClickingBokfor_WhenSaveFails_DoesNotCloseDialog()
     {
         _documentService.UpdateMetadataAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateOnly?>())
-            .Returns("Dokumentet hittades inte.");
+            .Returns((false, "Dokumentet hittades inte."));
         var doc = MakeDoc();
 
         var (comp, dialogReference) = await OpenDialogAsync(doc);
@@ -145,7 +145,7 @@ public class PreviewDocumentDialogTests : BunitContext, IAsyncLifetime
     public async Task ClickingBokfor_EditedDateCarriesIntoClassifyDialog()
     {
         _documentService.UpdateMetadataAsync(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<DateOnly?>())
-            .Returns((string?)null);
+            .Returns((true, (string?)null));
         var doc = MakeDoc();
 
         var (comp, previewReference) = await OpenDialogAsync(doc);

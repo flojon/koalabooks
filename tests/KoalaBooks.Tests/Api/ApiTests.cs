@@ -98,6 +98,40 @@ public class ApiTests : IAsyncLifetime
         return (org2.Id, fy2.Id, account2.Id);
     }
 
+    private async Task<(int CashId, int RevenueId)> GetAccountIdsAsync(HttpClient client)
+    {
+        var accountsResp = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/accounts");
+        var accounts = await accountsResp.Content.ReadFromJsonAsync<JsonElement>();
+        var cashId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "1910").GetProperty("id").GetInt32();
+        var revenueId = accounts.EnumerateArray().First(a => a.GetProperty("accountNumber").GetString() == "3000").GetProperty("id").GetInt32();
+        return (cashId, revenueId);
+    }
+
+    private async Task<(int Id, int EntryNumber)> CreateEntryAsync(HttpClient client, int cashId, int revenueId, string date, string description)
+    {
+        var body = new
+        {
+            date,
+            description,
+            lines = new[]
+            {
+                new { accountId = cashId, debitAmount = 100m, creditAmount = 0m },
+                new { accountId = revenueId, debitAmount = 0m, creditAmount = 100m }
+            }
+        };
+        var response = await client.PostAsJsonAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries", body);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var id = json.GetProperty("id").GetInt32();
+        var entryNumber = json.GetProperty("entryNumber").GetInt32();
+
+        // GetByFiscalYearAsync only returns posted entries, so drafts must be posted to be visible.
+        var postResp = await client.PostAsync($"/api/v1/journal-entries/{id}/post", null);
+        Assert.Equal(HttpStatusCode.OK, postResp.StatusCode);
+
+        return (id, entryNumber);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private async Task<string> GetBearerTokenAsync()
@@ -368,6 +402,109 @@ public class ApiTests : IAsyncLifetime
         var client = await AuthenticatedClientAsync();
         var response = await client.GetAsync("/api/v1/fiscal-years/999999/journal-entries");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_List_SortByDate_OrdersByDateThenEntryNumber()
+    {
+        var client = await AuthenticatedClientAsync();
+        var (cashId, revenueId) = await GetAccountIdsAsync(client);
+
+        await CreateEntryAsync(client, cashId, revenueId, "2025-03-10", "March entry");
+        await CreateEntryAsync(client, cashId, revenueId, "2025-01-05", "January entry");
+        await CreateEntryAsync(client, cashId, revenueId, "2025-02-20", "February entry");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?sortBy=date&pageSize=10");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var dates = json.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("date").GetString()).ToList();
+        Assert.Equal(["2025-01-05", "2025-02-20", "2025-03-10"], dates);
+    }
+
+    [Fact]
+    public async Task JournalEntries_List_UnknownSortBy_Returns400()
+    {
+        var client = await AuthenticatedClientAsync();
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?sortBy=bogus");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task JournalEntries_List_DateRangeFilter_ReturnsCorrectSliceWithNoDuplicatesAcrossPages()
+    {
+        var client = await AuthenticatedClientAsync();
+        var (cashId, revenueId) = await GetAccountIdsAsync(client);
+
+        for (var i = 1; i <= 5; i++)
+            await CreateEntryAsync(client, cashId, revenueId, $"2025-02-{i:D2}", $"February entry {i}");
+        await CreateEntryAsync(client, cashId, revenueId, "2025-03-01", "Outside range");
+
+        var page1 = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?from=2025-02-01&to=2025-02-28&page=1&pageSize=2");
+        var page2 = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?from=2025-02-01&to=2025-02-28&page=2&pageSize=2");
+        var page3 = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?from=2025-02-01&to=2025-02-28&page=3&pageSize=2");
+
+        var json1 = await page1.Content.ReadFromJsonAsync<JsonElement>();
+        var json2 = await page2.Content.ReadFromJsonAsync<JsonElement>();
+        var json3 = await page3.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(5, json1.GetProperty("totalCount").GetInt32());
+        var ids1 = json1.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()).ToList();
+        var ids2 = json2.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()).ToList();
+        var ids3 = json3.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("id").GetInt32()).ToList();
+
+        Assert.Equal(2, ids1.Count);
+        Assert.Equal(2, ids2.Count);
+        Assert.Single(ids3);
+        var allIds = ids1.Concat(ids2).Concat(ids3).ToList();
+        Assert.Equal(5, allIds.Distinct().Count());
+    }
+
+    [Fact]
+    public async Task JournalEntries_List_SearchByExactEntryNumber_ReturnsThatEntry()
+    {
+        var client = await AuthenticatedClientAsync();
+        var (cashId, revenueId) = await GetAccountIdsAsync(client);
+
+        await CreateEntryAsync(client, cashId, revenueId, "2025-01-01", "Alpha");
+        var (_, secondEntryNumber) = await CreateEntryAsync(client, cashId, revenueId, "2025-01-02", "Beta");
+        await CreateEntryAsync(client, cashId, revenueId, "2025-01-03", "Gamma");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?search={secondEntryNumber}");
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(1, json.GetProperty("totalCount").GetInt32());
+        Assert.Equal("Beta", json.GetProperty("items").EnumerateArray().First().GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task JournalEntries_List_SearchByDescriptionSubstring_ReturnsMatchingEntriesCaseInsensitive()
+    {
+        var client = await AuthenticatedClientAsync();
+        var (cashId, revenueId) = await GetAccountIdsAsync(client);
+
+        await CreateEntryAsync(client, cashId, revenueId, "2025-01-01", "Office rent payment");
+        await CreateEntryAsync(client, cashId, revenueId, "2025-01-02", "Client invoice");
+        await CreateEntryAsync(client, cashId, revenueId, "2025-01-03", "OFFICE supplies");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?search=office");
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(2, json.GetProperty("totalCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task JournalEntries_List_SearchNoMatch_ReturnsEmptyPageWithZeroTotalCount()
+    {
+        var client = await AuthenticatedClientAsync();
+        var (cashId, revenueId) = await GetAccountIdsAsync(client);
+        await CreateEntryAsync(client, cashId, revenueId, "2025-01-01", "Alpha");
+
+        var response = await client.GetAsync($"/api/v1/fiscal-years/{_fiscalYearId}/journal-entries?search=zzz-nomatch");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(0, json.GetProperty("totalCount").GetInt32());
+        Assert.Empty(json.GetProperty("items").EnumerateArray());
     }
 
     [Fact]

@@ -119,6 +119,8 @@ public class SupplierInvoiceService : ISupplierInvoiceService
         if (invoice is null) return (null, "Fakturan hittades inte.");
         if (invoice.JournalEntryId.HasValue) return (null, "Fakturan är redan bokförd.");
         if (invoice.FiscalYear.IsClosed) return (null, "Räkenskapsåret är stängt.");
+        if (invoice.VatAmount != 0 && !vatAccountId.HasValue)
+            return (null, "Momskonto måste anges när fakturan har moms.");
 
         if (!await _db.Accounts.AnyAsync(a => a.Id == expenseAccountId && a.FiscalYearId == invoice.FiscalYearId).ConfigureAwait(false))
             return (null, "Kostnadskonto hittades inte.");

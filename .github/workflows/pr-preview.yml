@@ -17,6 +17,7 @@ jobs:
       contents: read
       packages: write
       pull-requests: write
+      deployments: write
 
     steps:
       - uses: actions/checkout@v7
@@ -50,6 +51,16 @@ jobs:
           source: "docker-compose.pr-preview.yml"
           target: /opt/koalabooks
 
+      - name: Copy db-init scripts to VM
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "db-init/*"
+          target: /opt/koalabooks/db-init
+          strip_components: 1
+
       - name: Deploy PR environment
         uses: appleboy/ssh-action@v1
         env:
@@ -67,6 +78,7 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/secrets
             SECRET_FILE=/opt/koalabooks/pr-${PR_NUMBER}/secrets/postgres_password
+            APP_USER_SECRET_FILE=/opt/koalabooks/pr-${PR_NUMBER}/secrets/app_user_password
             # The volume can outlive the secrets file (e.g. dir recreated without `down -v`).
             VOLUME_EXISTS=false
             if [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=pr-${PR_NUMBER}" --filter "label=com.docker.compose.volume=postgres-data")" ]; then
@@ -83,11 +95,29 @@ jobs:
               sudo chown 1654:1654 "$SECRET_FILE"
               NEW_SECRET=true
             fi
+            APP_USER_NEW_SECRET=false
+            if [ ! -f "$APP_USER_SECRET_FILE" ]; then
+              openssl rand -hex 24 > "$APP_USER_SECRET_FILE"
+              # Unlike postgres_password (read via POSTGRES_PASSWORD_FILE while the
+              # postgres container is still root, before it gosu's to the postgres
+              # user), this file is read by db-init/01-create-app-user.sh, which
+              # runs *after* that privilege drop - so it must be world-readable
+              # rather than locked to uid 1654 like the web-only secret above.
+              chmod 644 "$APP_USER_SECRET_FILE"
+              sudo chown 1654:1654 "$APP_USER_SECRET_FILE"
+              APP_USER_NEW_SECRET=true
+            fi
             sed \
               -e "s/__PR_NUMBER__/${PR_NUMBER}/g" \
               -e "s/__OWNER__/${OWNER}/g" \
               /opt/koalabooks/docker-compose.pr-preview.yml \
               > /opt/koalabooks/pr-${PR_NUMBER}/docker-compose.yml
+            # docker-compose.yml mounts ./db-init relative to the per-PR directory,
+            # so the shared template copied above needs to land there too. A prior
+            # compose run may have auto-created this as a root-owned bind-mount
+            # point, so use sudo rather than assume the deploy user can write to it.
+            sudo mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/db-init
+            sudo cp -f /opt/koalabooks/db-init/* /opt/koalabooks/pr-${PR_NUMBER}/db-init/
             printf 'pr-%s.books.koalasoft.se {\n    reverse_proxy pr-%s-web-1:8080\n}\n' \
               "${PR_NUMBER}" "${PR_NUMBER}" \
               > /opt/koalabooks/caddy-snippets/pr-${PR_NUMBER}.caddy
@@ -104,8 +134,75 @@ jobs:
                 "ALTER USER koalabooks WITH PASSWORD '$(cat "$SECRET_FILE")';" \
                 | docker exec -i pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks
             fi
+            if [ "$APP_USER_NEW_SECRET" = true ] && [ "$VOLUME_EXISTS" = true ]; then
+              # Same desync scenario as above, for the app_user role.
+              # Pre-#323 volumes have no app_user role yet; without ON_ERROR_STOP,
+              # psql reports that error and still exits 0, so it doesn't fail this
+              # deploy. Those volumes are recreated per the plan's Manual Rollout
+              # section, not fixed up here.
+              docker compose -p pr-${PR_NUMBER} up -d --wait --wait-timeout 60 postgres
+              printf '%s\n' \
+                "SET log_statement = 'none';" \
+                "ALTER USER app_user WITH PASSWORD '$(cat "$APP_USER_SECRET_FILE")';" \
+                | docker exec -i pr-${PR_NUMBER}-postgres-1 psql -U koalabooks -d koalabooks
+            fi
             docker compose -p pr-${PR_NUMBER} up -d
             docker exec koalabooks-caddy-1 caddy reload --config /etc/caddy/Caddyfile
+
+      - name: Health check preview
+        id: healthcheck
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          url="https://pr-${PR_NUMBER}.books.koalasoft.se"
+          code="000"
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$url" || echo "000")
+            if [ "$code" -ge 200 ] 2>/dev/null && [ "$code" -lt 400 ]; then
+              echo "status=success" >> "$GITHUB_OUTPUT"
+              echo "http_code=$code" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "status=failure" >> "$GITHUB_OUTPUT"
+          echo "http_code=$code" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Create deployment
+        id: create_deployment
+        uses: actions/github-script@v9
+        with:
+          result-encoding: string
+          script: |
+            const { data: deployment } = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.payload.pull_request.head.sha,
+              environment: `pr-${context.payload.pull_request.number}`,
+              auto_merge: false,
+              required_contexts: [],
+              transient_environment: true,
+              production_environment: false,
+            });
+            return deployment.id;
+
+      - name: Set deployment status
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const url = `https://pr-${prNumber}.books.koalasoft.se`;
+            const healthy = '${{ steps.healthcheck.outputs.status }}' === 'success';
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps.create_deployment.outputs.result }},
+              state: healthy ? 'success' : 'failure',
+              environment_url: url,
+              description: healthy ? 'Preview is responding' : 'Preview failed health check',
+            });
 
       - name: Post or update PR comment
         uses: actions/github-script@v9
@@ -113,7 +210,14 @@ jobs:
           script: |
             const prNumber = context.payload.pull_request.number;
             const url = `https://pr-${prNumber}.books.koalasoft.se`;
-            const body = `<!-- pr-preview -->\n🚀 **Preview deployed:** [${url}](${url})`;
+            const sha = context.payload.pull_request.head.sha.substring(0, 7);
+            const healthy = '${{ steps.healthcheck.outputs.status }}' === 'success';
+            const httpCode = '${{ steps.healthcheck.outputs.http_code }}';
+            const statusLine = healthy
+              ? `✅ \`${sha}\` deployed and responding`
+              : `⚠️ \`${sha}\` deployed but not responding (HTTP ${httpCode})`;
+            const timestamp = new Date().toISOString();
+            const body = `<!-- pr-preview -->\n🚀 **Preview:** [${url}](${url})\n\n${statusLine} — last updated ${timestamp}`;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -137,6 +241,10 @@ jobs:
                 body,
               });
             }
+
+      - name: Fail job if preview is unhealthy
+        if: steps.healthcheck.outputs.status != 'success'
+        run: exit 1
 
   cleanup:
     if: github.event.action == 'closed'

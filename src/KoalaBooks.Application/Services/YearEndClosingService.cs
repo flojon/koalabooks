@@ -153,6 +153,15 @@ public class YearEndClosingService : IYearEndClosingService
         if (fiscalYear is null)
             return new ClosingResult(false, "Fiscal year not found.", null, null);
 
+        // BeginTransactionAsync must run inside CreateExecutionStrategy().ExecuteAsync(...) —
+        // EnrichNpgsqlDbContext's retry execution strategy rejects a manually-started
+        // transaction outside that wrapper.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () => await ExecuteClosingInTransactionAsync(fiscalYearId, fiscalYear).ConfigureAwait(false)).ConfigureAwait(false);
+    }
+
+    private async Task<ClosingResult> ExecuteClosingInTransactionAsync(int fiscalYearId, FiscalYear fiscalYear)
+    {
         using var transaction = await _db.Database.BeginTransactionAsync().ConfigureAwait(false);
         try
         {

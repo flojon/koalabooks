@@ -34,16 +34,37 @@ builder.AddServiceDefaults();
 
 // Unpooled: AppDbContext's scoped ICurrentUser ctor dependency can't be resolved by a
 // pooled context's activator, which only has access to the root provider.
-var koalabooksConnectionString = builder.Configuration.GetConnectionString("koalabooks")!;
-var dbPasswordFile = Environment.GetEnvironmentVariable("KOALABOOKS_DB_PASSWORD_FILE");
-if (!string.IsNullOrEmpty(dbPasswordFile))
+//
+// Two roles: "koalabooks" is the privileged/migrator role that owns the schema and runs
+// EF Core migrations plus Hangfire's own job-storage schema. "app_user" is a
+// non-superuser, no-DDL role used for every request-scoped EF Core query, so that a
+// future row-level-security layer has something to actually enforce against instead of
+// being bypassed by a superuser connection.
+var migratorConnectionString = builder.Configuration.GetConnectionString("koalabooks")!;
+var migratorPasswordFile = Environment.GetEnvironmentVariable("KOALABOOKS_DB_PASSWORD_FILE");
+if (!string.IsNullOrEmpty(migratorPasswordFile))
 {
-    koalabooksConnectionString = new NpgsqlConnectionStringBuilder(koalabooksConnectionString)
+    migratorConnectionString = new NpgsqlConnectionStringBuilder(migratorConnectionString)
     {
-        Password = File.ReadAllText(dbPasswordFile).Trim()
+        Password = File.ReadAllText(migratorPasswordFile).Trim()
     }.ConnectionString;
 }
-builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(koalabooksConnectionString));
+
+// Falls back to the migrator connection when koalabooks_app isn't configured, e.g. under
+// the "Testing" environment's WebApplicationFactory harness, which only ever sets
+// ConnectionStrings:koalabooks (see WebApiFactory.cs) and relies on EnsureCreated,
+// not the restricted role.
+var appConnectionString = builder.Configuration.GetConnectionString("koalabooks_app") ?? migratorConnectionString;
+var appPasswordFile = Environment.GetEnvironmentVariable("KOALABOOKS_APP_DB_PASSWORD_FILE");
+if (!string.IsNullOrEmpty(appPasswordFile))
+{
+    appConnectionString = new NpgsqlConnectionStringBuilder(appConnectionString)
+    {
+        Password = File.ReadAllText(appPasswordFile).Trim()
+    }.ConnectionString;
+}
+
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(appConnectionString));
 builder.EnrichNpgsqlDbContext<AppDbContext>();
 
 builder.Services.AddDataProtection()
@@ -58,7 +79,7 @@ if (!builder.Environment.IsEnvironment("Testing"))
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
-        .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(koalabooksConnectionString)));
+        .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(migratorConnectionString)));
     builder.Services.AddHangfireServer();
     builder.Services.AddScoped<KoalaBooks.Application.Jobs.DocumentExtractionJob>();
     builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IDocumentExtractionQueue,
@@ -66,6 +87,9 @@ if (!builder.Environment.IsEnvironment("Testing"))
     builder.Services.AddScoped<KoalaBooks.Application.Jobs.ZipImportJob>();
     builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IZipImportQueue,
         KoalaBooks.Application.Jobs.HangfireZipImportQueue>();
+    builder.Services.AddScoped<KoalaBooks.Application.Jobs.SieImportJob>();
+    builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.ISieImportQueue,
+        KoalaBooks.Application.Jobs.HangfireSieImportQueue>();
 }
 else
 {
@@ -73,6 +97,8 @@ else
         KoalaBooks.Application.Jobs.NoOpDocumentExtractionQueue>();
     builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.IZipImportQueue,
         KoalaBooks.Application.Jobs.NoOpZipImportQueue>();
+    builder.Services.AddScoped<KoalaBooks.Domain.Interfaces.ISieImportQueue,
+        KoalaBooks.Application.Jobs.NoOpSieImportQueue>();
 }
 
 builder.Services.AddHttpContextAccessor();
@@ -148,12 +174,14 @@ builder.Services.AddOpenIddict()
     });
 
 builder.Services.AddScoped<ISieImportService, SieImportService>();
+builder.Services.AddScoped<ISieImportUploadService, SieImportUploadService>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddScoped<IFiscalYearService, FiscalYearService>();
 builder.Services.AddScoped<FiscalYearSelectionContext>();
 builder.Services.AddScoped<JournalEntryService>();
 builder.Services.AddScoped<IJournalEntryService>(sp => sp.GetRequiredService<JournalEntryService>());
 builder.Services.AddScoped<IJournalEntryReportingService>(sp => sp.GetRequiredService<JournalEntryService>());
+builder.Services.AddScoped<IBulkJournalImportService, BulkJournalImportService>();
 builder.Services.AddScoped<IVoucherGapService, VoucherGapService>();
 builder.Services.AddScoped<ISieExportService, SieExportService>();
 builder.Services.AddScoped<IYearEndClosingService, YearEndClosingService>();
@@ -249,15 +277,6 @@ if (!app.Environment.IsEnvironment("Testing"))
         app.Services.GetRequiredService<IServiceScopeFactory>()));
 }
 
-app.MapGet("/customer-invoices/{id:int}/pdf", async (int id, ICustomerInvoiceService svc) =>
-{
-    var invoice = await svc.GetByIdAsync(id);
-    if (invoice is null) return Results.NotFound();
-    var bytes = KoalaBooks.Web.Services.CustomerInvoicePdfGenerator.Generate(invoice);
-    var filename = $"Faktura-{invoice.InvoiceNumber}.pdf";
-    return Results.File(bytes, "application/pdf", filename);
-}).RequireAuthorization();
-
 // Auto-migrate and seed on startup
 using (var scope = app.Services.CreateScope())
 {
@@ -268,11 +287,19 @@ using (var scope = app.Services.CreateScope())
     }
     else
     {
+        // Migrations need DDL rights app_user intentionally doesn't have, so this runs
+        // against a separate, throwaway AppDbContext built on the migrator connection
+        // rather than the DI-registered (app_user-scoped) one resolved above.
+        var migratorOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(migratorConnectionString)
+            .Options;
+        await using var migratorDb = new AppDbContext(migratorOptions, new LocalCurrentUser());
+
         for (var attempt = 0; attempt < 10; attempt++)
         {
             try
             {
-                await db.Database.MigrateAsync();
+                await migratorDb.Database.MigrateAsync();
                 break;
             }
             catch (Exception) when (attempt < 9)
