@@ -299,7 +299,7 @@ else
 @if (!_entries.Any() && !_showForm)
 {
     <MudAlert Severity="Severity.Info" Class="mt-4">
-        @if (_totalCount == 0)
+        @if (!_yearHasAnyEntries)
         {
             <span>Inga verifikationer ännu. @if (_activeFiscalYear is not null && _selectedFiscalYearId == _activeFiscalYear.Id) { <span>Klicka "Ny verifikation" för att skapa en.</span> }</span>
         }
@@ -353,6 +353,9 @@ else
     private int _pageSize = 50;
     private JournalEntrySortBy _sortBy = JournalEntrySortBy.EntryNumber;
     private int _totalCount;
+    // Whether the selected fiscal year has any entries at all, independent of the current
+    // month filter. Drives which empty-state message is shown (#343).
+    private bool _yearHasAnyEntries;
     private bool _showForm;
     private bool _isLoading;
     private DateTime _formDate = DateTime.Today;
@@ -482,6 +485,26 @@ else
             sortBy: _sortBy, page: _page, pageSize: _pageSize);
         _entries = result.Items.ToList();
         _totalCount = result.TotalCount;
+
+        if (range is null)
+        {
+            // Unfiltered query already tells us the year's real total.
+            _yearHasAnyEntries = _totalCount > 0;
+        }
+        else if (_totalCount > 0)
+        {
+            // This filtered view has entries, so the year certainly does too.
+            _yearHasAnyEntries = true;
+        }
+        else
+        {
+            // Filtered view is empty; need a separate unfiltered check to distinguish
+            // "year has no entries" from "this period has no entries".
+            var yearTotal = await JournalEntryService.GetByFiscalYearAsync(
+                _selectedFiscalYearId, sortBy: _sortBy, page: 1, pageSize: 1);
+            _yearHasAnyEntries = yearTotal.TotalCount > 0;
+        }
+
         _linkedJournalEntryIds = await InvoiceService.GetLinkedJournalEntryIdsAsync(_selectedFiscalYearId);
         _knownSuppliers = await InvoiceService.GetSuppliersAsync(_selectedFiscalYearId);
         _attachmentCounts = await DocumentService.GetCountsForJournalEntriesAsync(_entries.Select(e => e.Id));
