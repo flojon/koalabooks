@@ -1,7 +1,7 @@
 import /etc/caddy/snippets/*.caddy
 
 books.koalasoft.se {
-    @backend path /api/* /connect/* /hangfire /hangfire/*
+    @backend path /api/* /connect/* /hangfire /hangfire/* /account/*
     reverse_proxy @backend web:8080
     reverse_proxy client:80
 }
