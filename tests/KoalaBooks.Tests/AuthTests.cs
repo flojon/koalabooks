@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -247,5 +248,111 @@ public class RateLimitTests
             c.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("192.168.1.2");
         });
         Assert.Equal(200, allowed.Response.StatusCode);
+    }
+}
+
+/// <summary>
+/// Verifies the login page redirects into the MFA verify step instead of
+/// completing sign-in when the user has TwoFactorEnabled set.
+/// </summary>
+public class MfaLoginRedirectTests
+{
+    [Fact]
+    public async Task Login_UserWithTwoFactorEnabled_RedirectsToVerifyPage()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                // EmailConfirmed is required alongside TwoFactorEnabled: SignInManager only sets
+                // RequiresTwoFactor when the user has at least one usable two-factor token provider,
+                // and the built-in Email provider needs a confirmed address to qualify.
+                var user = new ApplicationUser { UserName = "mfauser@test.com", Email = "mfauser@test.com", EmailConfirmed = true };
+                await userManager.CreateAsync(user, "ValidPass123!");
+                await userManager.SetTwoFactorEnabledAsync(user, true);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var token = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+
+            var form = new Dictionary<string, string>
+            {
+                ["Email"] = "mfauser@test.com",
+                ["Password"] = "ValidPass123!",
+                ["__RequestVerificationToken"] = token
+            };
+            var response = await client.PostAsync("/account/login", new FormUrlEncodedContent(form));
+
+            Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+            Assert.StartsWith("/account/mfa/verify", response.Headers.Location!.OriginalString);
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
+    }
+}
+
+/// <summary>
+/// End-to-end regression test: enrol MFA, log in with password, redirect to
+/// the verify page, submit a valid TOTP code, and land signed in at ReturnUrl.
+/// </summary>
+public class MfaFullLoginFlowTests
+{
+    [Fact]
+    public async Task Login_WithValidTotpCode_CompletesSignIn()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            MfaEnrollmentInfo enrollment;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                var mfaService = scope.ServiceProvider.GetRequiredService<IMfaService>();
+                var user = new ApplicationUser { UserName = "fulle2e@test.com", Email = "fulle2e@test.com", EmailConfirmed = true };
+                await userManager.CreateAsync(user, "ValidPass123!");
+                enrollment = await mfaService.BeginEnrollmentAsync(user.Id);
+                var firstCode = await TotpTestHelper.GenerateCodeAsync(enrollment.SharedKey.Replace(" ", ""));
+                await mfaService.ConfirmEnrollmentAsync(user.Id, firstCode);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var loginToken = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+            var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["Email"] = "fulle2e@test.com",
+                ["Password"] = "ValidPass123!",
+                ["__RequestVerificationToken"] = loginToken
+            }));
+            Assert.StartsWith("/account/mfa/verify", loginResponse.Headers.Location!.OriginalString);
+
+            var verifyPage = await client.GetAsync(loginResponse.Headers.Location);
+            var verifyToken = OidcTestHelpers.ExtractAntiforgeryToken(await verifyPage.Content.ReadAsStringAsync());
+            var verifyCode = await TotpTestHelper.GenerateCodeAsync(enrollment.SharedKey.Replace(" ", ""));
+            var verifyResponse = await client.PostAsync(loginResponse.Headers.Location, new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["Code"] = verifyCode,
+                ["ReturnUrl"] = "/",
+                ["RememberMe"] = "false",
+                ["UseRecoveryCode"] = "false",
+                ["__RequestVerificationToken"] = verifyToken
+            }));
+
+            Assert.Equal(HttpStatusCode.Redirect, verifyResponse.StatusCode);
+            Assert.Equal("/", verifyResponse.Headers.Location!.OriginalString);
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
     }
 }

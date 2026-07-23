@@ -1,8 +1,10 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @using KoalaBooks.Domain.Interfaces
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.Extensions.DependencyInjection
 @using Microsoft.Extensions.Logging
+@using System.Security.Claims
 @inject NavigationManager Navigation
 @inject IServiceScopeFactory ScopeFactory
 @inject ILogger<MainLayout> Logger
@@ -68,6 +70,7 @@
                 <MudNavLink Href="/account-mapping" Icon="@Icons.Material.Outlined.CompareArrows">Balansöverföring</MudNavLink>
                 <MudNavLink Href="/fiscal-years" Icon="@Icons.Material.Outlined.CalendarMonth">Räkenskapsår</MudNavLink>
                 <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings">Inställningar</MudNavLink>
+                <MudNavLink Href="/account/mfa" Icon="@Icons.Material.Outlined.Security">Tvåfaktorsautentisering</MudNavLink>
             </MudNavGroup>
 
             <MudNavGroup Title="Data" Icon="@Icons.Material.Outlined.Storage" @bind-Expanded="_dataExpanded">
@@ -79,6 +82,13 @@
 
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
+            @if (_showMfaNudge)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-4" ContentAlignment="HorizontalAlignment.Left">
+                    Ditt konto saknar tvåfaktorsautentisering.
+                    <MudLink Href="/account/mfa" Class="ml-1">Aktivera nu</MudLink>
+                </MudAlert>
+            }
             <ErrorBoundary @ref="_errorBoundary">
                 <ChildContent>
                     @Body
@@ -102,12 +112,15 @@
 </div>
 
 @code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
     private bool _drawerOpen = true;
     private ErrorBoundary? _errorBoundary;
     private int _todoCount;
     private bool _loadingTodoCount;
     private int _draftCount;
     private bool _loadingDraftCount;
+    private bool _showMfaNudge;
 
     // Collapse state — persists across badge refreshes within the session
     // Transaktioner and Rapporter start expanded; Inställningar and Data collapsed (lower-frequency)
@@ -121,6 +134,7 @@
         Navigation.LocationChanged += OnLocationChanged;
         await LoadTodoCountAsync();
         await LoadDraftCountAsync();
+        await LoadMfaStatusAsync();
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -189,6 +203,27 @@
         finally
         {
             _loadingDraftCount = false;
+        }
+    }
+
+    private async Task LoadMfaStatusAsync()
+    {
+        try
+        {
+            var principal = AuthState is null ? null : (await AuthState).User;
+            if (principal?.Identity?.IsAuthenticated != true) return;
+
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId is null) return;
+
+            await using var scope = ScopeFactory.CreateAsyncScope();
+            var mfaService = scope.ServiceProvider.GetRequiredService<IMfaService>();
+            _showMfaNudge = !await mfaService.IsEnabledAsync(userId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load MFA status for nav banner");
+            _showMfaNudge = false;
         }
     }
 

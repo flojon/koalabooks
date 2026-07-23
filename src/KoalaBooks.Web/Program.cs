@@ -192,6 +192,7 @@ builder.Services.AddScoped<ISupplierInvoiceService, SupplierInvoiceService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
 builder.Services.AddScoped<ICustomerInvoiceService, CustomerInvoiceService>();
 builder.Services.AddScoped<IOrganisationService, OrganisationService>();
+builder.Services.AddScoped<IMfaService, MfaService>();
 builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.FilenameExtractor>();
 builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.PdfTextExtractor>();
 builder.Services.AddScoped<KoalaBooks.Infrastructure.Services.CompositeExtractor>();

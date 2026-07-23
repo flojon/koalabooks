@@ -1,0 +1,67 @@
+@page "/account/mfa/verify"
+@model KoalaBooks.Web.Pages.Account.MfaVerifyModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verifiera — KoalaBooks</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Inter, sans-serif; background: #F8FAFC; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .card { background: #fff; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,.08); padding: 2.5rem; width: 100%; max-width: 400px; }
+        h1 { font-size: 1.5rem; color: #1E293B; margin-bottom: 0.25rem; }
+        .subtitle { color: #64748b; font-size: 0.875rem; margin-bottom: 2rem; }
+        label { display: block; font-size: 0.875rem; font-weight: 600; color: #374151; margin-bottom: 0.375rem; }
+        input[type=text] { width: 100%; padding: 0.625rem 0.875rem; border: 1px solid #D1D5DB; border-radius: 8px; font-size: 0.9375rem; outline: none; }
+        input:focus { border-color: #2D6A4F; box-shadow: 0 0 0 3px rgba(45,106,79,.12); }
+        .form-group { margin-bottom: 1.25rem; }
+        button[type=submit] { width: 100%; padding: 0.75rem; background: #2D6A4F; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+        button[type=submit]:hover { background: #1E4D38; }
+        .error { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.875rem; margin-bottom: 1.25rem; }
+        .toggle-link { text-align: center; margin-top: 1.25rem; font-size: 0.875rem; }
+        .toggle-link a { color: #2D6A4F; font-weight: 600; text-decoration: none; }
+        .logo { font-size: 2rem; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">🐨</div>
+        <h1>KoalaBooks</h1>
+        <p class="subtitle">
+            @(Model.UseRecoveryCode ? "Ange en återställningskod" : "Ange koden från din autentiseringsapp")
+        </p>
+
+        @if (Model.ErrorMessage is not null)
+        {
+            <div class="error">@Model.ErrorMessage</div>
+        }
+
+        <form method="post">
+            <input type="hidden" asp-for="ReturnUrl" />
+            <input type="hidden" asp-for="RememberMe" />
+            <input type="hidden" asp-for="UseRecoveryCode" />
+            @Html.AntiForgeryToken()
+
+            <div class="form-group">
+                <label asp-for="Code">@(Model.UseRecoveryCode ? "Återställningskod" : "Kod")</label>
+                <input asp-for="Code" type="text" inputmode="@(Model.UseRecoveryCode ? "text" : "numeric")" autocomplete="one-time-code" autofocus />
+            </div>
+            <button type="submit">Verifiera</button>
+        </form>
+        <p class="toggle-link">
+            @if (Model.UseRecoveryCode)
+            {
+                <a href="/account/mfa/verify?returnUrl=@Uri.EscapeDataString(Model.ReturnUrl ?? "/")&amp;rememberMe=@Model.RememberMe">Använd kod från appen istället</a>
+            }
+            else
+            {
+                <a href="/account/mfa/verify?returnUrl=@Uri.EscapeDataString(Model.ReturnUrl ?? "/")&amp;rememberMe=@Model.RememberMe&amp;useRecoveryCode=true">Använd återställningskod istället</a>
+            }
+        </p>
+    </div>
+</body>
+</html>
