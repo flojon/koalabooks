@@ -128,7 +128,7 @@ jobs:
             # point, so use sudo rather than assume the deploy user can write to it.
             sudo mkdir -p /opt/koalabooks/pr-${PR_NUMBER}/db-init
             sudo cp -f /opt/koalabooks/db-init/* /opt/koalabooks/pr-${PR_NUMBER}/db-init/
-            printf 'pr-%s.books.koalasoft.se {\n    @backend path /api/* /connect/* /hangfire /hangfire/* /account/*\n    reverse_proxy @backend pr-%s-web-1:8080\n    reverse_proxy pr-%s-client-1:80\n}\n' \
+            printf 'pr-%s.books.koalasoft.se {\n    @backend path /api/* /connect/* /hangfire /hangfire/* /account/* /.well-known/*\n    reverse_proxy @backend pr-%s-web-1:8080\n    reverse_proxy pr-%s-client-1:80\n}\n' \
               "${PR_NUMBER}" "${PR_NUMBER}" "${PR_NUMBER}" \
               > /opt/koalabooks/caddy-snippets/pr-${PR_NUMBER}.caddy
             cd /opt/koalabooks/pr-${PR_NUMBER}
