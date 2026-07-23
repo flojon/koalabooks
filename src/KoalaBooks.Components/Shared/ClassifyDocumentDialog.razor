@@ -117,7 +117,7 @@
                         <button class="btn btn-sm @(_jeMode == "new" ? "btn-primary" : "btn-secondary")"
                                 @onclick='() => { _jeMode = "new"; MarkDirty(); }'>Ny verifikation</button>
                         <button class="btn btn-sm @(_jeMode == "existing" ? "btn-primary" : "btn-secondary")"
-                                @onclick="LoadExistingEntries">Koppla befintlig</button>
+                                @onclick="SwitchToExistingMode">Koppla befintlig</button>
                     </div>
 
                     @if (_jeMode == "new")
@@ -174,24 +174,15 @@
                     }
                     else
                     {
-                        @if (_linkableEntries.Count == 0 && !_loadingEntries)
-                        {
-                            <p style="color:#94a3b8; font-size:0.85rem;">Inga verifikationer hittades.</p>
-                        }
-                        else if (_loadingEntries)
-                        {
-                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
-                        }
-                        else
-                        {
-                            <select @bind="_existingEntryId" @bind:after="MarkDirty" style="width:100%;">
-                                <option value="0">— Välj verifikation —</option>
-                                @foreach (var e in _linkableEntries)
-                                {
-                                    <option value="@e.Id">#@e.EntryNumber @e.Date.ToString("yyyy-MM-dd") — @e.Description</option>
-                                }
-                            </select>
-                        }
+                        <MudAutocomplete T="JournalEntry"
+                                         Value="_existingEntry"
+                                         ValueChanged="OnExistingEntrySelected"
+                                         SearchFunc="SearchExistingEntriesAsync"
+                                         ToStringFunc="@(e => e is null ? "" : $"#{e.EntryNumber} {e.Date:yyyy-MM-dd} — {e.Description}")"
+                                         MinCharacters="0"
+                                         Placeholder="Sök verifikation…"
+                                         Clearable="true"
+                                         FullWidth="true" />
                     }
                 }
             </div>
@@ -230,7 +221,6 @@
     private int _existingEntryId;
     private int _customerId;
     private bool _saving;
-    private bool _loadingEntries;
     private string? _error;
 
     // Unsaved-changes guard: true once the user edits any classification field.
@@ -239,9 +229,9 @@
     private void MarkDirty() => _isDirty = true;
 
     private List<JournalEntryLine> _lines = [new(), new()];
-    private List<JournalEntry> _linkableEntries = [];
     private List<Account> _accounts = [];
     private List<Customer> _customers = [];
+    private JournalEntry? _existingEntry;
 
     private FiscalYear? _fiscalYear;
 
@@ -282,13 +272,20 @@
         }
     }
 
-    private async Task LoadExistingEntries()
+    private void SwitchToExistingMode() => _jeMode = "existing";
+
+    private async Task<IEnumerable<JournalEntry>> SearchExistingEntriesAsync(string? search, CancellationToken ct)
     {
-        _jeMode = "existing";
-        if (_linkableEntries.Count > 0 || _fiscalYear is null) return;
-        _loadingEntries = true;
-        _linkableEntries = await JournalEntryService.GetByFiscalYearAsync(_fiscalYear.Id);
-        _loadingEntries = false;
+        if (_fiscalYear is null) return [];
+        var result = await JournalEntryService.GetByFiscalYearAsync(_fiscalYear.Id, search: search, page: 1, pageSize: 20);
+        return result.Items;
+    }
+
+    private void OnExistingEntrySelected(JournalEntry? entry)
+    {
+        _existingEntry = entry;
+        _existingEntryId = entry?.Id ?? 0;
+        MarkDirty();
     }
 
     private void AddLine() => _lines.Add(new JournalEntryLine());

@@ -23,18 +23,43 @@ public class JournalEntryService : IJournalEntryService, IJournalEntryReportingS
         _currentUser = currentUser;
     }
 
-    public async Task<List<JournalEntry>> GetByFiscalYearAsync(int fiscalYearId, DateOnly? from = null, DateOnly? to = null)
+    public async Task<PagedResult<JournalEntry>> GetByFiscalYearAsync(
+        int fiscalYearId, DateOnly? from = null, DateOnly? to = null,
+        string? search = null,
+        JournalEntrySortBy sortBy = JournalEntrySortBy.EntryNumber,
+        int page = 1, int pageSize = 50)
     {
         var query = _db.JournalEntries
             .Include(j => j.Lines).ThenInclude(l => l.Account)
-            .Where(j => j.FiscalYearId == fiscalYearId);
+            .Where(j => j.FiscalYearId == fiscalYearId)
+            .Where(j => j.IsPosted);
 
         if (from.HasValue)
             query = query.Where(j => j.Date >= from.Value);
         if (to.HasValue)
             query = query.Where(j => j.Date <= to.Value);
 
-        return await query.OrderBy(j => j.EntryNumber).ToListAsync().ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            query = int.TryParse(s, out var entryNumber)
+                ? query.Where(j => j.EntryNumber == entryNumber || EF.Functions.ILike(j.Description, $"%{s}%"))
+                : query.Where(j => EF.Functions.ILike(j.Description, $"%{s}%"));
+        }
+
+        query = sortBy switch
+        {
+            JournalEntrySortBy.Date => query.OrderBy(j => j.Date).ThenBy(j => j.EntryNumber),
+            _ => query.OrderBy(j => j.EntryNumber)
+        };
+
+        var totalCount = await query.CountAsync().ConfigureAwait(false);
+        var items = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync().ConfigureAwait(false);
+
+        return new PagedResult<JournalEntry>
+        {
+            Items = items, Page = page, PageSize = pageSize, TotalCount = totalCount
+        };
     }
 
     public Task<int> CountDraftsAsync(int fiscalYearId) =>

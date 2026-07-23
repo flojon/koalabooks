@@ -1,4 +1,5 @@
 using KoalaBooks.Domain;
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Components.Pages;
 using KoalaBooks.Domain.Entities;
@@ -9,8 +10,14 @@ namespace KoalaBooks.ComponentTests;
 
 // Regression coverage for #306: Journal (Verifikationer) must seed from and write back to
 // the FiscalYearSelectionContext shared with the other report pages.
-public class JournalPageTests : BunitContext
+public class JournalPageTests : BunitContext, IAsyncLifetime
 {
+    // MudMenu (rendered per journal-entry row) registers services (e.g. PointerEventsNoneService)
+    // that only implement IAsyncDisposable; xunit's synchronous IDisposable.Dispose (used by
+    // default) can't tear those down, so route teardown through IAsyncLifetime's async DisposeAsync.
+    public Task InitializeAsync() => Task.CompletedTask;
+    async Task IAsyncLifetime.DisposeAsync() => await base.DisposeAsync();
+
     private readonly IJournalEntryService _journalEntryService = Substitute.For<IJournalEntryService>();
     private readonly IFiscalYearService _fiscalYearService = Substitute.For<IFiscalYearService>();
     private readonly IAccountService _accountService = Substitute.For<IAccountService>();
@@ -28,7 +35,10 @@ public class JournalPageTests : BunitContext
 
         _fiscalYearService.GetAllAsync().Returns([ClosedFy2025, OpenFy2026]);
         _accountService.GetAllAsync(Arg.Any<int>()).Returns([]);
-        _journalEntryService.GetByFiscalYearAsync(Arg.Any<int>()).Returns([]);
+        _journalEntryService.GetByFiscalYearAsync(
+                Arg.Any<int>(), Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<string?>(),
+                Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>())
+            .Returns(new PagedResult<JournalEntry> { Items = [], Page = 1, PageSize = 50, TotalCount = 0 });
         _invoiceService.GetLinkedJournalEntryIdsAsync(Arg.Any<int>()).Returns([]);
         _invoiceService.GetSuppliersAsync(Arg.Any<int>()).Returns([]);
         _documentService.GetCountsForJournalEntriesAsync(Arg.Any<IEnumerable<int>>()).Returns(new Dictionary<int, int>());
@@ -49,7 +59,9 @@ public class JournalPageTests : BunitContext
 
         Render<Journal>();
 
-        await _journalEntryService.Received(1).GetByFiscalYearAsync(ClosedFy2025.Id);
+        await _journalEntryService.Received(1).GetByFiscalYearAsync(
+            ClosedFy2025.Id, Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<string?>(),
+            Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>());
     }
 
     [Fact]
@@ -59,7 +71,36 @@ public class JournalPageTests : BunitContext
 
         Render<Journal>();
 
-        await _journalEntryService.Received(1).GetByFiscalYearAsync(OpenFy2026.Id);
+        await _journalEntryService.Received(1).GetByFiscalYearAsync(
+            OpenFy2026.Id, Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<string?>(),
+            Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>());
+    }
+
+    [Fact]
+    public void MonthFilterWithNoResults_ButYearHasEntries_ShowsPeriodMessage_NotYearMessage()
+    {
+        _fiscalYearService.GetDefaultFiscalYearAsync().Returns(OpenFy2026);
+
+        // Unfiltered call (no date range) returns entries for the year...
+        _journalEntryService.GetByFiscalYearAsync(
+                OpenFy2026.Id, null, null, Arg.Any<string?>(),
+                Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>())
+            .Returns(new PagedResult<JournalEntry> { Items = [new JournalEntry { Id = 1, EntryNumber = 1, Description = "Test" }], Page = 1, PageSize = 50, TotalCount = 5 });
+
+        // ...but the selected month has none.
+        _journalEntryService.GetByFiscalYearAsync(
+                OpenFy2026.Id, Arg.Is<DateOnly?>(d => d != null), Arg.Is<DateOnly?>(d => d != null), Arg.Any<string?>(),
+                Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>())
+            .Returns(new PagedResult<JournalEntry> { Items = [], Page = 1, PageSize = 50, TotalCount = 0 });
+
+        var cut = Render<Journal>();
+
+        var monthSelect = cut.FindAll("select")[1];
+        monthSelect.Change("1");
+
+        var alert = cut.Find(".mud-alert");
+        Assert.Contains("Inga verifikationer för vald period.", alert.TextContent);
+        Assert.DoesNotContain("Inga verifikationer ännu", alert.TextContent);
     }
 
     [Fact]
@@ -71,6 +112,8 @@ public class JournalPageTests : BunitContext
         cut.Find("select").Change(ClosedFy2025.Id.ToString());
 
         Assert.Equal(ClosedFy2025.Id, _selectionContext.LastSelectedFiscalYearId);
-        await _journalEntryService.Received(1).GetByFiscalYearAsync(ClosedFy2025.Id);
+        await _journalEntryService.Received(1).GetByFiscalYearAsync(
+            ClosedFy2025.Id, Arg.Any<DateOnly?>(), Arg.Any<DateOnly?>(), Arg.Any<string?>(),
+            Arg.Any<JournalEntrySortBy>(), Arg.Any<int>(), Arg.Any<int>());
     }
 }

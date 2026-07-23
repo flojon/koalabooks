@@ -34,7 +34,7 @@ public class BankTransactionsController : ControllerBase
     }
 
     [HttpGet("fiscal-years/{fiscalYearId:int}/bank-transactions")]
-    [ProducesResponseType<PagedResult<BankTransactionResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<KoalaBooks.Web.Models.Api.PagedResult<BankTransactionResponse>>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetByFiscalYear(
@@ -54,7 +54,7 @@ public class BankTransactionsController : ControllerBase
         var all = await _bankImportService.GetByFiscalYearAsync(fiscalYearId, from, to, accountId);
         var items = all.Skip((page - 1) * pageSize).Take(pageSize).Select(MapTransaction).ToList();
 
-        return Ok(new PagedResult<BankTransactionResponse>
+        return Ok(new KoalaBooks.Web.Models.Api.PagedResult<BankTransactionResponse>
         {
             Items = items,
             Page = page,

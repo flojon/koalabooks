@@ -1,3 +1,4 @@
+using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Web.Models.Api;
@@ -40,13 +41,16 @@ public class JournalEntriesController : ControllerBase
     }
 
     [HttpGet("fiscal-years/{fiscalYearId:int}/journal-entries")]
-    [ProducesResponseType<PagedResult<JournalEntryResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<KoalaBooks.Web.Models.Api.PagedResult<JournalEntryResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetByFiscalYear(
         int fiscalYearId,
         [FromQuery] DateOnly? from,
         [FromQuery] DateOnly? to,
+        [FromQuery] string? search,
+        [FromQuery] JournalEntrySortBy sortBy = JournalEntrySortBy.EntryNumber,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -56,15 +60,14 @@ public class JournalEntriesController : ControllerBase
         pageSize = Math.Clamp(pageSize, 1, 200);
         page = Math.Max(1, page);
 
-        var all = await _journalEntryService.GetByFiscalYearAsync(fiscalYearId, from, to);
-        var items = all.Skip((page - 1) * pageSize).Take(pageSize).Select(MapEntry).ToList();
+        var result = await _journalEntryService.GetByFiscalYearAsync(fiscalYearId, from, to, search, sortBy, page, pageSize);
 
-        return Ok(new PagedResult<JournalEntryResponse>
+        return Ok(new KoalaBooks.Web.Models.Api.PagedResult<JournalEntryResponse>
         {
-            Items = items,
-            Page = page,
-            PageSize = pageSize,
-            TotalCount = all.Count
+            Items = result.Items.Select(MapEntry).ToList(),
+            Page = result.Page,
+            PageSize = result.PageSize,
+            TotalCount = result.TotalCount
         });
     }
 
