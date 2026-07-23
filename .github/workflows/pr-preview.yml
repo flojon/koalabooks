@@ -13,6 +13,9 @@ jobs:
   deploy:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    environment:
+      name: pr-${{ github.event.pull_request.number }}
+      url: https://pr-${{ github.event.pull_request.number }}.books.koalasoft.se
     permissions:
       contents: read
       packages: write
@@ -249,10 +252,13 @@ jobs:
   cleanup:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
+    environment:
+      name: pr-${{ github.event.pull_request.number }}
     permissions:
       contents: read
       packages: write
       pull-requests: write
+      environments: write
 
     steps:
       - name: Tear down PR environment
@@ -324,3 +330,8 @@ jobs:
                 comment_id: preview.id,
               });
             }
+
+      - name: Delete PR environment
+        run: gh api -X DELETE "/repos/${{ github.repository }}/environments/pr-${{ github.event.pull_request.number }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

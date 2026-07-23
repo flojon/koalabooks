@@ -10,6 +10,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      environments: write
 
     steps:
       - name: Get open PR numbers
@@ -87,3 +88,21 @@ jobs:
               fi
             done
             [ "$RELOADED" = "1" ] && docker exec koalabooks-caddy-1 caddy reload --config /etc/caddy/Caddyfile || true
+
+      - name: Delete orphaned PR environments
+        env:
+          OPEN_PR_NUMBERS: ${{ steps.open-prs.outputs.result }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          IFS=',' read -ra OPEN_PRS <<< "$OPEN_PR_NUMBERS"
+          for env_name in $(gh api "/repos/${{ github.repository }}/environments" --paginate --jq '.environments[].name' | grep -E '^pr-[0-9]+$'); do
+            pr_num="${env_name#pr-}"
+            is_open=0
+            for open in "${OPEN_PRS[@]}"; do
+              [ "$open" = "$pr_num" ] && is_open=1 && break
+            done
+            if [ "$is_open" = "0" ]; then
+              echo "Deleting orphaned environment ${env_name}"
+              gh api -X DELETE "/repos/${{ github.repository }}/environments/${env_name}" || true
+            fi
+          done
