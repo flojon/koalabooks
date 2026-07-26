@@ -13,11 +13,13 @@ jobs:
   deploy:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
+    environment:
+      name: pr-${{ github.event.pull_request.number }}
+      url: https://pr-${{ github.event.pull_request.number }}.books.koalasoft.se
     permissions:
       contents: read
       packages: write
       pull-requests: write
-      deployments: write
 
     steps:
       - uses: actions/checkout@v7
@@ -170,40 +172,6 @@ jobs:
           echo "http_code=$code" >> "$GITHUB_OUTPUT"
           exit 1
 
-      - name: Create deployment
-        id: create_deployment
-        uses: actions/github-script@v9
-        with:
-          result-encoding: string
-          script: |
-            const { data: deployment } = await github.rest.repos.createDeployment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: context.payload.pull_request.head.sha,
-              environment: `pr-${context.payload.pull_request.number}`,
-              auto_merge: false,
-              required_contexts: [],
-              transient_environment: true,
-              production_environment: false,
-            });
-            return deployment.id;
-
-      - name: Set deployment status
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const prNumber = context.payload.pull_request.number;
-            const url = `https://pr-${prNumber}.books.koalasoft.se`;
-            const healthy = '${{ steps.healthcheck.outputs.status }}' === 'success';
-            await github.rest.repos.createDeploymentStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              deployment_id: ${{ steps.create_deployment.outputs.result }},
-              state: healthy ? 'success' : 'failure',
-              environment_url: url,
-              description: healthy ? 'Preview is responding' : 'Preview failed health check',
-            });
-
       - name: Post or update PR comment
         uses: actions/github-script@v9
         with:
@@ -249,6 +217,8 @@ jobs:
   cleanup:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
+    environment:
+      name: pr-${{ github.event.pull_request.number }}
     permissions:
       contents: read
       packages: write
@@ -324,3 +294,8 @@ jobs:
                 comment_id: preview.id,
               });
             }
+
+      - name: Delete PR environment
+        run: gh api -X DELETE "/repos/${{ github.repository }}/environments/pr-${{ github.event.pull_request.number }}"
+        env:
+          GH_TOKEN: ${{ secrets.ENV_CLEANUP_TOKEN }}
