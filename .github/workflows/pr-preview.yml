@@ -223,7 +223,6 @@ jobs:
       contents: read
       packages: write
       pull-requests: write
-      environments: write
 
     steps:
       - name: Tear down PR environment
@@ -299,4 +298,4 @@ jobs:
       - name: Delete PR environment
         run: gh api -X DELETE "/repos/${{ github.repository }}/environments/pr-${{ github.event.pull_request.number }}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.ENV_CLEANUP_TOKEN }}

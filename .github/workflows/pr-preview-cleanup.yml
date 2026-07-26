@@ -10,7 +10,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      environments: write
 
     steps:
       - name: Get open PR numbers
@@ -92,7 +91,7 @@ jobs:
       - name: Delete orphaned PR environments
         env:
           OPEN_PR_NUMBERS: ${{ steps.open-prs.outputs.result }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.ENV_CLEANUP_TOKEN }}
         run: |
           IFS=',' read -ra OPEN_PRS <<< "$OPEN_PR_NUMBERS"
           for env_name in $(gh api "/repos/${{ github.repository }}/environments" --paginate --jq '.environments[].name' | grep -E '^pr-[0-9]+$'); do
