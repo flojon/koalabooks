@@ -29,4 +29,19 @@ public class JournalEntryPaginationServiceTests : IDisposable
         Assert.Equal(7, result.TotalCount);
         Assert.Equal(3, result.Items.Count);
     }
+
+    [Fact]
+    public async Task GetByFiscalYearAsync_IncludesDraftEntries()
+    {
+        await _f.CreateAndPostEntryAsync(_fy.Id, _cash.Id, _revenue.Id, 100m, description: "Posted");
+        var draft = _f.MakeEntry(_fy.Id, _cash.Id, _revenue.Id, 50m, description: "Draft");
+        var (created, error) = await _f.JournalEntryService.CreateAsync(draft);
+        Assert.Null(error);
+        Assert.NotNull(created);
+
+        var result = await _f.JournalEntryService.GetByFiscalYearAsync(_fy.Id, page: 1, pageSize: 10);
+
+        Assert.Equal(2, result.TotalCount);
+        Assert.Contains(result.Items, e => e.Id == created!.Id && !e.IsPosted);
+    }
 }
