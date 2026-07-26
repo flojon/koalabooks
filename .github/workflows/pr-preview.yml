@@ -217,8 +217,6 @@ jobs:
   cleanup:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
-    environment:
-      name: pr-${{ github.event.pull_request.number }}
     permissions:
       contents: read
       packages: write
