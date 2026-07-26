@@ -31,8 +31,7 @@ public class JournalEntryService : IJournalEntryService, IJournalEntryReportingS
     {
         var query = _db.JournalEntries
             .Include(j => j.Lines).ThenInclude(l => l.Account)
-            .Where(j => j.FiscalYearId == fiscalYearId)
-            .Where(j => j.IsPosted);
+            .Where(j => j.FiscalYearId == fiscalYearId);
 
         if (from.HasValue)
             query = query.Where(j => j.Date >= from.Value);
