@@ -1,5 +1,4 @@
 using KoalaBooks.Domain;
-using KoalaBooks.Domain.Auth;
 using KoalaBooks.Domain.Entities;
 using KoalaBooks.Domain.Enums;
 using KoalaBooks.Domain.Interfaces;
@@ -22,6 +21,14 @@ internal static class OidcTestHelpers
 {
     public static string ExtractAntiforgeryToken(string html) =>
         Regex.Match(html, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+
+    public static (string Verifier, string Challenge) GeneratePkcePair()
+    {
+        var verifier = WebEncoders.Base64UrlEncode(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        var challenge = WebEncoders.Base64UrlEncode(
+            System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+        return (verifier, challenge);
+    }
 }
 
 // Reproduces a production incident where dashboard.koalasoft.se returned 500: the token endpoint
@@ -259,6 +266,7 @@ public class WasmClientSeedingTests : IDisposable
 {
     private readonly ServiceProvider _sp;
     private readonly string _dbName;
+    private static readonly Uri BaseUri = new("https://books.koalasoft.se/");
 
     public WasmClientSeedingTests()
     {
@@ -278,10 +286,10 @@ public class WasmClientSeedingTests : IDisposable
     }
 
     [Fact]
-    public async Task SeedAsync_CreatesPublicClientForCookieGrant()
+    public async Task SeedAsync_CreatesPublicClientWithAuthorizationCodeAndPkce()
     {
         using var scope = _sp.CreateScope();
-        await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, BaseUri);
 
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var app = await manager.FindByClientIdAsync(WasmClientSeeder.ClientId);
@@ -291,21 +299,39 @@ public class WasmClientSeedingTests : IDisposable
         await manager.PopulateAsync(descriptor, app);
 
         Assert.Equal(OpenIddictConstants.ClientTypes.Public, descriptor.ClientType);
-        Assert.Contains(
-            OpenIddictConstants.Permissions.Prefixes.GrantType + WasmCookieBridge.GrantType,
+        Assert.Contains(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Permissions.ResponseTypes.Code, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Permissions.Endpoints.Authorization, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Permissions.Endpoints.Token, descriptor.Permissions);
+        Assert.Contains(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange, descriptor.Requirements);
+        Assert.DoesNotContain(
+            OpenIddictConstants.Permissions.Prefixes.GrantType + "urn:koalabooks:grant-type:cookie",
             descriptor.Permissions);
-        Assert.DoesNotContain(OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode, descriptor.Permissions);
-        Assert.DoesNotContain(OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange, descriptor.Requirements);
+    }
+
+    [Fact]
+    public async Task SeedAsync_RegistersLoginAndLogoutCallbackUris()
+    {
+        using var scope = _sp.CreateScope();
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, BaseUri);
+
+        var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+        var app = (await manager.FindByClientIdAsync(WasmClientSeeder.ClientId))!;
+        var descriptor = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(descriptor, app);
+
+        Assert.Contains(new Uri(BaseUri, "authentication/login-callback"), descriptor.RedirectUris);
+        Assert.Contains(new Uri(BaseUri, "authentication/logout-callback"), descriptor.PostLogoutRedirectUris);
     }
 
     [Fact]
     public async Task SeedAsync_IsIdempotent()
     {
         using (var scope = _sp.CreateScope())
-            await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+            await WasmClientSeeder.SeedAsync(scope.ServiceProvider, BaseUri);
 
         using (var scope = _sp.CreateScope())
-            await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+            await WasmClientSeeder.SeedAsync(scope.ServiceProvider, BaseUri);
 
         using var verifyScope = _sp.CreateScope();
         var manager = verifyScope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
@@ -319,15 +345,14 @@ public class WasmClientSeedingTests : IDisposable
     }
 }
 
-// #292: proves the WASM client can bridge its ambient Identity cookie session to a bearer
-// token via the cookie grant, without ever going through AddOidcAuthentication()'s
-// RemoteAuthenticationService (whose DI-slot conflict with AddAuthenticationStateDeserialization()
-// is what #292 is about). The minted token both authenticates against the API and carries org_id
-// for tenant scoping, same as the password/authorization_code grants.
-public class OidcCookieGrantForWasmClientTests
+// Proves the WASM client's real flow end-to-end: authorization_code + PKCE against the
+// ambient Identity cookie's login page, redeeming the code without a client_secret (public
+// client). Replaces the deleted #292 cookie-bridge grant test — same access-token/org_id
+// assertions, different transport.
+public class OidcAuthorizationCodePkceForWasmClientTests
 {
     [Fact]
-    public async Task CookieGrant_ForWasmClient_ReturnsAccessTokenWithOrgId()
+    public async Task AuthorizationCodeWithPkce_ForWasmClient_ReturnsAccessTokenWithOrgId()
     {
         var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
         try
@@ -337,6 +362,8 @@ public class OidcCookieGrantForWasmClientTests
 
             const string email = "wasm-user@test.com";
             const string password = "ValidPass123!";
+            var baseUri = new Uri("https://books.koalasoft.se/");
+            var redirectUri = new Uri(baseUri, "authentication/login-callback");
             int orgId;
 
             using (var scope = factory.Services.CreateScope())
@@ -353,7 +380,7 @@ public class OidcCookieGrantForWasmClientTests
                     password);
                 Assert.True(created.Succeeded);
 
-                await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, baseUri);
             }
 
             var loginPage = await client.GetAsync("/account/login");
@@ -368,18 +395,27 @@ public class OidcCookieGrantForWasmClientTests
                 }));
             Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
 
-            using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
-            {
-                Content = new FormUrlEncodedContent(new Dictionary<string, string>
-                {
-                    ["grant_type"] = WasmCookieBridge.GrantType,
-                    ["client_id"] = WasmClientSeeder.ClientId,
-                    ["scope"] = "email profile",
-                })
-            };
-            tokenRequest.Headers.Add(WasmCookieBridge.CsrfHeaderName, WasmCookieBridge.CsrfHeaderValue);
+            var (verifier, challenge) = OidcTestHelpers.GeneratePkcePair();
 
-            var tokenResponse = await client.SendAsync(tokenRequest);
+            var authorizeResponse = await client.GetAsync(
+                $"/connect/authorize?client_id={WasmClientSeeder.ClientId}&response_type=code" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile" +
+                $"&code_challenge={challenge}&code_challenge_method=S256");
+            Assert.Equal(HttpStatusCode.Redirect, authorizeResponse.StatusCode);
+
+            var code = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["code"].ToString();
+            Assert.False(string.IsNullOrEmpty(code));
+
+            var tokenResponse = await client.PostAsync("/connect/token", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["grant_type"] = "authorization_code",
+                    ["code"] = code,
+                    ["redirect_uri"] = redirectUri.ToString(),
+                    ["client_id"] = WasmClientSeeder.ClientId,
+                    ["code_verifier"] = verifier,
+                }));
+
             var body = await tokenResponse.Content.ReadAsStringAsync();
             Assert.True(tokenResponse.IsSuccessStatusCode, body);
 
@@ -398,7 +434,7 @@ public class OidcCookieGrantForWasmClientTests
     }
 
     [Fact]
-    public async Task CookieGrant_WithoutCsrfHeader_IsRejected()
+    public async Task AuthorizationCode_WithoutCodeVerifier_IsRejected()
     {
         var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
         try
@@ -408,6 +444,8 @@ public class OidcCookieGrantForWasmClientTests
 
             const string email = "wasm-user-2@test.com";
             const string password = "ValidPass123!";
+            var baseUri = new Uri("https://books.koalasoft.se/");
+            var redirectUri = new Uri(baseUri, "authentication/login-callback");
 
             using (var scope = factory.Services.CreateScope())
             {
@@ -416,7 +454,7 @@ public class OidcCookieGrantForWasmClientTests
                     new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true }, password);
                 Assert.True(created.Succeeded);
 
-                await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, baseUri);
             }
 
             var loginPage = await client.GetAsync("/account/login");
@@ -431,18 +469,93 @@ public class OidcCookieGrantForWasmClientTests
                 }));
             Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
 
-            // No X-KoalaBooks-Csrf header this time.
+            var (_, challenge) = OidcTestHelpers.GeneratePkcePair();
+
+            var authorizeResponse = await client.GetAsync(
+                $"/connect/authorize?client_id={WasmClientSeeder.ClientId}&response_type=code" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile" +
+                $"&code_challenge={challenge}&code_challenge_method=S256");
+            var code = QueryHelpers.ParseQuery(authorizeResponse.Headers.Location!.Query)["code"].ToString();
+
+            // No code_verifier this time - PKCE requires it.
             var tokenResponse = await client.PostAsync("/connect/token", new FormUrlEncodedContent(
                 new Dictionary<string, string>
                 {
-                    ["grant_type"] = WasmCookieBridge.GrantType,
+                    ["grant_type"] = "authorization_code",
+                    ["code"] = code,
+                    ["redirect_uri"] = redirectUri.ToString(),
                     ["client_id"] = WasmClientSeeder.ClientId,
-                    ["scope"] = "email profile",
                 }));
 
             var body = await tokenResponse.Content.ReadAsStringAsync();
             Assert.False(tokenResponse.IsSuccessStatusCode, body);
-            Assert.Contains("invalid_request", body);
+        }
+        finally
+        {
+            PostgresContainerFixture.DropDatabase(dbName);
+        }
+    }
+}
+
+// Verifies RP-initiated logout actually terminates the server-side session: without this,
+// the SPA's local sign-out would leave the Identity cookie valid and a silent-renew would
+// re-authenticate the user without them noticing.
+public class OidcLogoutEndpointTests
+{
+    [Fact]
+    public async Task Logout_SignsOutCookie_SubsequentAuthorizeChallengesLogin()
+    {
+        var (dbName, connStr) = PostgresContainerFixture.CreateUniqueDatabase();
+        try
+        {
+            await using var factory = new WebApiFactory(connStr);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            const string email = "logout-user@test.com";
+            const string password = "ValidPass123!";
+            var baseUri = new Uri("https://books.koalasoft.se/");
+            var redirectUri = new Uri(baseUri, "authentication/login-callback");
+            var postLogoutUri = new Uri(baseUri, "authentication/logout-callback");
+
+            using (var scope = factory.Services.CreateScope())
+            {
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                var created = await userManager.CreateAsync(
+                    new ApplicationUser { UserName = email, Email = email, EmailConfirmed = true }, password);
+                Assert.True(created.Succeeded);
+
+                await WasmClientSeeder.SeedAsync(scope.ServiceProvider, baseUri);
+            }
+
+            var loginPage = await client.GetAsync("/account/login");
+            var antiforgeryToken = OidcTestHelpers.ExtractAntiforgeryToken(await loginPage.Content.ReadAsStringAsync());
+
+            var loginResponse = await client.PostAsync("/account/login", new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    ["Email"] = email,
+                    ["Password"] = password,
+                    ["__RequestVerificationToken"] = antiforgeryToken,
+                }));
+            Assert.Equal(HttpStatusCode.Redirect, loginResponse.StatusCode);
+
+            var authorizeUrl = $"/connect/authorize?client_id={WasmClientSeeder.ClientId}&response_type=code" +
+                $"&redirect_uri={Uri.EscapeDataString(redirectUri.ToString())}&scope=openid%20profile" +
+                "&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256";
+
+            var authorizeBeforeLogout = await client.GetAsync(authorizeUrl);
+            Assert.Equal(HttpStatusCode.Redirect, authorizeBeforeLogout.StatusCode);
+            Assert.Contains("code=", authorizeBeforeLogout.Headers.Location!.Query);
+
+            var logoutResponse = await client.GetAsync(
+                $"/connect/logout?client_id={WasmClientSeeder.ClientId}" +
+                $"&post_logout_redirect_uri={Uri.EscapeDataString(postLogoutUri.ToString())}");
+            Assert.Equal(HttpStatusCode.Redirect, logoutResponse.StatusCode);
+            Assert.StartsWith(postLogoutUri.ToString(), logoutResponse.Headers.Location!.ToString());
+
+            var authorizeAfterLogout = await client.GetAsync(authorizeUrl);
+            Assert.Equal(HttpStatusCode.Redirect, authorizeAfterLogout.StatusCode);
+            Assert.Contains("/account/login", authorizeAfterLogout.Headers.Location!.ToString());
         }
         finally
         {

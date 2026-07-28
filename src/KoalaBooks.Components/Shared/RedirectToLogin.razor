@@ -1,9 +1,18 @@
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
 
 @code {
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        var returnUrl = Uri.EscapeDataString(Navigation.Uri);
-        Navigation.NavigateTo($"/account/login?returnUrl={returnUrl}", forceLoad: true);
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated != true)
+        {
+            Navigation.NavigateToLogin("authentication/login", new InteractiveRequestOptions
+            {
+                ReturnUrl = Navigation.Uri,
+                Interaction = InteractionType.SignIn
+            });
+        }
     }
 }

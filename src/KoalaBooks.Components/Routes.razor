@@ -1,8 +1,12 @@
 <CascadingAuthenticationState>
     <Router AppAssembly="typeof(Routes).Assembly"
+            AdditionalAssemblies="AdditionalAssemblies"
             NotFoundPage="typeof(KoalaBooks.Components.Pages.NotFound)">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(KoalaBooks.Components.Layout.MainLayout)">
+                <Authorizing>
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+                </Authorizing>
                 <NotAuthorized>
                     <RedirectToLogin />
                 </NotAuthorized>
@@ -11,3 +15,7 @@
         </Found>
     </Router>
 </CascadingAuthenticationState>
+
+@code {
+    [Parameter] public IEnumerable<System.Reflection.Assembly>? AdditionalAssemblies { get; set; }
+}

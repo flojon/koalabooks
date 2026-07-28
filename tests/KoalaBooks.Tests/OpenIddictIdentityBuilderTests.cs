@@ -58,4 +58,24 @@ public class OpenIddictIdentityBuilderTests
         Assert.Equal("someone@koalabooks.test", principal.FindFirst(OpenIddictConstants.Claims.Email)?.Value);
         Assert.Equal("Someone Person", principal.FindFirst(OpenIddictConstants.Claims.Name)?.Value);
     }
+
+    [Fact]
+    public void BuildPrincipal_SubjectGoesToIdentityToken()
+    {
+        // sub is OIDC-mandatory in the id_token; without this destination OpenIddict issues no
+        // id_token at all, which silently breaks the WASM client's AddOidcAuthentication() flow.
+        var user = new ApplicationUser
+        {
+            UserName = "someone@koalabooks.test",
+            Email = "someone@koalabooks.test",
+            DisplayName = "Someone Person",
+        };
+
+        var principal = OpenIddictIdentityBuilder.BuildPrincipal(user, "user-id-3", ["openid", "profile"]);
+
+        var subjectClaim = principal.FindFirst(OpenIddictConstants.Claims.Subject);
+        Assert.NotNull(subjectClaim);
+        Assert.Contains(OpenIddictConstants.Destinations.IdentityToken, subjectClaim.GetDestinations());
+        Assert.Contains(OpenIddictConstants.Destinations.AccessToken, subjectClaim.GetDestinations());
+    }
 }

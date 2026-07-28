@@ -1,13 +1,11 @@
 using KoalaBooks.Application.Services;
 using KoalaBooks.Domain;
-using KoalaBooks.Domain.Auth;
 using Scalar.AspNetCore;
 using Hangfire;
 using Hangfire.PostgreSql;
 using KoalaBooks.Domain.Interfaces;
 using KoalaBooks.Infrastructure.Data;
 using KoalaBooks.Infrastructure.Services;
-using KoalaBooks.Web.Components;
 using KoalaBooks.Web.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
@@ -15,8 +13,6 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using MudBlazor;
-using MudBlazor.Services;
 using Npgsql;
 using OpenIddict.Abstractions;
 using QuestPDF.Infrastructure;
@@ -138,10 +134,10 @@ builder.Services.AddOpenIddict()
     {
         options.SetAuthorizationEndpointUris("/connect/authorize");
         options.SetTokenEndpointUris("/connect/token");
+        options.SetEndSessionEndpointUris("/connect/logout");
         options.AllowPasswordFlow()
                .AllowRefreshTokenFlow()
-               .AllowAuthorizationCodeFlow()
-               .AllowCustomFlow(WasmCookieBridge.GrantType);
+               .AllowAuthorizationCodeFlow();
         // Scopes other than "openid"/"offline_access" must be registered here, or OpenIddict
         // rejects them with invalid_scope even when the client has the matching permission.
         options.RegisterScopes(
@@ -165,6 +161,7 @@ builder.Services.AddOpenIddict()
         options.UseAspNetCore()
                .EnableAuthorizationEndpointPassthrough()
                .EnableTokenEndpointPassthrough()
+               .EnableEndSessionEndpointPassthrough()
                .DisableTransportSecurityRequirement();
     })
     .AddValidation(options =>
@@ -204,23 +201,10 @@ builder.Services.AddScoped<IBackgroundJobRunService, BackgroundJobRunService>();
 builder.Services.AddScoped<IDocumentProvider, WebDocumentProvider>();
 builder.Services.AddSingleton<IVatReportCsvExporter, VatReportCsvExporter>();
 
-builder.Services.AddMudServices(config =>
-{
-    config.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight;
-    config.SnackbarConfiguration.MaxDisplayedSnackbars = 3;
-    config.SnackbarConfiguration.VisibleStateDuration = 3000;
-    config.SnackbarConfiguration.HideTransitionDuration = 300;
-    config.SnackbarConfiguration.ShowTransitionDuration = 300;
-});
-
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.Services.AddRazorPages();
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents()
-    .AddInteractiveWebAssemblyComponents()
-    .AddAuthenticationStateSerialization(options => options.SerializeAllClaims = true);
 
 builder.Services.AddAuthorization();
 
@@ -320,7 +304,8 @@ using (var scope = app.Services.CreateScope())
             ?? "aspire-dashboard-dev-secret";
         await AspireDashboardSeeder.SeedAsync(scope.ServiceProvider, new Uri(dashboardRedirectUri), dashboardClientSecret);
 
-        await WasmClientSeeder.SeedAsync(scope.ServiceProvider);
+        var publicOrigin = builder.Configuration["PublicOrigin"] ?? "http://localhost:5000";
+        await WasmClientSeeder.SeedAsync(scope.ServiceProvider, new Uri(publicOrigin));
 
         // Stopgap until there's a real UI to grant roles.
         await AdminRoleSeeder.SeedAsync(scope.ServiceProvider, builder.Configuration["AdminSeed:Email"]);
@@ -350,14 +335,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
 
-app.MapStaticAssets();
 app.MapRazorPages();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode()
-    .AddInteractiveWebAssemblyRenderMode()
-    .AddAdditionalAssemblies(
-        typeof(KoalaBooks.Components.Pages.Home).Assembly,
-        typeof(KoalaBooks.Client._Imports).Assembly);
 
 app.MapOpenApi();
 if (app.Environment.IsDevelopment())

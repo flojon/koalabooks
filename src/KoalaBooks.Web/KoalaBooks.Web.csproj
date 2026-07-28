@@ -2,8 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\KoalaBooks.Application\KoalaBooks.Application.csproj" />
-    <ProjectReference Include="..\KoalaBooks.Client\KoalaBooks.Client.csproj" />
-    <ProjectReference Include="..\KoalaBooks.Components\KoalaBooks.Components.csproj" />
     <ProjectReference Include="..\KoalaBooks.Infrastructure\KoalaBooks.Infrastructure.csproj" />
     <ProjectReference Include="..\KoalaBooks.ServiceDefaults\KoalaBooks.ServiceDefaults.csproj" />
   </ItemGroup>
@@ -17,9 +15,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.10" />
     <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
-    <PackageReference Include="MudBlazor" Version="9.7.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="OpenIddict.AspNetCore" Version="7.6.0" />
     <PackageReference Include="QuestPDF" Version="2026.7.1" />

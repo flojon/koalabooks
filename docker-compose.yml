@@ -31,6 +31,7 @@ services:
       # Path is "/", not "/signin-oidc" - the dashboard's own OIDC callback path is its root.
       - AspireDashboard__OidcRedirectUri=https://dashboard.koalasoft.se/
       - AspireDashboard__OidcClientSecret=${ASPIRE_DASHBOARD_OIDC_CLIENT_SECRET}
+      - PublicOrigin=https://books.koalasoft.se
     secrets:
       - postgres_password
       - app_user_password
@@ -39,6 +40,13 @@ services:
         condition: service_healthy
       aspire-dashboard:
         condition: service_started
+    restart: unless-stopped
+
+  client:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-local}/koalabooks-client:latest
+    build:
+      context: .
+      dockerfile: src/KoalaBooks.Client/Dockerfile
     restart: unless-stopped
 
   postgres:

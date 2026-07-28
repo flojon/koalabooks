@@ -9,73 +9,78 @@
 
 <MudLayout>
     <MudAppBar Elevation="0" Color="Color.Secondary">
-        <MudHidden Breakpoint="Breakpoint.MdAndUp">
-            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
-        </MudHidden>
+        <AuthorizeView>
+            <Authorized>
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
+                </MudHidden>
+            </Authorized>
+        </AuthorizeView>
         <MudText Typo="Typo.h6" Class="ml-2">🐨 KoalaBooks</MudText>
         <MudSpacer />
         <AuthorizeView>
             <Authorized>
                 <MudText Typo="Typo.body2" Class="mr-2" Style="color:#CBD5E1;">@context.User.Identity?.Name</MudText>
-                <form method="post" action="/account/logout" style="display:inline;">
-                    <AntiforgeryToken />
-                    <MudIconButton Icon="@Icons.Material.Outlined.Logout" Color="Color.Inherit" Size="Size.Small"
-                                   title="Logga ut" ButtonType="ButtonType.Submit" />
-                </form>
+                <MudIconButton Icon="@Icons.Material.Outlined.Logout" Color="Color.Inherit" Size="Size.Small"
+                               title="Logga ut" OnClick="Logout" />
             </Authorized>
         </AuthorizeView>
     </MudAppBar>
 
-    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Breakpoint="Breakpoint.Md"
-               Variant="DrawerVariant.Responsive" Elevation="1">
-        <MudNavMenu>
-            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Översikt</MudNavLink>
+    <AuthorizeView>
+        <Authorized>
+            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Breakpoint="Breakpoint.Md"
+                       Variant="DrawerVariant.Responsive" Elevation="1">
+                <MudNavMenu>
+                    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.Dashboard">Översikt</MudNavLink>
 
-            <MudNavGroup Title="Transaktioner" Icon="@Icons.Material.Outlined.SwapHoriz" @bind-Expanded="_transactionsExpanded">
-                <MudNavLink Href="/todo" Icon="@Icons.Material.Outlined.CheckCircle">
-                    Att göra
-                    @if (_todoCount > 0)
-                    {
-                        <span style="display:inline-flex; align-items:center; margin-left:auto; background:var(--mud-palette-error); color:var(--mud-palette-error-text); border-radius:9999px; padding:1px 7px; font-size:0.7rem; font-weight:700; line-height:1.6;">@_todoCount</span>
-                    }
-                </MudNavLink>
-                <MudNavLink Href="/journal" Icon="@Icons.Material.Outlined.MenuBook">Journal</MudNavLink>
-                <MudNavLink Href="/review" Icon="@Icons.Material.Outlined.PlaylistAddCheck">
-                    Att granska
-                    @if (_draftCount > 0)
-                    {
-                        <span style="display:inline-flex; align-items:center; margin-left:auto; background:var(--mud-palette-error); color:var(--mud-palette-error-text); border-radius:9999px; padding:1px 7px; font-size:0.7rem; font-weight:700; line-height:1.6;">@_draftCount</span>
-                    }
-                </MudNavLink>
-                <MudNavLink Href="/inbox" Icon="@Icons.Material.Outlined.Inbox">Inbox</MudNavLink>
-                <MudNavLink Href="/supplier-invoices" Icon="@Icons.Material.Outlined.Receipt">Leverantörsfakturor</MudNavLink>
-                <MudNavLink Href="/customer-invoices" Icon="@Icons.Material.Outlined.RequestPage">Kundfakturor</MudNavLink>
-                <MudNavLink Href="/customers" Icon="@Icons.Material.Outlined.People">Kunder</MudNavLink>
-                <MudNavLink Href="/import/bank" Icon="@Icons.Material.Outlined.AccountBalance">Bankimport</MudNavLink>
-                <MudNavLink Href="/import/tax" Icon="@Icons.Material.Outlined.Receipt">Skattekontoimport</MudNavLink>
-            </MudNavGroup>
+                    <MudNavGroup Title="Transaktioner" Icon="@Icons.Material.Outlined.SwapHoriz" @bind-Expanded="_transactionsExpanded">
+                        <MudNavLink Href="/todo" Icon="@Icons.Material.Outlined.CheckCircle">
+                            Att göra
+                            @if (_todoCount > 0)
+                            {
+                                <span style="display:inline-flex; align-items:center; margin-left:auto; background:var(--mud-palette-error); color:var(--mud-palette-error-text); border-radius:9999px; padding:1px 7px; font-size:0.7rem; font-weight:700; line-height:1.6;">@_todoCount</span>
+                            }
+                        </MudNavLink>
+                        <MudNavLink Href="/journal" Icon="@Icons.Material.Outlined.MenuBook">Journal</MudNavLink>
+                        <MudNavLink Href="/review" Icon="@Icons.Material.Outlined.PlaylistAddCheck">
+                            Att granska
+                            @if (_draftCount > 0)
+                            {
+                                <span style="display:inline-flex; align-items:center; margin-left:auto; background:var(--mud-palette-error); color:var(--mud-palette-error-text); border-radius:9999px; padding:1px 7px; font-size:0.7rem; font-weight:700; line-height:1.6;">@_draftCount</span>
+                            }
+                        </MudNavLink>
+                        <MudNavLink Href="/inbox" Icon="@Icons.Material.Outlined.Inbox">Inbox</MudNavLink>
+                        <MudNavLink Href="/supplier-invoices" Icon="@Icons.Material.Outlined.Receipt">Leverantörsfakturor</MudNavLink>
+                        <MudNavLink Href="/customer-invoices" Icon="@Icons.Material.Outlined.RequestPage">Kundfakturor</MudNavLink>
+                        <MudNavLink Href="/customers" Icon="@Icons.Material.Outlined.People">Kunder</MudNavLink>
+                        <MudNavLink Href="/import/bank" Icon="@Icons.Material.Outlined.AccountBalance">Bankimport</MudNavLink>
+                        <MudNavLink Href="/import/tax" Icon="@Icons.Material.Outlined.Receipt">Skattekontoimport</MudNavLink>
+                    </MudNavGroup>
 
-            <MudNavGroup Title="Rapporter" Icon="@Icons.Material.Outlined.Assessment" @bind-Expanded="_reportsExpanded">
-                <MudNavLink Href="/reports/trial-balance" Icon="@Icons.Material.Outlined.BarChart">Råbalans</MudNavLink>
-                <MudNavLink Href="/reports/general-ledger" Icon="@Icons.Material.Outlined.Book">Huvudbok</MudNavLink>
-                <MudNavLink Href="/reports/income-statement" Icon="@Icons.Material.Outlined.TrendingUp">Resultaträkning</MudNavLink>
-                <MudNavLink Href="/reports/balance-sheet" Icon="@Icons.Material.Outlined.AccountBalance">Balansräkning</MudNavLink>
-                <MudNavLink Href="/reports/vat" Icon="@Icons.Material.Outlined.Receipt">Momsredovisning</MudNavLink>
-            </MudNavGroup>
+                    <MudNavGroup Title="Rapporter" Icon="@Icons.Material.Outlined.Assessment" @bind-Expanded="_reportsExpanded">
+                        <MudNavLink Href="/reports/trial-balance" Icon="@Icons.Material.Outlined.BarChart">Råbalans</MudNavLink>
+                        <MudNavLink Href="/reports/general-ledger" Icon="@Icons.Material.Outlined.Book">Huvudbok</MudNavLink>
+                        <MudNavLink Href="/reports/income-statement" Icon="@Icons.Material.Outlined.TrendingUp">Resultaträkning</MudNavLink>
+                        <MudNavLink Href="/reports/balance-sheet" Icon="@Icons.Material.Outlined.AccountBalance">Balansräkning</MudNavLink>
+                        <MudNavLink Href="/reports/vat" Icon="@Icons.Material.Outlined.Receipt">Momsredovisning</MudNavLink>
+                    </MudNavGroup>
 
-            <MudNavGroup Title="Inställningar" Icon="@Icons.Material.Outlined.Settings" @bind-Expanded="_settingsExpanded">
-                <MudNavLink Href="/accounts" Icon="@Icons.Material.Outlined.AccountTree">Konton</MudNavLink>
-                <MudNavLink Href="/account-mapping" Icon="@Icons.Material.Outlined.CompareArrows">Balansöverföring</MudNavLink>
-                <MudNavLink Href="/fiscal-years" Icon="@Icons.Material.Outlined.CalendarMonth">Räkenskapsår</MudNavLink>
-                <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings">Inställningar</MudNavLink>
-            </MudNavGroup>
+                    <MudNavGroup Title="Inställningar" Icon="@Icons.Material.Outlined.Settings" @bind-Expanded="_settingsExpanded">
+                        <MudNavLink Href="/accounts" Icon="@Icons.Material.Outlined.AccountTree">Konton</MudNavLink>
+                        <MudNavLink Href="/account-mapping" Icon="@Icons.Material.Outlined.CompareArrows">Balansöverföring</MudNavLink>
+                        <MudNavLink Href="/fiscal-years" Icon="@Icons.Material.Outlined.CalendarMonth">Räkenskapsår</MudNavLink>
+                        <MudNavLink Href="/settings" Icon="@Icons.Material.Outlined.Settings">Inställningar</MudNavLink>
+                    </MudNavGroup>
 
-            <MudNavGroup Title="Data" Icon="@Icons.Material.Outlined.Storage" @bind-Expanded="_dataExpanded">
-                <MudNavLink Href="/import/sie" Icon="@Icons.Material.Outlined.FileUpload">Importera SIE</MudNavLink>
-                <MudNavLink Href="/export/sie" Icon="@Icons.Material.Outlined.FileDownload">Exportera SIE</MudNavLink>
-            </MudNavGroup>
-        </MudNavMenu>
-    </MudDrawer>
+                    <MudNavGroup Title="Data" Icon="@Icons.Material.Outlined.Storage" @bind-Expanded="_dataExpanded">
+                        <MudNavLink Href="/import/sie" Icon="@Icons.Material.Outlined.FileUpload">Importera SIE</MudNavLink>
+                        <MudNavLink Href="/export/sie" Icon="@Icons.Material.Outlined.FileDownload">Exportera SIE</MudNavLink>
+                    </MudNavGroup>
+                </MudNavMenu>
+            </MudDrawer>
+        </Authorized>
+    </AuthorizeView>
 
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
@@ -198,6 +203,8 @@
     }
 
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    private void Logout() => Navigation.NavigateToLogout("authentication/logout");
 
     protected override void OnParametersSet()
     {
