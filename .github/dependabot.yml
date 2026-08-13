@@ -12,6 +12,13 @@ updates:
       # The aspire-update.yml workflow owns these instead, via `aspire update`,
       # so the two can't drift apart again.
       - dependency-name: "Aspire.Hosting.*"
+      # Microsoft.OpenApi 3.x reworked its model types to be read-only and
+      # isn't supported by Microsoft.AspNetCore.OpenApi yet (ASP.NET Core
+      # 10's source generator writes to properties that are read-only on
+      # 3.x's IOpenApiMediaType, so the build fails). Stay on 2.x until a
+      # Microsoft.AspNetCore.OpenApi release supports OpenApi 3.x.
+      - dependency-name: "Microsoft.OpenApi"
+        versions: [">= 3.0.0"]
     groups:
       microsoft-aspire:
         patterns:
