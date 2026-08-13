@@ -68,8 +68,15 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           OWNER: ${{ github.repository_owner }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
+          # GHCR_PAT is a durable classic PAT (read:packages), not the
+          # per-run GITHUB_TOKEN. The oraclevm host's ~/.docker/config.json
+          # is shared with koalasoft-infra's deploy pipeline for every other
+          # stack; logging in with an ephemeral, actor-scoped GITHUB_TOKEN
+          # here (previously as dependabot[bot] on dependency-bump PRs) left
+          # every other stack's `docker compose pull` denied once that token
+          # expired ~1h later. See koalasoft-infra's README for the fallout.
+          GHCR_TOKEN: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: flojon
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -228,8 +235,10 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           OWNER: ${{ github.repository_owner }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
+          # See the "Deploy PR environment" step above for why this is a
+          # durable PAT rather than the per-run GITHUB_TOKEN.
+          GHCR_TOKEN: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: flojon
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
