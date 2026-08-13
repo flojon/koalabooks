@@ -52,5 +52,12 @@ jobs:
             docker compose up -d --remove-orphans
             docker image prune -f
         env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
+          # GHCR_PAT is a durable classic PAT (read:packages), not the
+          # per-run GITHUB_TOKEN - this login shares oraclevm's
+          # ~/.docker/config.json with koalasoft-infra's whole deploy
+          # pipeline. A GITHUB_TOKEN here, run after a Dependabot-merged
+          # CI success, was actor-scoped to dependabot[bot] and expired
+          # ~1h later, breaking every other stack's `docker compose pull`.
+          # See pr-preview.yml for the same fix.
+          GHCR_TOKEN: ${{ secrets.GHCR_PAT }}
+          GHCR_USER: flojon
