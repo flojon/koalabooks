@@ -80,6 +80,51 @@ public class AccountSearchDropdownTests : BunitContext
     }
 
     [Fact]
+    public void TypingExactMatchThenTab_SelectsIt()
+    {
+        int? selectedId = null;
+        var cut = Render<AccountSearchDropdown>(p => p
+            .Add(x => x.Accounts, SampleAccounts())
+            .Add(x => x.SelectedAccountIdChanged, id => selectedId = id));
+        cut.Find("input").TriggerEvent("onfocusin", new EventArgs());
+        cut.Find("input").Input("1910");
+
+        cut.Find("input").KeyDown(new KeyboardEventArgs { Key = "Tab" });
+
+        Assert.Equal(1, selectedId);
+    }
+
+    [Fact]
+    public void TypingExactMatchThenEnter_SelectsItWithoutArrowNavigation()
+    {
+        int? selectedId = null;
+        var cut = Render<AccountSearchDropdown>(p => p
+            .Add(x => x.Accounts, SampleAccounts())
+            .Add(x => x.SelectedAccountIdChanged, id => selectedId = id));
+        cut.Find("input").TriggerEvent("onfocusin", new EventArgs());
+        cut.Find("input").Input("1910");
+
+        cut.Find("input").KeyDown(new KeyboardEventArgs { Key = "Enter" });
+
+        Assert.Equal(1, selectedId);
+    }
+
+    [Fact]
+    public void TypingAmbiguousMatchThenTab_DoesNotSelectAnything()
+    {
+        int? selectedId = null;
+        var cut = Render<AccountSearchDropdown>(p => p
+            .Add(x => x.Accounts, SampleAccounts())
+            .Add(x => x.SelectedAccountIdChanged, id => selectedId = id));
+        cut.Find("input").TriggerEvent("onfocusin", new EventArgs());
+        cut.Find("input").Input("0");
+
+        cut.Find("input").KeyDown(new KeyboardEventArgs { Key = "Tab" });
+
+        Assert.Null(selectedId);
+    }
+
+    [Fact]
     public void PreselectedAccount_ShowsFormattedTextOnLoad()
     {
         var cut = Render<AccountSearchDropdown>(p => p

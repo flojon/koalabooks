@@ -130,12 +130,14 @@
                     _highlightedIndex--;
                 break;
             case "Tab":
+                // Commit an unambiguous match on the way out, same as Enter — otherwise
+                // typing an exact account number and tabbing away leaves AccountId at 0.
+                await SelectHighlightedOrSoleMatchAsync();
                 _isOpen = false;
                 break;
             case "Enter":
-                if (_highlightedIndex >= 0 && _highlightedIndex < _filtered.Count)
+                if (await SelectHighlightedOrSoleMatchAsync())
                 {
-                    await SelectAccount(_filtered[_highlightedIndex]);
                     await OnAfterKeyboardSelect.InvokeAsync();
                 }
                 break;
@@ -143,6 +145,18 @@
                 _isOpen = false;
                 break;
         }
+    }
+
+    private async Task<bool> SelectHighlightedOrSoleMatchAsync()
+    {
+        var target = _highlightedIndex >= 0 && _highlightedIndex < _filtered.Count
+            ? _filtered[_highlightedIndex]
+            : _filtered.Count == 1 ? _filtered[0] : null;
+        if (target is null)
+            return false;
+
+        await SelectAccount(target);
+        return true;
     }
 
     private async Task SelectAccount(Account account)
