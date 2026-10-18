@@ -125,7 +125,7 @@ public class ApiTests : IAsyncLifetime
         var id = json.GetProperty("id").GetInt32();
         var entryNumber = json.GetProperty("entryNumber").GetInt32();
 
-        // GetByFiscalYearAsync only returns posted entries, so drafts must be posted to be visible.
+        // Most callers of this helper exercise posted-entry behavior (reversal, reporting, etc.).
         var postResp = await client.PostAsync($"/api/v1/journal-entries/{id}/post", null);
         Assert.Equal(HttpStatusCode.OK, postResp.StatusCode);
 
